@@ -1,21 +1,30 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
-  
+
+  const apiKey = process.env.FMP_API_KEY;
+  const symbols = req.query.symbols || 'AAPL,NVDA,MSFT,TSLA,AMZN,GOOGL,META,PLTR,AMD,JPM,NFLX,BABA';
+
   try {
-    const symbols = req.query.symbols || 'AAPL,NVDA,MSFT,TSLA,AMZN,GOOGL,META,PLTR,AMD,JPM,NFLX,BABA,2222.SR,1120.SR,1180.SR,2010.SR,7010.SR,4200.SR,2380.SR,1211.SR';
-    
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,regularMarketChangePercent,regularMarketVolume,regularMarketDayHigh,regularMarketDayLow`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0',
-        'Accept': 'application/json'
-      }
-    });
-    
+    const url = `https://financialmodelingprep.com/api/v3/quote/${symbols}?apikey=${apiKey}`;
+    const response = await fetch(url);
     const data = await response.json();
-    res.status(200).json(data);
+
+    // تحويل البيانات لنفس شكل Yahoo
+    const result = {
+      quoteResponse: {
+        result: data.map(q => ({
+          symbol: q.symbol,
+          regularMarketPrice: q.price,
+          regularMarketChangePercent: q.changesPercentage,
+          regularMarketVolume: q.volume,
+          regularMarketDayHigh: q.dayHigh,
+          regularMarketDayLow: q.dayLow
+        }))
+      }
+    };
+
+    res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
