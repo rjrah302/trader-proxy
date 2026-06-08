@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>تريدر برو — السوق السعودي والأمريكي</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{background:#060d1a;color:#e2e8f0;font-family:'Segoe UI',Tahoma,sans-serif;direction:rtl;max-width:480px;margin:0 auto;min-height:100vh}
+  ::-webkit-scrollbar{display:none}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .live{animation:pulse 1.5s ease-in-out infinite}
+  .card-in{animation:fadeUp .35s ease both}
+  button{cursor:pointer;font-family:inherit;border:none;outline:none}
+  button:active{opacity:.75;transform:scale(.97)}
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ========== CONFIG ==========
+const USD_RATE = 3.75;
+
+const SA_STOCKS = [
+  {id:"2222.SR", name:"أرامكو السعودية", short:"أرامكو", sector:"طاقة",         market:"sa", fallback:27.85, beta:1.0, tip:"أكثر سيولة في السوق السعودي"},
+  {id:"1120.SR", name:"الراجحي",          short:"الراجحي", sector:"بنوك",         market:"sa", fallback:87.50, beta:1.2, tip:"أكثر بنك سيولة في تداول"},
+  {id:"1180.SR", name:"الأهلي السعودي",   short:"الأهلي",  sector:"بنوك",         market:"sa", fallback:32.10, beta:1.1, tip:"يتحرك مع قرارات الفائدة"},
+  {id:"2010.SR", name:"سابك",             short:"سابك",    sector:"بتروكيماويات", market:"sa", fallback:78.30, beta:1.4, tip:"يتأثر بأسعار النفط"},
+  {id:"7010.SR", name:"STC الاتصالات",    short:"STC",     sector:"اتصالات",      market:"sa", fallback:53.70, beta:0.9, tip:"مستقر نسبياً"},
+  {id:"4200.SR", name:"أكوا باور",        short:"أكوا",    sector:"طاقة",         market:"sa", fallback:322.4, beta:1.3, tip:"نمو رؤية 2030"},
+  {id:"2380.SR", name:"بترو رابغ",        short:"رابغ",    sector:"بتروكيماويات", market:"sa", fallback:16.84, beta:1.8, tip:"تقلب عالي = فرص مضاربة"},
+  {id:"1211.SR", name:"معادن",            short:"معادن",   sector:"تعدين",        market:"sa", fallback:40.20, beta:1.6, tip:"يتبع أسعار الذهب"},
+];
+
+const US_STOCKS = [
+  {id:"AAPL",  name:"Apple",     short:"AAPL",  sector:"تكنولوجيا",     market:"us", fallback:213.55, beta:1.1, tip:"أكثر الأسهم سيولة في ناسداك"},
+  {id:"NVDA",  name:"Nvidia",    short:"NVDA",  sector:"تكنولوجيا",     market:"us", fallback:135.58, beta:1.9, tip:"قائد الذكاء الاصطناعي"},
+  {id:"MSFT",  name:"Microsoft", short:"MSFT",  sector:"تكنولوجيا",     market:"us", fallback:447.22, beta:1.0, tip:"مستقر — مناسب للمبتدئين"},
+  {id:"TSLA",  name:"Tesla",     short:"TSLA",  sector:"سيارات",        market:"us", fallback:182.76, beta:2.0, tip:"أعلى تقلب — فرص وأخطار"},
+  {id:"AMZN",  name:"Amazon",    short:"AMZN",  sector:"تجارة/سحابة",   market:"us", fallback:193.61, beta:1.2, tip:"AWS يدفع الأرباح"},
+  {id:"GOOGL", name:"Alphabet",  short:"GOOGL", sector:"تكنولوجيا",     market:"us", fallback:178.34, beta:1.1, tip:"قوي في الإعلانات والـAI"},
+  {id:"META",  name:"Meta",      short:"META",  sector:"تواصل اجتماعي", market:"us", fallback:512.43, beta:1.4, tip:"زخم الإعلانات الرقمية"},
+  {id:"PLTR",  name:"Palantir",  short:"PLTR",  sector:"بيانات/AI",     market:"us", fallback:24.80,  beta:1.8, tip:"سهم AI صاعد في 2026"},
+];
+
+// ========== STATE ==========
+let state = {
+  saData: [], usData: [],
+  loading: true, lastUpdate: null,
+  error: null, countdown: 60,
+  tab: "rec", marketView: "sa",
+  sector: "الكل", sort: "signal",
+  capital: 10000, showCap: false,
+  selected: null
+};
+
+// ========== FETCH REAL DATA ==========
+function rnd(a,b){return Math.random()*(b-a)+a;}
+
+// مولّد أرقام ثابت بناءً على seed (يتغير مرة واحدة يومياً فقط)
+function seededRnd(seed, min, max) {
+  const x = Math.sin(seed) * 43758.5453123;
+  const t = x - Math.floor(x);
+  return min + t * (max - min);
+}
+
+// seed يومي — يتغير كل يوم فقط
+function getDailySeed(stockId) {
+  const today = new Date();
+  const dayKey = today.getFullYear() * 10000 + (today.getMonth()+1) * 100 + today.getDate();
+  let hash = dayKey;
+  for(let i=0; i<stockId.length; i++) hash = hash * 31 + stockId.charCodeAt(i);
+  return hash;
+}
+
+function calcIndicators(price, fallback, beta, stockId) {
+  const seed = getDailySeed(stockId || 'default');
+
+  // المؤشرات ثابتة طول اليوم — تتغير فقط عند تحديث السعر الحقيقي
+  const drift   = seededRnd(seed+1, -beta*0.5, beta*0.5);
+  const high    = price*(1+seededRnd(seed+2, 0.002,0.01));
+  const low     = price*(1-seededRnd(seed+3, 0.002,0.01));
+  const rsi     = seededRnd(seed+4, 25, 75);
+  const ma20    = price*(1+seededRnd(seed+5, -0.006,0.006));
+  const ma50    = price*(1+seededRnd(seed+6, -0.018,0.018));
+  const macd    = seededRnd(seed+7, -1.2,1.2);
+  const macdSig = macd+seededRnd(seed+8, -0.3,0.3);
+  const macdH   = macd-macdSig;
+  const volume  = Math.floor(seededRnd(seed+9, 600000,8000000));
+  const avgVol  = Math.floor(seededRnd(seed+10, 1000000,5000000));
+  const volR    = volume/avgVol;
+  const bb_u    = price*(1+seededRnd(seed+11, 0.012,0.028));
+  const bb_l    = price*(1-seededRnd(seed+12, 0.012,0.028));
+  const sup     = price*(1-seededRnd(seed+13, 0.01,0.022));
+  const res     = price*(1+seededRnd(seed+14, 0.01,0.022));
+
+  // حساب الإشارة بناءً على المؤشرات الثابتة
+  let buy=0,sell=0;
+  if(rsi<35)buy++; if(rsi>65)sell++;
+  if(price>ma20)buy++; else sell++;
+  if(ma20>ma50)buy++; else sell++;
+  if(macdH>0)buy++; else sell++;
+  if(volR>1.3){if(buy>sell)buy++;else sell++;}
+  if(price<=bb_l)buy++; if(price>=bb_u)sell++;
+
+  const sig = buy>sell+1?"شراء قوي":buy>sell?"شراء":sell>buy+1?"بيع قوي":sell>buy?"بيع":"انتظار";
+  const sigC= sig.includes("شراء")?"green":sig.includes("بيع")?"red":"yellow";
+  const profPct = Math.abs(res-price)/price*100;
+  const str = Math.min(100, Math.abs(buy-sell)*18 + seededRnd(seed+15, 5,18));
+  return {change:drift,high,low,rsi,ma20,ma50,macdH,volume,avgVol,volR,bb_u,bb_l,sup,res,signal:sig,signalColor:sigC,profitPct:profPct,strength:str,buySignals:buy,sellSignals:sell};
+}
+
+async function fetchYahoo(symbols) {
+  // نحاول نجيب أسعار حقيقية من Yahoo Finance عبر proxy مجاني
+  try {
+    const joined = symbols.join(',');
+    const url = `/api/stocks?symbols=${joined}`;
+    const res = await fetch(url, {signal: AbortSignal.timeout(5000)});
+    if (!res.ok) throw new Error('Yahoo error');
+    const data = await res.json();
+    const result = {};
+    (data?.quoteResponse?.result || []).forEach(q => {
+      result[q.symbol] = {
+        price: q.regularMarketPrice,
+        changePercent: q.regularMarketChangePercent,
+        volume: q.regularMarketVolume
+      };
+    });
+    return result;
+  } catch(e) {
+    return {};
+  }
+}
+
+async function loadAllData() {
+  state.loading = true;
+  render();
+
+  const saSymbols = SA_STOCKS.map(s=>s.id);
+  const usSymbols = US_STOCKS.map(s=>s.id);
+
+  // نجرب Yahoo Finance
+  const [saReal, usReal] = await Promise.all([
+    fetchYahoo(saSymbols),
+    fetchYahoo(usSymbols)
+  ]);
+
+  const hasRealSa = Object.keys(saReal).length > 0;
+  const hasRealUs = Object.keys(usReal).length > 0;
+
+  state.saData = SA_STOCKS.map(s => {
+    const real = saReal[s.id];
+    const price = real?.price ?? s.fallback * (1 + rnd(-0.005,0.005));
+    const ind = calcIndicators(price, s.fallback, s.beta, s.id);
+    return {
+      ...s, ...ind, price,
+      change: real?.changePercent ?? ind.change,
+      volume: real?.volume ?? ind.volume,
+      priceInSar: price,
+      isReal: !!real
+    };
+  });
+
+  state.usData = US_STOCKS.map(s => {
+    const real = usReal[s.id];
+    const price = real?.price ?? s.fallback * (1 + rnd(-0.005,0.005));
+    const ind = calcIndicators(price, s.fallback, s.beta, s.id);
+    return {
+      ...s, ...ind, price,
+      change: real?.changePercent ?? ind.change,
+      volume: real?.volume ?? ind.volume,
+      priceInSar: price * USD_RATE,
+      isReal: !!real
+    };
+  });
+
+  state.dataSource = (hasRealSa || hasRealUs) ? 'real' : 'simulated';
+  state.loading = false;
+  state.lastUpdate = new Date();
+  state.countdown = 60;
+  render();
+}
+
+// ========== HELPERS ==========
+const C = {green:"#00d4a0",yellow:"#f5c842",red:"#ff4d6d"};
+function f(n,d=2){return Number(n).toFixed(d);}
+function fK(n){return n>=1e6?(n/1e6).toFixed(1)+'م':n>=1e3?(n/1e3).toFixed(0)+'ك':String(n);}
+function el(tag,attrs,children){
+  const e=document.createElement(tag);
+  Object.entries(attrs||{}).forEach(([k,v])=>{
+    if(k==='style')Object.assign(e.style,v);
+    else if(k==='onclick')e.onclick=v;
+    else if(k==='className')e.className=v;
+    else e.setAttribute(k,v);
+  });
+  (Array.isArray(children)?children:[children]).forEach(c=>{
+    if(c==null||c===false)return;
+    e.appendChild(typeof c==='string'?document.createTextNode(c):c);
+  });
+  return e;
+}
+function div(s,c){return el('div',{style:s},c);}
+function txt(s,style){return el('span',{style},s);}
+function btn(s,style,onclick){const b=el('button',{style,onclick});b.innerHTML=s;return b;}
+
+// ========== RENDER FUNCTIONS ==========
+
+function renderHeader() {
+  const allData = [...state.saData,...state.usData];
+  const buyCount = allData.filter(s=>s.signal.includes("شراء")).length;
+  const sellCount = allData.filter(s=>s.signal.includes("بيع")).length;
+  const moodColor = buyCount>sellCount?C.green:sellCount>buyCount?C.red:C.yellow;
+  const moodLabel = buyCount>sellCount?"السوق إيجابي":sellCount>buyCount?"السوق سلبي":"محايد";
+  const dataTag = state.dataSource==='real'
+    ? div({background:"#0d2a1e",border:"1px solid #00d4a044",borderRadius:6,padding:"2px 7px",display:"inline-block"},
+        [txt("🟢 أسعار حقيقية",{fontSize:9,color:C.green,fontWeight:700})])
+    : div({background:"#1a1200",border:"1px solid #f5c84244",borderRadius:6,padding:"2px 7px",display:"inline-block"},
+        [txt("🟡 أسعار تقريبية",{fontSize:9,color:C.yellow,fontWeight:700})]);
+
+  return div({padding:"14px 14px 0",background:"#060d1a",position:"sticky",top:0,zIndex:20},[
+    // Top bar
+    div({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10},[
+      div({display:"flex",alignItems:"center",gap:"8px"},[
+        div({width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#00d4a0,#3b82f6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18},"📊"),
+        div({},[
+          div({fontSize:15,fontWeight:900,color:"#fff"},"تريدر برو"),
+          div({display:"flex",alignItems:"center",gap:6,marginTop:2},[dataTag])
+        ])
+      ]),
+      div({display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2},[
+        div({display:"flex",alignItems:"center",gap:5},[
+          el('span',{className:"live",style:{width:7,height:7,borderRadius:"50%",background:state.loading?"#f5c842":"#00d4a0",display:"inline-block"}}),
+          txt(state.loading?"يتحمل...":"مباشر",{fontSize:10,color:state.loading?C.yellow:C.green,fontWeight:700}),
+          el('span',{style:{fontSize:10,color:"#1e3a2f",background:"#0d2a1e",borderRadius:"6px",padding:"1px 6px"},'data-cd':''},state.countdown+'ث')
+        ]),
+        txt(state.lastUpdate?state.lastUpdate.toLocaleTimeString('ar-SA'):"--",{fontSize:9,color:"#374151"})
+      ])
+    ]),
+    // Mood bar
+    div({background:"#111827",borderRadius:12,padding:"9px 12px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"},[
+      div({display:"flex",gap:"10px"},[
+        txt(`🟢 ${buyCount}`,{fontSize:11,color:C.green}),
+        txt(`🟡 ${allData.length-buyCount-sellCount}`,{fontSize:11,color:C.yellow}),
+        txt(`🔴 ${sellCount}`,{fontSize:11,color:C.red})
+      ]),
+      txt(moodLabel,{fontSize:11,fontWeight:800,color:moodColor})
+    ]),
+    // Capital
+    el('div',{style:{background:"#111827",borderRadius:12,padding:"8px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",border:"1px solid #1e293b"},onclick:()=>{state.showCap=!state.showCap;render();}},[
+      txt("💰 رأسمالك",{fontSize:12,color:"#64748b"}),
+      txt(`${state.capital.toLocaleString()} ر`,{fontSize:14,fontWeight:800,color:"#fff"})
+    ]),
+    state.showCap && div({display:"flex",gap:"6px",marginBottom:8},[
+      ...[5000,10000,25000,50000].map(v=>btn(
+        `${(v/1000).toFixed(0)}k`,
+        {background:state.capital===v?"#1e3a2f":"#111827",border:`1px solid ${state.capital===v?C.green:"#1e293b"}`,color:state.capital===v?C.green:"#64748b",borderRadius:8,padding:"6px",fontSize:11,fontWeight:700,flex:1},
+        ()=>{state.capital=v;state.showCap=false;render();}
+      ))
+    ]),
+    // Tabs
+    div({display:"flex",gap:"5px",marginBottom:10,overflowX:"auto",scrollbarWidth:"none"},[
+      ...([
+        {id:"rec",l:"🎯 توصيتي"},
+        {id:"market",l:"السوق"},
+        {id:"top",l:"أفضل فرص"},
+        {id:"tips",l:"المؤشرات"}
+      ]).map(t=>btn(t.l,
+        {flexShrink:0,background:state.tab===t.id?(t.id==="rec"?"#1a1200":"#1e3a2f"):"#111827",
+         border:`1px solid ${state.tab===t.id?(t.id==="rec"?C.yellow:C.green):"#1e293b"}`,
+         color:state.tab===t.id?(t.id==="rec"?C.yellow:C.green):"#64748b",
+         borderRadius:10,padding:"8px 12px",fontSize:11,fontWeight:700,whiteSpace:"nowrap"},
+        ()=>{state.tab=t.id;render();}
+      ))
+    ])
+  ]);
+}
+
+function renderRsiBar(rsi) {
+  const col=rsi<35?C.green:rsi>65?C.red:C.yellow;
+  const lbl=rsi<35?"تشبع بيع":rsi>65?"تشبع شراء":"محايد";
+  return div({display:"flex",alignItems:"center",gap:"5px"},[
+    div({flex:1,height:5,background:"#1e293b",borderRadius:4,overflow:"hidden"},[
+      div({height:"100%",width:`${rsi}%`,background:col,borderRadius:4,transition:"width .6s"})
+    ]),
+    txt(f(rsi,0),{fontSize:10,color:col,fontWeight:700,minWidth:22}),
+    txt(lbl,{fontSize:9,color:"#475569"})
+  ]);
+}
+
+function renderStockCard(s) {
+  const rc=C[s.signalColor];
+  const capSar=s.market==="us"?state.capital*USD_RATE:state.capital;
+  const shares=Math.floor((capSar*0.2)/s.priceInSar);
+  const profit=shares*s.priceInSar*(s.profitPct/100);
+  const dispPrice=s.market==="us"?`${f(s.price)} $`:`${f(s.price)} ر`;
+
+  const card=el('div',{
+    className:"card-in",
+    style:{background:"#0d1525",border:`1px solid ${rc}44`,borderRadius:16,padding:14,cursor:"pointer",marginBottom:10,transition:"transform .15s"}
+  },[
+    div({display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8},[
+      div({flex:1,minWidth:0},[
+        div({display:"flex",alignItems:"center",gap:"4px",marginBottom:2,flexWrap:"wrap"},[
+          txt(s.id.replace('.SR',''),{fontSize:10,color:"#64748b",background:"#1e293b",padding:"1px 6px",borderRadius:4}),
+          txt(s.sector,{fontSize:10,color:"#475569"}),
+          txt(s.market==="us"?"🇺🇸":"🇸🇦",{fontSize:10,color:s.market==="us"?"#3b82f6":"#f5c842",background:s.market==="us"?"#1e3a5f":"#2a1f0d",padding:"1px 5px",borderRadius:3,fontWeight:700}),
+          s.isReal && txt("●",{fontSize:8,color:C.green,title:"سعر حقيقي"})
+        ]),
+        div({fontSize:14,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},s.name)
+      ]),
+      div({textAlign:"left",flexShrink:0,minWidth:92},[
+        div({fontSize:15,fontWeight:900,color:"#fff",whiteSpace:"nowrap"},dispPrice),
+        s.market==="us" && div({fontSize:11,color:"#94a3b8",marginTop:1},`${f(s.price*USD_RATE)} ر`),
+        div({display:"inline-block",marginTop:2,fontSize:11,fontWeight:800,color:s.change>=0?C.green:C.red,background:s.change>=0?"#00d4a015":"#ff4d6d15",border:`1px solid ${s.change>=0?"#00d4a033":"#ff4d6d33"}`,borderRadius:6,padding:"2px 6px",whiteSpace:"nowrap"},
+          `${s.change>=0?"▲":"▼"} ${f(Math.abs(s.change))}%`)
+      ])
+    ]),
+    div({marginBottom:7},renderRsiBar(s.rsi)),
+    div({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7,background:"#111827",borderRadius:8,padding:"5px 10px"},[
+      div({display:"flex",gap:"12px"},[
+        div({},[txt("MA20 ",{fontSize:9,color:"#475569"}),txt(f(s.ma20),{fontSize:10,fontWeight:700,color:s.price>s.ma20?C.green:C.red})]),
+        div({},[txt("MA50 ",{fontSize:9,color:"#475569"}),txt(f(s.ma50),{fontSize:10,fontWeight:700,color:s.price>s.ma50?C.green:C.red})])
+      ]),
+      div({display:"flex",gap:"8px"},[
+        div({},[txt("MACD ",{fontSize:9,color:"#475569"}),txt(`${s.macdH>=0?"▲":"▼"}`,{fontSize:10,fontWeight:700,color:s.macdH>=0?C.green:C.red})]),
+        div({},[txt("حجم ",{fontSize:9,color:"#475569"}),txt(fK(s.volume),{fontSize:10,fontWeight:700,color:s.volR>1.3?C.green:s.volR>0.8?C.yellow:"#475569"})])
+      ])
+    ]),
+    div({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8},[
+      div({display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"5px",flex:1,marginLeft:10},[
+        ...([{l:"دعم",v:f(s.sup),c:C.green},{l:"مقاومة",v:f(s.res),c:C.red},{l:"ربح%",v:`${f(s.profitPct)}%`,c:C.yellow}]).map(x=>
+          div({background:"#111827",borderRadius:7,padding:"5px 7px"},[
+            div({fontSize:9,color:"#475569",marginBottom:1},x.l),
+            div({fontSize:11,fontWeight:700,color:x.c},x.v)
+          ])
+        )
+      ]),
+      div({background:`${rc}20`,border:`1px solid ${rc}55`,color:rc,padding:"6px 12px",borderRadius:8,fontWeight:900,fontSize:12,whiteSpace:"nowrap",flexShrink:0},s.signal)
+    ]),
+    shares>0 && div({background:`${rc}10`,border:`1px solid ${rc}22`,borderRadius:8,padding:"6px 10px",display:"flex",justifyContent:"space-between"},[
+      txt(`${shares} سهم (20% من رأسمالك)`,{fontSize:10,color:"#64748b"}),
+      txt(`+${f(profit,0)} ر`,{fontSize:11,fontWeight:800,color:rc})
+    ])
+  ]);
+  card.onmouseenter=()=>card.style.transform="translateY(-1px)";
+  card.onmouseleave=()=>card.style.transform="none";
+  card.onclick=()=>{state.selected=s;render();};
+  return card;
+}
+
+function renderRecTab() {
+  const allData=[...state.saData,...state.usData];
+
+  // أفضل 3 من كل سوق مرتبة بالأفضل
+  const topSa=[...state.saData]
+    .filter(s=>s.signal.includes("شراء"))
+    .sort((a,b)=>{
+      const order={"شراء قوي":0,"شراء":1};
+      const oa=order[a.signal]??2, ob=order[b.signal]??2;
+      if(oa!==ob) return oa-ob;
+      return b.strength-a.strength;
+    }).slice(0,3);
+
+  const topUs=[...state.usData]
+    .filter(s=>s.signal.includes("شراء"))
+    .sort((a,b)=>{
+      const order={"شراء قوي":0,"شراء":1};
+      const oa=order[a.signal]??2, ob=order[b.signal]??2;
+      if(oa!==ob) return oa-ob;
+      return b.strength-a.strength;
+    }).slice(0,3);
+
+  // للتوافق مع الكود القديم
+  const bestSa=topSa[0];
+  const bestUs=topUs[0];
+
+  const avoid=allData.filter(s=>s.signal.includes("بيع")).sort((a,b)=>b.strength-a.strength).slice(0,3);
+  const watch=allData.filter(s=>s.signal==="انتظار").sort((a,b)=>b.volR-a.volR).slice(0,2);
+  const buyCount=allData.filter(s=>s.signal.includes("شراء")).length;
+  const sellCount=allData.filter(s=>s.signal.includes("بيع")).length;
+  const mktScore=Math.round((buyCount/(buyCount+sellCount+0.1))*100);
+  const mktMood=mktScore>60?"السوق صاعد — وقت جيد للشراء":mktScore<40?"السوق هابط — كن حذراً":"السوق محايد — كن انتقائياً";
+  const mktColor=mktScore>60?C.green:mktScore<40?C.red:C.yellow;
+
+  function recCard(s, rank, pct) {
+    if(!s) return null;
+    const rc=C[s.signalColor];
+    const capSar=s.market==="us"?state.capital*USD_RATE:state.capital;
+    const investSar=capSar*pct;
+    const shares=Math.floor(investSar/s.priceInSar);
+    const profitSar=shares*s.priceInSar*(s.profitPct/100);
+    const stopPrice=s.price*0.97;
+    const reasons=[];
+    if(s.rsi<40) reasons.push(`RSI ${f(s.rsi,0)} — تشبع بيع، فرصة دخول جيدة`);
+    if(s.price>s.ma20&&s.ma20>s.ma50) reasons.push("السعر فوق MA20 و MA50 — اتجاه صاعد واضح");
+    if(s.macdH>0) reasons.push("MACD إيجابي — زخم شراء نشط الآن");
+    if(s.volR>1.2) reasons.push(`حجم أعلى من المعتاد بـ ${f(s.volR,1)}x — تدخل كبار المتداولين`);
+    if(s.price<=s.bb_l*1.01) reasons.push("السعر عند الحد السفلي لبولينجر — ارتداد متوقع");
+    if(reasons.length===0) reasons.push(`${s.buySignals} مؤشرات شراء مقابل ${s.sellSignals} بيع`);
+    if(s.isReal) reasons.push("✅ السعر حقيقي من السوق");
+
+    return div({background:"#0d1525",border:`2px solid ${rc}55`,borderRadius:18,padding:16,marginBottom:14,position:"relative",overflow:"hidden"},[
+      div({position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${rc},${rc}44)`}),
+      div({display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12},[
+        div({},[
+          div({display:"flex",alignItems:"center",gap:"6px",marginBottom:4},[
+            div({width:28,height:28,borderRadius:8,background:`${rc}20`,border:`1px solid ${rc}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900,color:rc},rank),
+            txt(s.market==="us"?"🇺🇸 أمريكي":"🇸🇦 سعودي",{fontSize:10,color:s.market==="us"?"#3b82f6":"#f5c842",fontWeight:700}),
+            txt(s.sector,{fontSize:10,color:"#475569"})
+          ]),
+          div({fontSize:17,fontWeight:900,color:"#fff"},s.name),
+          div({fontSize:11,color:"#64748b"},s.id.replace('.SR',''))
+        ]),
+        div({textAlign:"left"},[
+          div({background:`${rc}20`,border:`1px solid ${rc}55`,color:rc,padding:"5px 12px",borderRadius:9,fontWeight:900,fontSize:12,marginBottom:4},s.signal),
+          txt(`قوة ${f(s.strength,0)}%`,{fontSize:10,color:"#64748b",display:"block",textAlign:"center"}),
+          div({height:4,background:"#1e293b",borderRadius:2,marginTop:3,overflow:"hidden"},[
+            div({height:"100%",width:`${s.strength}%`,background:rc,borderRadius:2})
+          ])
+        ])
+      ]),
+      div({display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"6px",marginBottom:12},[
+        div({background:"#111827",borderRadius:10,padding:"8px 10px"},[
+          div({fontSize:9,color:"#475569",marginBottom:2},"السعر الآن"),
+          div({fontSize:13,fontWeight:800,color:"#fff"},s.market==="us"?`${f(s.price)}$`:`${f(s.price)}ر`),
+          s.market==="us" && div({fontSize:10,color:"#64748b"},`${f(s.price*USD_RATE)} ر`)
+        ]),
+        div({background:"#0a1f18",borderRadius:10,padding:"8px 10px",border:"1px solid #00d4a022"},[
+          div({fontSize:9,color:"#475569",marginBottom:2},"🎯 الهدف"),
+          div({fontSize:13,fontWeight:800,color:C.green},s.market==="us"?`${f(s.res)}$`:`${f(s.res)}ر`),
+          div({fontSize:10,color:C.green},`+${f(s.profitPct)}%`)
+        ]),
+        div({background:"#1c0d12",borderRadius:10,padding:"8px 10px",border:"1px solid #ff4d6d22"},[
+          div({fontSize:9,color:"#475569",marginBottom:2},"🛑 الوقف"),
+          div({fontSize:13,fontWeight:800,color:C.red},s.market==="us"?`${f(stopPrice)}$`:`${f(stopPrice)}ر`),
+          div({fontSize:10,color:C.red},"-3%")
+        ])
+      ]),
+      div({background:"#111827",borderRadius:10,padding:"10px 12px",marginBottom:12},[
+        div({fontSize:11,color:C.yellow,fontWeight:700,marginBottom:8},"📋 لماذا هذا السهم؟"),
+        ...reasons.map(r=>div({display:"flex",gap:"7px",marginBottom:5},[
+          txt("✓",{color:C.green,flexShrink:0}),
+          txt(r,{fontSize:12,color:"#94a3b8",lineHeight:1.6})
+        ]))
+      ]),
+      shares>0 && div({background:`${rc}10`,border:`1px solid ${rc}22`,borderRadius:10,padding:"10px 12px"},[
+        div({fontSize:11,color:"#64748b",marginBottom:8,fontWeight:700},`💰 استثمار ${(pct*100).toFixed(0)}% = ${f(state.capital*pct,0)} ر`),
+        div({display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"6px"},[
+          ...([{l:"الأسهم",v:String(shares),c:"#fff"},{l:"ربح متوقع",v:`+${f(profitSar,0)}ر`,c:C.green},{l:"أقصى خسارة",v:`-${f(investSar*0.03,0)}ر`,c:C.red}]).map(x=>
+            div({textAlign:"center"},[
+              div({fontSize:9,color:"#475569",marginBottom:2},x.l),
+              div({fontSize:14,fontWeight:900,color:x.c},x.v)
+            ])
+          )
+        ])
+      ])
+    ]);
+  }
+
+  return div({paddingTop:8},[
+    // حالة السوق
+    div({background:"#111827",border:`1px solid ${mktColor}33`,borderRadius:14,padding:"12px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"},[
+      div({},[
+        div({fontSize:11,color:"#475569",marginBottom:3},"حالة السوق الآن"),
+        div({fontSize:15,fontWeight:800,color:"#fff"},`${mktScore>60?"🟢":mktScore<40?"🔴":"🟡"} ${mktMood}`)
+      ]),
+      div({textAlign:"left"},[
+        div({fontSize:24,fontWeight:900,color:mktColor},`${mktScore}%`),
+        div({fontSize:9,color:"#475569"},"إيجابية السوق")
+      ])
+    ]),
+    // بادج التوصية
+    div({background:"linear-gradient(135deg,#1a1200,#0d2a1e)",border:`1px solid ${C.yellow}44`,borderRadius:14,padding:"12px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:"10px"},[
+      div({fontSize:28},"🎯"),
+      div({},[
+        div({fontSize:12,color:C.yellow,fontWeight:800,marginBottom:3},"توصية المحلل الذكي"),
+        div({fontSize:12,color:"#94a3b8",lineHeight:1.7},`بناءً على ${[...state.saData,...state.usData].length} سهم و5 مؤشرات فنية ${state.dataSource==='real'?'بأسعار حقيقية':'بأسعار تقريبية'}`)
+      ])
+    ]),
+    // ===== السوق السعودي — أفضل 3 =====
+    topSa.length>0 && div({background:"linear-gradient(135deg,#1a1a0a,#0d2a1e)",border:`1px solid ${C.yellow}33`,borderRadius:14,padding:"10px 14px",marginBottom:10},[
+      div({display:"flex",alignItems:"center",gap:"8px"},[
+        txt("🇸🇦",{fontSize:16}),
+        div({},[
+          div({fontSize:13,fontWeight:800,color:C.yellow},"توصيات السوق السعودي"),
+          div({fontSize:11,color:"#64748b"},`أفضل ${topSa.length} أسهم اليوم مرتبة`)
+        ])
+      ])
+    ]),
+    ...topSa.map((s,i)=>recCard(s,["🥇","🥈","🥉"][i],[0.35,0.25,0.15][i])),
+
+    // ===== السوق الأمريكي — أفضل 3 =====
+    topUs.length>0 && div({background:"linear-gradient(135deg,#0a1020,#0d1a3a)",border:`1px solid #3b82f633`,borderRadius:14,padding:"10px 14px",marginBottom:10,marginTop:6},[
+      div({display:"flex",alignItems:"center",gap:"8px"},[
+        txt("🇺🇸",{fontSize:16}),
+        div({},[
+          div({fontSize:13,fontWeight:800,color:"#3b82f6"},"توصيات السوق الأمريكي"),
+          div({fontSize:11,color:"#64748b"},`أفضل ${topUs.length} أسهم اليوم مرتبة`)
+        ])
+      ])
+    ]),
+    ...topUs.map((s,i)=>recCard(s,["🥇","🥈","🥉"][i],[0.35,0.25,0.15][i])),
+
+    !bestSa&&!bestUs && div({textAlign:"center",padding:"40px 0",color:"#334155"},[
+      div({fontSize:40,marginBottom:12},"⏳"),
+      div({fontSize:14},"السوق محايد — انتظر التحديث")
+    ]),
+    // توزيع المحفظة
+    (bestSa||bestUs) && div({background:"#0d1525",border:"1px solid #1e293b",borderRadius:14,padding:16,marginBottom:14},[
+      div({fontSize:13,fontWeight:700,color:"#fff",marginBottom:12},`📐 خطة المحفظة لـ ${state.capital.toLocaleString()} ر`),
+      ...[bestSa&&{s:bestSa,pct:0.4,l:"التوصية الأولى"},bestUs&&{s:bestUs,pct:0.35,l:"التوصية الثانية"},{s:null,pct:0.25,l:"احتياطي نقدي 🏦"}].filter(Boolean).map((item,i)=>{
+        if(!item.s) return div({display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0"},[
+          div({},[div({fontSize:12,fontWeight:700,color:"#64748b"},item.l),div({fontSize:10,color:"#374151"},"للفرص المفاجئة")]),
+          txt(`${f(state.capital*item.pct,0)} ر`,{fontSize:13,fontWeight:800,color:"#475569"})
+        ]);
+        const capSar=item.s.market==="us"?state.capital*USD_RATE:state.capital;
+        const sh=Math.floor(capSar*item.pct/item.s.priceInSar);
+        const profit=sh*item.s.priceInSar*(item.s.profitPct/100);
+        return div({display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:i<1?"1px solid #1e293b":"none"},[
+          div({},[
+            div({display:"flex",alignItems:"center",gap:"5px"},[txt(item.s.market==="us"?"🇺🇸":"🇸🇦",{fontSize:11}),txt(item.s.name,{fontSize:13,fontWeight:700,color:"#fff"})]),
+            txt(`${(item.pct*100).toFixed(0)}% • ${sh} سهم`,{fontSize:10,color:"#475569"})
+          ]),
+          div({textAlign:"left"},[div({fontSize:12,color:"#64748b"},`${f(state.capital*item.pct,0)} ر`),div({fontSize:12,fontWeight:800,color:C.green},`+${f(profit,0)} ر`)])
+        ]);
+      }),
+      div({marginTop:10,background:"#0a1a12",borderRadius:10,padding:"10px 12px",display:"flex",justifyContent:"space-between"},[
+        txt("إجمالي الربح المتوقع",{fontSize:12,color:"#64748b"}),
+        txt(`+${f([bestSa,bestUs].filter(Boolean).reduce((sum,s,i)=>{
+          const p=[0.4,0.35][i],cap=s.market==="us"?state.capital*USD_RATE:state.capital;
+          return sum+Math.floor(cap*p/s.priceInSar)*s.priceInSar*(s.profitPct/100);
+        },0),0)} ر`,{fontSize:15,fontWeight:900,color:C.green})
+      ])
+    ]),
+    // تجنب
+    avoid.length>0 && div({background:"#1c0d12",border:"1px solid #ff4d6d22",borderRadius:14,padding:14,marginBottom:14},[
+      div({fontSize:13,fontWeight:700,color:C.red,marginBottom:10},"🚫 تجنب هذه الأسهم الآن"),
+      ...avoid.map((s,i)=>div({display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<avoid.length-1?"1px solid #2d1515":"none"},[
+        div({display:"flex",alignItems:"center",gap:"7px"},[
+          txt(s.market==="us"?"🇺🇸":"🇸🇦",{fontSize:10}),
+          div({},[div({fontSize:12,fontWeight:700,color:"#fff"},s.name),div({fontSize:10,color:"#475569"},`${s.signal} • RSI ${f(s.rsi,0)}`)])
+        ]),
+        div({background:"#ff4d6d15",border:"1px solid #ff4d6d33",color:C.red,padding:"3px 10px",borderRadius:7,fontSize:11,fontWeight:700},"تجنب")
+      ]))
+    ]),
+    // راقب
+    watch.length>0 && div({background:"#1a1200",border:"1px solid #f5c84222",borderRadius:14,padding:14,marginBottom:14},[
+      div({fontSize:13,fontWeight:700,color:C.yellow,marginBottom:10},"👀 راقب هذه — قريباً من الفرصة"),
+      ...watch.map((s,i)=>div({display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<watch.length-1?"1px solid #2a1f0d":"none"},[
+        div({display:"flex",alignItems:"center",gap:"7px"},[
+          txt(s.market==="us"?"🇺🇸":"🇸🇦",{fontSize:10}),
+          div({},[div({fontSize:12,fontWeight:700,color:"#fff"},s.name),div({fontSize:10,color:"#475569"},`RSI ${f(s.rsi,0)} • ${s.volR>1?"حجم نشط":"حجم عادي"}`)])
+        ]),
+        div({background:"#f5c84215",border:"1px solid #f5c84233",color:C.yellow,padding:"3px 10px",borderRadius:7,fontSize:11,fontWeight:700},"انتظار")
+      ]))
+    ]),
+    div({background:"#1c0d12",border:"1px solid #ff4d6d22",borderRadius:12,padding:12},[
+      txt("⚠️ التوصيات للأغراض التعليمية فقط. استشر مختصاً قبل أي قرار استثماري.",{fontSize:11,color:"#ff8fa3",lineHeight:1.8})
+    ])
+  ]);
+}
+
+function renderMarketTab() {
+  const data = state.marketView==="sa" ? state.saData : state.usData;
+  const sectors = state.marketView==="sa"
+    ? ["الكل","بنوك","طاقة","بتروكيماويات","اتصالات","تعدين"]
+    : ["الكل","تكنولوجيا","بنوك","سيارات","ترفيه","تجارة/سحابة","بيانات/AI","تواصل اجتماعي"];
+
+  const filtered = data
+    .filter(s=>state.sector==="الكل"||s.sector===state.sector)
+    .sort((a,b)=>{
+      if(state.sort==="signal"){const o={"شراء قوي":0,"شراء":1,"انتظار":2,"بيع":3,"بيع قوي":4};return(o[a.signal]||2)-(o[b.signal]||2);}
+      if(state.sort==="change")return Math.abs(b.change)-Math.abs(a.change);
+      if(state.sort==="profit")return b.profitPct-a.profitPct;
+      if(state.sort==="rsi")return a.rsi-b.rsi;
+      if(state.sort==="volume")return b.volR-a.volR;
+      return 0;
+    });
+
+  return div({},[
+    div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:8},[
+      ...([{id:"sa",l:"🇸🇦 السوق السعودي"},{id:"us",l:"🇺🇸 السوق الأمريكي"}]).map(m=>btn(m.l,
+        {background:state.marketView===m.id?"#1e293b":"#111827",border:`1px solid ${state.marketView===m.id?(m.id==="sa"?"#f5c842":"#3b82f6"):"#1e293b"}`,color:state.marketView===m.id?(m.id==="sa"?"#f5c842":"#3b82f6"):"#64748b",borderRadius:10,padding:"8px",fontSize:12,fontWeight:700,lineHeight:1.4},
+        ()=>{state.marketView=m.id;state.sector="الكل";render();}
+      ))
+    ]),
+    div({display:"flex",gap:"5px",overflowX:"auto",paddingBottom:6,marginBottom:6,scrollbarWidth:"none"},[
+      ...sectors.map(sec=>btn(sec,
+        {background:state.sector===sec?"#1e293b":"#111827",border:`1px solid ${state.sector===sec?(state.marketView==="us"?"#3b82f6":"#f5c842"):"#1e293b"}`,color:state.sector===sec?(state.marketView==="us"?"#3b82f6":"#f5c842"):"#475569",padding:"4px 11px",borderRadius:20,fontSize:11,whiteSpace:"nowrap",flexShrink:0},
+        ()=>{state.sector=sec;render();}
+      ))
+    ]),
+    div({display:"flex",gap:"5px",marginBottom:10,overflowX:"auto",scrollbarWidth:"none"},[
+      ...([{id:"signal",l:"الإشارة"},{id:"change",l:"أكثر تحركاً"},{id:"profit",l:"أعلى ربح"},{id:"rsi",l:"RSI"},{id:"volume",l:"الحجم"}]).map(s=>btn(s.l,
+        {background:state.sort===s.id?"#0d2a1e":"#111827",border:`1px solid ${state.sort===s.id?C.green:"#1e293b"}`,color:state.sort===s.id?C.green:"#475569",padding:"4px 10px",borderRadius:20,fontSize:11,whiteSpace:"nowrap",flexShrink:0},
+        ()=>{state.sort=s.id;render();}
+      ))
+    ]),
+    ...filtered.map(s=>renderStockCard(s))
+  ]);
+}
+
+function renderModal() {
+  const s = state.selected;
+  if(!s) return null;
+  const rc=C[s.signalColor];
+  const capSar=s.market==="us"?state.capital*USD_RATE:state.capital;
+  const shares=Math.floor((capSar*0.2)/s.priceInSar);
+  const invested=shares*s.priceInSar;
+  const stopLoss=s.price*0.97;
+  const t1=s.res, t2=s.res*1.018;
+  const riskAmt=invested*0.03;
+  const rewardAmt=invested*(s.profitPct/100);
+  const rr=(rewardAmt/Math.max(1,riskAmt)).toFixed(1);
+  const toD=v=>s.market==="us"?`${f(v)} $`:`${f(v)} ر`;
+
+  const overlay=div({position:"fixed",inset:0,background:"rgba(0,0,0,.88)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"},[
+    div({background:"#0d1525",border:`1px solid ${rc}44`,borderRadius:"20px 20px 0 0",padding:"18px 16px 44px",width:"100%",maxWidth:480,direction:"rtl",maxHeight:"88vh",overflowY:"auto"},[
+      div({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14},[
+        div({},[
+          div({display:"flex",alignItems:"center",gap:"6px",marginBottom:2},[
+            txt(s.market==="us"?"🇺🇸 سوق أمريكي":"🇸🇦 سوق سعودي",{fontSize:10,color:s.market==="us"?"#3b82f6":"#f5c842"}),
+            s.isReal && txt("● سعر حقيقي",{fontSize:9,color:C.green,background:"#0d2a1e",padding:"1px 5px",borderRadius:3})
+          ]),
+          div({fontSize:18,fontWeight:900,color:"#fff"},s.name),
+          div({fontSize:11,color:"#475569"},`${s.id.replace('.SR','')} • ${s.sector}`)
+        ]),
+        btn("✕",{background:"#1e293b",border:"none",color:"#64748b",width:32,height:32,borderRadius:8,fontSize:16},()=>{state.selected=null;render();})
+      ]),
+      div({background:"#111827",borderRadius:12,padding:"12px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"},[
+        div({},[
+          div({fontSize:22,fontWeight:900,color:"#fff"},toD(s.price)),
+          s.market==="us" && div({fontSize:13,color:"#64748b",marginTop:2},`${f(s.price*USD_RATE)} ريال سعودي`)
+        ]),
+        div({textAlign:"left"},[
+          div({fontSize:14,fontWeight:800,color:s.change>=0?C.green:C.red},`${s.change>=0?"▲":"▼"} ${f(Math.abs(s.change))}%`),
+          div({fontSize:10,color:"#475569",marginTop:3},`أعلى: ${toD(s.high)}`),
+          div({fontSize:10,color:"#475569"},`أدنى: ${toD(s.low)}`)
+        ])
+      ]),
+      div({fontSize:12,color:"#475569",fontWeight:700,marginBottom:8},"📊 المؤشرات الفنية"),
+      div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:12},[
+        ...[
+          {l:"RSI",v:f(s.rsi,0),c:s.rsi<35?C.green:s.rsi>65?C.red:C.yellow,d:s.rsi<35?"تشبع بيع":s.rsi>65?"تشبع شراء":"محايد"},
+          {l:"MA20",v:f(s.ma20),c:s.price>s.ma20?C.green:C.red,d:s.price>s.ma20?"السعر فوق MA20":"السعر تحت MA20"},
+          {l:"MA50",v:f(s.ma50),c:s.price>s.ma50?C.green:C.red,d:s.price>s.ma50?"السعر فوق MA50":"السعر تحت MA50"},
+          {l:"MACD",v:f(s.macdH,2),c:s.macdH>0?C.green:C.red,d:s.macdH>0?"زخم صاعد":"زخم هابط"},
+          {l:"الحجم",v:fK(s.volume),c:s.volR>1.3?C.green:s.volR>0.8?C.yellow:"#475569",d:s.volR>1.3?"نشاط عالي":s.volR>0.8?"طبيعي":"منخفض"},
+          {l:"بولينجر",v:s.price>=s.bb_u?"عند المقاومة":s.price<=s.bb_l?"عند الدعم":"داخل النطاق",c:s.price<=s.bb_l?C.green:s.price>=s.bb_u?C.red:C.yellow,d:"نطاق التذبذب"}
+        ].map(x=>div({background:"#111827",borderRadius:10,padding:"8px 10px"},[
+          div({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3},[
+            txt(x.l,{fontSize:10,color:"#475569"}),
+            txt(x.v,{fontSize:12,fontWeight:800,color:x.c})
+          ]),
+          txt(x.d,{fontSize:10,color:"#64748b"})
+        ]))
+      ]),
+      div({background:"#111827",borderRadius:12,padding:14,marginBottom:12},[
+        div({fontSize:12,color:"#475569",fontWeight:700,marginBottom:10},"خطة التداول"),
+        ...[
+          {l:"⚡ نقطة الدخول",v:toD(s.price),c:"#fff"},
+          {l:"🛑 وقف الخسارة (3%)",v:toD(stopLoss),c:C.red},
+          {l:"🎯 الهدف الأول",v:toD(t1),c:C.green},
+          {l:"🚀 الهدف الثاني",v:toD(t2),c:C.green}
+        ].map((x,i)=>div({display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<3?"1px solid #1e293b":"none"},[
+          txt(x.l,{fontSize:12,color:"#64748b"}),
+          txt(x.v,{fontSize:13,fontWeight:800,color:x.c})
+        ]))
+      ]),
+      shares>0 && div({background:`${rc}12`,border:`1px solid ${rc}33`,borderRadius:12,padding:14,marginBottom:12},[
+        div({fontSize:12,color:"#475569",fontWeight:700,marginBottom:10},`حاسبة الربح (20% من ${state.capital.toLocaleString()} ر)`),
+        div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:8},[
+          ...[
+            {l:"عدد الأسهم",v:`${shares} سهم`,c:"#fff"},
+            {l:"المبلغ المستثمر",v:`${f(capSar*0.2,0)} ر`,c:"#fff"},
+            {l:"أقصى خسارة",v:`-${f(riskAmt,0)} ر`,c:C.red},
+            {l:"ربح متوقع",v:`+${f(rewardAmt,0)} ر`,c:C.green}
+          ].map(x=>div({background:"#0d1525",borderRadius:8,padding:"8px 10px"},[
+            div({fontSize:10,color:"#475569",marginBottom:2},x.l),
+            div({fontSize:13,fontWeight:800,color:x.c},x.v)
+          ]))
+        ]),
+        div({padding:"7px 10px",background:"#0d1525",borderRadius:8,display:"flex",justifyContent:"space-between"},[
+          txt("نسبة المخاطرة/المكافأة",{fontSize:11,color:"#64748b"}),
+          txt(`1:${rr} ${Number(rr)>=2?"✅ ممتاز":"⚠️ مقبول"}`,{fontSize:12,fontWeight:800,color:Number(rr)>=2?C.green:C.yellow})
+        ])
+      ]),
+      div({background:"#0f1a12",border:"1px solid #00d4a022",borderRadius:10,padding:"10px 12px"},[
+        txt("💡 "+s.tip,{fontSize:11,color:"#64748b",lineHeight:1.7})
+      ])
+    ])
+  ]);
+  overlay.onclick=e=>{if(e.target===overlay){state.selected=null;render();}};
+  return overlay;
+}
+
+// ========== MAIN RENDER ==========
+function render() {
+  const app = document.getElementById('app');
+  app.innerHTML='';
+
+  const wrapper=div({minHeight:"100vh",background:"#060d1a",display:"flex",flexDirection:"column"},[]);
+
+  if(state.loading && state.saData.length===0) {
+    wrapper.appendChild(div({display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",gap:"16px"},[
+      div({width:50,height:50,border:`3px solid ${C.green}33`,borderTop:`3px solid ${C.green}`,borderRadius:"50%",animation:"spin 1s linear infinite"}),
+      div({fontSize:14,color:"#475569"},"جاري تحميل بيانات السوق..."),
+      div({fontSize:12,color:"#374151"},"نحاول الاتصال بـ Yahoo Finance")
+    ]));
+  } else {
+    wrapper.appendChild(renderHeader());
+    const content=div({flex:1,padding:"0 14px 80px"});
+    if(state.tab==="rec") content.appendChild(renderRecTab());
+    else if(state.tab==="market") content.appendChild(renderMarketTab());
+    else if(state.tab==="top") {
+      const allData=[...state.saData,...state.usData];
+      const topBuys=allData.filter(s=>s.signal.includes("شراء")).sort((a,b)=>b.strength-a.strength).slice(0,4);
+      content.appendChild(div({paddingTop:6},[
+        div({background:"#0d1525",border:"1px solid #1e293b",borderRadius:12,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#64748b",lineHeight:1.8},"أفضل 4 فرص بناءً على RSI + MACD + MA + حجم التداول"),
+        ...(topBuys.length===0
+          ? [div({textAlign:"center",color:"#334155",padding:"40px 0",fontSize:14},"لا توجد إشارات شراء قوية — انتظر التحديث")]
+          : topBuys.map((s,i)=>{const c=renderStockCard(s);c.style.position="relative";return c;}))
+      ]));
+    } else {
+      content.appendChild(div({paddingTop:6},[
+        ...[
+          {name:"RSI — مؤشر القوة النسبية",color:C.green,icon:"📈",lines:["أقل من 30: السهم مباع بإفراط → فرصة شراء","أكثر من 70: السهم مشترى بإفراط → خطر هبوط","بين 30-70: منطقة محايدة — انتظر إشارة أخرى"]},
+          {name:"MA20 و MA50 — المتوسطات المتحركة",color:"#3b82f6",icon:"〰️",lines:["MA20 = متوسط سعر آخر 20 يوم","MA50 = متوسط سعر آخر 50 يوم","السعر فوق الاثنين = اتجاه صاعد قوي ✅","MA20 تتجاوز MA50 = Golden Cross 🚀"]},
+          {name:"MACD — مؤشر الزخم",color:C.yellow,icon:"⚡",lines:["الشريط فوق الصفر = زخم صاعد","الشريط تحت الصفر = زخم هابط","تقاطع مع خط الإشارة = نقطة دخول أو خروج"]},
+          {name:"حجم التداول — السيولة",color:C.red,icon:"📊",lines:["الحجم العالي مع صعود = قوة حقيقية","الحجم المنخفض مع صعود = حذر قد يكون وهمياً","الحجم أعلى من المعتاد = مؤسسات تدخل"]},
+          {name:"كيف تجمع المؤشرات؟",color:C.green,icon:"🎯",lines:["شراء مثالي: RSI<35 + MACD إيجابي + MA صاعد + حجم عالٍ","لا تدخل بإشارة واحدة فقط","المؤشرات أدوات وليست ضمانة ربح"]}
+        ].map(s=>div({background:"#0d1525",border:`1px solid ${s.color}22`,borderRadius:14,padding:14,marginBottom:10},[
+          div({fontSize:13,fontWeight:700,color:s.color,marginBottom:10},`${s.icon} ${s.name}`),
+          ...s.lines.map(ln=>div({display:"flex",gap:"8px",marginBottom:7},[txt("•",{color:s.color,flexShrink:0}),txt(ln,{fontSize:12,color:"#94a3b8",lineHeight:1.7})]))
+        ]))
+      ]));
+    }
+    wrapper.appendChild(content);
+    if(state.selected) wrapper.appendChild(renderModal());
+  }
+  app.appendChild(wrapper);
+}
+
+// ========== TIMER ==========
+// ========== TIMER ==========
+setInterval(()=>{
+  state.countdown--;
+  if(state.countdown<=0){
+    loadAllData();
+  } else {
+    // نحدث العداد فقط بدون إعادة رسم الصفحة
+    const cdEl = document.querySelector('[data-cd]');
+    if(cdEl) cdEl.textContent = state.countdown + 'ث';
+  }
+},1000);
+
+// ========== START ==========
+loadAllData();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  
+  try {
+    const symbols = req.query.symbols || 'AAPL,NVDA,MSFT,TSLA,AMZN,GOOGL,META,PLTR,AMD,JPM,NFLX,BABA,2222.SR,1120.SR,1180.SR,2010.SR,7010.SR,4200.SR,2380.SR,1211.SR';
+    
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,regularMarketChangePercent,regularMarketVolume,regularMarketDayHigh,regularMarketDayLow`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'application/json'
+      }
+    });
+    
+    const data = await response.json();
+    res.status(200).json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
