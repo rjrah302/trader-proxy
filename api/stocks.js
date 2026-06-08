@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   const symbols = req.query.symbols || 'AAPL,NVDA,MSFT,TSLA,AMZN,GOOGL,META,PLTR,AMD,JPM,NFLX,BABA';
 
   try {
-    const url = `https://financialmodelingprep.com/api/v3/quote/${symbols}?apikey=${apiKey}`;
+   const url = `https://financialmodelingprep.com/stable/quote?symbol=${symbols}&apikey=${apiKey}`;
     const response = await fetch(url);
     const data = await response.json();
 
