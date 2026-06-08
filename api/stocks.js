@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
 
-  const apiKey = process.env.FMP_API_KEY;
+  const apiKey = process.env.FMP_API_KEY || '9FDbZqiuTlNGiuOoTlUR4iweViwYAZiG';
   const symbols = req.query.symbols || 'AAPL,NVDA,MSFT,TSLA,AMZN,GOOGL,META,PLTR,AMD,JPM,NFLX,BABA';
 
   try {
