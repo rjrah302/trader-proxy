@@ -1,4 +1,4 @@
-// v2 - FMP API
+// v3 - FMP API fixed
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -11,10 +11,12 @@ export default async function handler(req, res) {
     const response = await fetch(url);
     const data = await response.json();
 
-    // تحويل البيانات لنفس شكل Yahoo
+    // FMP قد يرجع array أو object - نتعامل مع الحالتين
+    const arr = Array.isArray(data) ? data : [];
+
     const result = {
       quoteResponse: {
-        result: data.map(q => ({
+        result: arr.map(q => ({
           symbol: q.symbol,
           regularMarketPrice: q.price,
           regularMarketChangePercent: q.changesPercentage,
