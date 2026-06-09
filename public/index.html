@@ -62,8 +62,9 @@ background-size:40px 40px;pointer-events:none;z-index:0}
 <script>
 // ===== CONFIG =====
 const USD_RATE = 3.75;
-const UPDATE_INTERVAL = 30; // 30 ثانية للأسعار
-const REC_INTERVAL = 30;    // 30 ثانية للتوصيات
+const UPDATE_INTERVAL = 600; // 10 دقائق للأسعار
+const REC_INTERVAL = 60;     // 60 ثانية للتوصيات
+
 // ===== 50 سهم أمريكي متنوع =====
 const STOCKS = [
   // 🤖 تكنولوجيا / AI
@@ -123,6 +124,64 @@ const STOCKS = [
   {id:"AAL",   name:"American Air",sector:"طيران",         cat:"small",  tip:"حساس جداً لأسعار الوقود",            beta:1.6},
   {id:"BA",    name:"Boeing",      sector:"فضاء/دفاع",     cat:"large",  tip:"يتعافى من أزمات الـ 737",            beta:1.4},
   {id:"RTX",   name:"Raytheon",    sector:"دفاع",          cat:"large",  tip:"يستفيد من التوترات الجيوسياسية",     beta:0.9},
+
+  // ===== الـ 50 الجديدة =====
+  // 🤖 تكنولوجيا إضافية
+  {id:"TSM",  name:"TSMC",           sector:"شرائح",          cat:"large",  tip:"أكبر مصنع شرائح في العالم",            beta:1.2},
+  {id:"ASML", name:"ASML",           sector:"شرائح",          cat:"large",  tip:"احتكار معدات تصنيع الشرائح",           beta:1.3},
+  {id:"QCOM", name:"Qualcomm",       sector:"شرائح/5G",       cat:"large",  tip:"رائد شرائح الجوال والـ 5G",            beta:1.2},
+  {id:"NOW",  name:"ServiceNow",     sector:"سحابة",          cat:"large",  tip:"برمجيات المؤسسات — نمو قوي",           beta:1.1},
+  {id:"SNOW", name:"Snowflake",      sector:"بيانات",         cat:"mid",    tip:"منصة البيانات السحابية",                beta:1.6},
+  {id:"DDOG", name:"Datadog",        sector:"سحابة",          cat:"mid",    tip:"مراقبة التطبيقات السحابية",             beta:1.5},
+  {id:"NET",  name:"Cloudflare",     sector:"أمن/سحابة",      cat:"mid",    tip:"شبكة توصيل المحتوى والأمن",            beta:1.4},
+  {id:"MDB",  name:"MongoDB",        sector:"قواعد بيانات",   cat:"mid",    tip:"قواعد بيانات NoSQL رائدة",              beta:1.5},
+  {id:"ZM",   name:"Zoom",           sector:"اتصالات",        cat:"mid",    tip:"تراجع بعد كوفيد لكن لا زال قوياً",    beta:1.4},
+  {id:"ADBE", name:"Adobe",          sector:"برمجيات",        cat:"large",  tip:"رائد برامج التصميم والإبداع",          beta:1.2},
+  // 🏦 مالية إضافية
+  {id:"MS",   name:"Morgan Stanley", sector:"استثمار",        cat:"large",  tip:"بنك استثماري عالمي كبير",              beta:1.3},
+  {id:"BLK",  name:"BlackRock",      sector:"إدارة أصول",     cat:"large",  tip:"أكبر مدير أصول في العالم",             beta:1.1},
+  {id:"SCHW", name:"Schwab",         sector:"وساطة",          cat:"large",  tip:"أكبر وسيط تجزئة أمريكي",              beta:1.2},
+  {id:"AXP",  name:"Amex",           sector:"مدفوعات",        cat:"large",  tip:"بطاقات الائتمان المميزة",               beta:1.1},
+  {id:"SQ",   name:"Block",          sector:"فينتك",          cat:"mid",    tip:"دفعات رقمية وبيتكوين",                 beta:1.9},
+  // 💊 صحة إضافية
+  {id:"ABBV", name:"AbbVie",         sector:"دواء",           cat:"large",  tip:"عائد توزيعات ممتاز",                   beta:0.7},
+  {id:"TMO",  name:"Thermo Fisher",  sector:"أجهزة طبية",    cat:"large",  tip:"مستلزمات المختبرات العلمية",            beta:1.0},
+  {id:"ISRG", name:"Intuitive Surg", sector:"روبوتات طبية",  cat:"large",  tip:"الجراحة الروبوتية — نمو قوي",          beta:1.1},
+  {id:"REGN", name:"Regeneron",      sector:"بيوتك",          cat:"large",  tip:"أدوية مبتكرة وأبحاث متقدمة",          beta:0.8},
+  {id:"VRTX", name:"Vertex Pharma",  sector:"بيوتك",          cat:"large",  tip:"علاج التليف الكيسي — احتكار",          beta:0.9},
+  // ⚡ طاقة وبنية تحتية
+  {id:"NEE",  name:"NextEra",        sector:"طاقة متجددة",    cat:"large",  tip:"أكبر منتج طاقة رياح وشمس",            beta:0.8},
+  {id:"AMT",  name:"American Tower", sector:"اتصالات",        cat:"large",  tip:"أبراج الاتصالات — دخل ثابت",          beta:0.8},
+  {id:"FSLR", name:"First Solar",    sector:"طاقة شمسية",     cat:"mid",    tip:"رائد الألواح الشمسية الأمريكية",       beta:1.5},
+  {id:"VLO",  name:"Valero Energy",  sector:"تكرير نفط",      cat:"large",  tip:"أكبر مصفاة نفط مستقلة",               beta:1.2},
+  {id:"SLB",  name:"Schlumberger",   sector:"خدمات نفط",      cat:"large",  tip:"أكبر شركة خدمات نفطية",               beta:1.3},
+  // 🛒 استهلاك إضافي
+  {id:"NKE",  name:"Nike",           sector:"ملابس/رياضة",    cat:"large",  tip:"العلامة الرياضية الأولى عالمياً",     beta:1.0},
+  {id:"SBUX", name:"Starbucks",      sector:"مطاعم",          cat:"large",  tip:"يعاني من تراجع الإقبال الصيني",       beta:0.9},
+  {id:"MCD",  name:"McDonald's",     sector:"مطاعم",          cat:"large",  tip:"مستقر — يتحرك مع الاقتصاد",           beta:0.7},
+  {id:"TGT",  name:"Target",         sector:"تجزئة",          cat:"large",  tip:"منافس Walmart — أرخص من Costco",      beta:0.9},
+  {id:"ABNB", name:"Airbnb",         sector:"سياحة/تقنية",    cat:"mid",    tip:"يستفيد من انتعاش السياحة",             beta:1.5},
+  // 🎮 ترفيه وألعاب
+  {id:"EA",   name:"Electronic Arts", sector:"ألعاب",         cat:"mid",    tip:"FIFA وBattlefield وApex",              beta:0.9},
+  {id:"TTWO", name:"Take-Two",        sector:"ألعاب",         cat:"mid",    tip:"GTA وNBA 2K — ألعاب ضخمة",            beta:1.3},
+  {id:"RBLX", name:"Roblox",          sector:"ميتافيرس",      cat:"mid",    tip:"عالم الميتافيرس للجيل الجديد",         beta:1.7},
+  {id:"NFLX", name:"Netflix",         sector:"ترفيه",         cat:"large",  tip:"النمو في الاشتراكات يحرك السهم",      beta:1.3},
+  // 🚀 مستقبل إضافي
+  {id:"ACHR", name:"Archer Aviation", sector:"طيران كهربائي", cat:"future", tip:"سيارات طائرة كهربائية",               beta:2.5},
+  {id:"ASTS", name:"AST SpaceMobile", sector:"إنترنت فضاء",  cat:"future", tip:"إنترنت من الفضاء مباشرة للجوال",      beta:2.8},
+  {id:"SOUN", name:"SoundHound",      sector:"AI صوتي",       cat:"future", tip:"الذكاء الاصطناعي الصوتي",              beta:2.7},
+  {id:"RXRX", name:"Recursion",       sector:"AI طبي",        cat:"future", tip:"اكتشاف الأدوية بالذكاء الاصطناعي",   beta:2.4},
+  {id:"BBAI", name:"BigBear.ai",      sector:"AI/دفاع",       cat:"future", tip:"ذكاء اصطناعي للقطاع الدفاعي",         beta:2.6},
+  {id:"AEVA", name:"Aeva Tech",       sector:"LiDAR/سيارات",  cat:"future", tip:"تقنية الليدار للسيارات ذاتية القيادة",beta:2.9},
+  // 💰 أسهم رخيصة إضافية
+  {id:"XPEV", name:"XPeng",           sector:"EV صيني",       cat:"small",  tip:"منافس NIO في السيارات الكهربائية",    beta:2.1},
+  {id:"LI",   name:"Li Auto",         sector:"EV صيني",       cat:"small",  tip:"سيارات هجينة كهربائية صينية",         beta:1.9},
+  {id:"MARA", name:"Marathon Digital", sector:"تعدين BTC",    cat:"small",  tip:"تعدين البيتكوين — يتبع العملات",      beta:2.9},
+  {id:"RIOT", name:"Riot Platforms",   sector:"تعدين BTC",    cat:"small",  tip:"منافس Marathon في تعدين البيتكوين",   beta:2.8},
+  {id:"CLSK", name:"CleanSpark",       sector:"تعدين BTC",    cat:"small",  tip:"تعدين بيتكوين بطاقة متجددة",          beta:2.7},
+  {id:"HIMS", name:"Hims & Hers",      sector:"صحة رقمية",    cat:"small",  tip:"منصة الرعاية الصحية الرقمية",         beta:1.8},
+  {id:"OPEN", name:"Opendoor",         sector:"عقارات/تقنية", cat:"small",  tip:"شراء وبيع المنازل بالتقنية",          beta:2.1},
+  {id:"DKNG", name:"DraftKings",       sector:"مراهنات رياضية",cat:"small", tip:"المراهنات الرياضية القانونية",         beta:1.9},
 ];
 
 // إزالة المكررات
@@ -145,6 +204,7 @@ let state = {
   showCap: false,
   selected: null,
   catFilter: "الكل",
+  searchQuery: "",
   dataSource: "simulated"
 };
 
@@ -268,7 +328,7 @@ function calcRecs() {
   const buyCount = state.stocks.filter(s=>s.signal.includes("شراء")).length;
   const sellCount = state.stocks.filter(s=>s.signal.includes("بيع")).length;
   const mktScore = Math.round(buyCount/(buyCount+sellCount+0.1)*100);
-  state.recs = {top3:buys.slice(0,3), avoid:sells.slice(0,3), watch:watch.slice(0,2), future:future.slice(0,3), buyCount, sellCount, mktScore};
+  state.recs = {top3:buys.slice(0,5), avoid:sells.slice(0,5), watch:watch.slice(0,2), future:future.slice(0,5), buyCount, sellCount, mktScore};
   state.lastRecUpdate = new Date();
   state.recCountdown = REC_INTERVAL;
 }
@@ -708,13 +768,13 @@ function renderRecTab() {
     ]),
 
     // Top 3
-    ...top3.map((s,i)=>recCard(s,["🥇","🥈","🥉"][i],[0.4,0.35,0.25][i])),
+    ...top3.map((s,i)=>recCard(s,["🥇","🥈","🥉","4️⃣","5️⃣"][i],[0.3,0.25,0.2,0.15,0.1][i]||0.1)),
 
     // Portfolio split
     top3.length>0 && el('div',{style:{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:"14px",padding:"16px",marginBottom:"14px"}},[
       el('div',{style:{fontSize:"13px",fontWeight:"700",color:"var(--text)",marginBottom:"12px"}},`📐 توزيع ${state.capital.toLocaleString()} ر`),
       ...top3.map((s,i)=>{
-        const pct=[0.4,0.35,0.25][i];
+        const pct=[0.3,0.25,0.2,0.15,0.1][i]||0.1;
         const shares=Math.floor((state.capital*pct*USD_RATE)/s.priceInSar);
         const profit=shares*s.priceInSar*(s.profitPct/100);
         return el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<2?"1px solid var(--border)":"none"}},[
@@ -772,6 +832,10 @@ function renderRecTab() {
 function renderMarketTab() {
   const sectors = ["الكل",...new Set(uniqueStocks.map(s=>s.sector))];
   const filtered = state.stocks
+    .filter(s=>state.searchQuery===""||
+      s.name.toLowerCase().includes(state.searchQuery.toLowerCase())||
+      s.id.toLowerCase().includes(state.searchQuery.toLowerCase())||
+      s.sector.includes(state.searchQuery))
     .filter(s=>state.sector==="الكل"||s.sector===state.sector)
     .filter(s=>state.catFilter==="الكل"||s.cat===state.catFilter)
     .sort((a,b)=>{
@@ -783,6 +847,26 @@ function renderMarketTab() {
     });
 
   return el('div',{},[
+    // Search bar
+    el('div',{style:{position:"relative",marginBottom:"10px"}},[
+      el('input',{
+        type:"text",
+        placeholder:"🔍 ابحث عن سهم... (AAPL, Apple, تكنولوجيا)",
+        value:state.searchQuery,
+        oninput:(e)=>{state.searchQuery=e.target.value;render();},
+        style:{
+          width:"100%",background:"var(--bg3)",border:"1px solid var(--border)",
+          borderRadius:"12px",padding:"10px 14px",color:"var(--text)",
+          fontSize:"13px",fontFamily:"inherit",direction:"rtl",
+          outline:"none",boxSizing:"border-box"
+        }
+      }),
+      state.searchQuery && el('button',{
+        onclick:()=>{state.searchQuery="";render();},
+        style:{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",
+               background:"none",border:"none",color:"var(--text3)",fontSize:"16px",cursor:"pointer"}
+      },"✕")
+    ]),
     // Cat filter
     el('div',{style:{display:"flex",gap:"5px",overflowX:"auto",paddingBottom:"6px",marginBottom:"6px",scrollbarWidth:"none"}},[
       ...["الكل",...Object.keys(CATS)].map(cat=>btn(
