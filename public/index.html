@@ -56,6 +56,36 @@ background-size:40px 40px;pointer-events:none;z-index:0}
 
 #app{position:relative;z-index:1}
 </style>
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDYyLS0faQLRV8Oqu1tdIXmJhtfklCHt7M",
+    authDomain: "trader-pro-e8b9b.firebaseapp.com",
+    projectId: "trader-pro-e8b9b",
+    storageBucket: "trader-pro-e8b9b.firebasestorage.app",
+    messagingSenderId: "496012362495",
+    appId: "1:496012362495:web:4a1fed67ee8c994d0802ca"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // نجعل db متاحاً للكود الرئيسي
+  window.db = db;
+  window.fbCollection = collection;
+  window.fbAddDoc = addDoc;
+  window.fbGetDocs = getDocs;
+  window.fbQuery = query;
+  window.fbOrderBy = orderBy;
+  window.fbOnSnapshot = onSnapshot;
+  window.firebaseReady = true;
+
+  // حدث لما Firebase يجهز
+  window.dispatchEvent(new Event('firebaseReady'));
+</script>
 </head>
 <body>
 <div id="app"></div>
@@ -789,7 +819,8 @@ function renderHeader() {
         {id:"rec",l:"🎯 توصيتي",c:C.yellow},
         {id:"market",l:"📊 السوق",c:C.blue},
         {id:"future",l:"🚀 المستقبل",c:C.purple},
-        {id:"tips",l:"📚 تعلم",c:C.green}
+        {id:"tips",l:"📚 تعلم",c:C.green},
+        {id:"portfolio",l:"💼 محفظتي",c:C.purple}
       ].map(t=>btn(t.l,{
         flexShrink:"0",
         background:state.tab===t.id?`${t.c}15`:"var(--bg3)",
@@ -1131,6 +1162,210 @@ function renderLoading() {
   ]);
 }
 
+// ===== PORTFOLIO TAB =====
+let portfolioStocks = [];
+let tradeHistory = [];
+let portfolioLoaded = false;
+
+async function loadPortfolio() {
+  if(!window.db || portfolioLoaded) return;
+  try {
+    // تحميل المحفظة الحالية
+    const pSnap = await window.fbGetDocs(window.fbCollection(window.db, 'portfolio'));
+    portfolioStocks = [];
+    pSnap.forEach(doc => portfolioStocks.push({id: doc.id, ...doc.data()}));
+    
+    // تحميل سجل الصفقات
+    const hSnap = await window.fbGetDocs(window.fbQuery(window.fbCollection(window.db, 'trades'), window.fbOrderBy('date', 'desc')));
+    tradeHistory = [];
+    hSnap.forEach(doc => tradeHistory.push({id: doc.id, ...doc.data()}));
+    
+    portfolioLoaded = true;
+    render();
+  } catch(e) {
+    console.log('Firebase error:', e);
+  }
+}
+
+async function addTrade(trade) {
+  if(!window.db) return;
+  try {
+    await window.fbAddDoc(window.fbCollection(window.db, 'trades'), {
+      ...trade,
+      date: new Date().toISOString()
+    });
+    await window.fbAddDoc(window.fbCollection(window.db, 'portfolio'), trade);
+    portfolioLoaded = false;
+    await loadPortfolio();
+  } catch(e) {
+    console.log('Error adding trade:', e);
+  }
+}
+
+function renderPortfolioTab() {
+  loadPortfolio();
+  
+  // حساب الإحصائيات
+  const totalInvested = portfolioStocks.reduce((sum,s) => sum + (s.shares * s.buyPrice * USD_RATE), 0);
+  const totalCurrent = portfolioStocks.reduce((sum,s) => {
+    const current = state.stocks.find(x=>x.id===s.symbol);
+    return sum + (s.shares * (current?.price||s.buyPrice) * USD_RATE);
+  }, 0);
+  const totalPnL = totalCurrent - totalInvested;
+  const winTrades = tradeHistory.filter(t=>t.type==='sell'&&t.profit>0).length;
+  const totalTrades = tradeHistory.filter(t=>t.type==='sell').length;
+  const winRate = totalTrades>0 ? Math.round(winTrades/totalTrades*100) : 0;
+
+  // نموذج إضافة صفقة
+  let newSymbol = '', newShares = '', newPrice = '', newType = 'buy';
+
+  return el('div',{style:{paddingTop:"8px"}},[
+    // إحصائيات المحفظة
+    el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"14px"}},[
+      el('div',{style:{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:"12px",padding:"12px"}},[
+        el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"💰 إجمالي المحفظة"),
+        el('div',{style:{fontSize:"16px",fontWeight:"900",color:C.blue,textShadow:`0 0 8px ${C.blue}`}},`${f(totalInvested,0)} ر`)
+      ]),
+      el('div',{style:{background:totalPnL>=0?"rgba(0,255,136,.08)":"rgba(255,45,122,.08)",border:`1px solid ${totalPnL>=0?C.green:C.red}33`,borderRadius:"12px",padding:"12px"}},[
+        el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"📈 الربح/الخسارة"),
+        el('div',{style:{fontSize:"16px",fontWeight:"900",color:totalPnL>=0?C.green:C.red,textShadow:`0 0 8px ${totalPnL>=0?C.green:C.red}`}},`${totalPnL>=0?"+":""}${f(totalPnL,0)} ر`)
+      ]),
+      el('div',{style:{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:"12px",padding:"12px"}},[
+        el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"🎯 نسبة النجاح"),
+        el('div',{style:{fontSize:"16px",fontWeight:"900",color:winRate>=60?C.green:winRate>=40?C.yellow:C.red}},`${winRate}%`)
+      ]),
+      el('div',{style:{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:"12px",padding:"12px"}},[
+        el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"📊 عدد الصفقات"),
+        el('div',{style:{fontSize:"16px",fontWeight:"900",color:C.blue}},String(totalTrades))
+      ])
+    ]),
+
+    // إضافة صفقة جديدة
+    el('div',{style:{background:"var(--bg3)",border:`1px solid ${C.green}33`,borderRadius:"14px",padding:"14px",marginBottom:"14px"}},[
+      el('div',{style:{fontSize:"13px",fontWeight:"700",color:C.green,marginBottom:"12px"}},"➕ تسجيل صفقة جديدة"),
+      
+      // نوع الصفقة
+      el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"10px"}},[
+        btn("🟢 شراء",{
+          background:"rgba(0,255,136,.15)",border:`1px solid ${C.green}`,
+          color:C.green,borderRadius:"10px",padding:"8px",fontSize:"12px",fontWeight:"700",
+          id:"btn-buy"
+        },()=>{newType='buy';document.getElementById('btn-buy').style.background="rgba(0,255,136,.3)";document.getElementById('btn-sell').style.background="rgba(255,45,122,.08)";}),
+        btn("🔴 بيع",{
+          background:"rgba(255,45,122,.08)",border:`1px solid ${C.red}33`,
+          color:"var(--text3)",borderRadius:"10px",padding:"8px",fontSize:"12px",fontWeight:"700",
+          id:"btn-sell"
+        },()=>{newType='sell';document.getElementById('btn-sell').style.background="rgba(255,45,122,.3)";document.getElementById('btn-buy').style.background="rgba(0,255,136,.08)";})
+      ]),
+
+      // الحقول
+      el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"10px"}},[
+        el('div',{},[
+          el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"رمز السهم"),
+          el('input',{
+            type:"text",placeholder:"AAPL",id:"inp-symbol",
+            style:{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",
+                   borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",
+                   fontFamily:"inherit",boxSizing:"border-box"}
+          })
+        ]),
+        el('div',{},[
+          el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"عدد الأسهم"),
+          el('input',{
+            type:"number",placeholder:"10",id:"inp-shares",
+            style:{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",
+                   borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",
+                   fontFamily:"inherit",boxSizing:"border-box"}
+          })
+        ]),
+        el('div',{},[
+          el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"السعر $"),
+          el('input',{
+            type:"number",placeholder:"150.00",id:"inp-price",
+            style:{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",
+                   borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",
+                   fontFamily:"inherit",boxSizing:"border-box"}
+          })
+        ])
+      ]),
+
+      btn("💾 حفظ الصفقة",{
+        width:"100%",background:`linear-gradient(135deg,${C.green}33,${C.blue}33)`,
+        border:`1px solid ${C.green}`,color:C.green,borderRadius:"10px",
+        padding:"10px",fontSize:"13px",fontWeight:"700"
+      },async ()=>{
+        const sym = document.getElementById('inp-symbol').value.toUpperCase();
+        const shares = parseFloat(document.getElementById('inp-shares').value);
+        const price = parseFloat(document.getElementById('inp-price').value);
+        if(!sym||!shares||!price){alert('أكمل جميع الحقول');return;}
+        const currentStock = state.stocks.find(s=>s.id===sym);
+        const currentPrice = currentStock?.price||price;
+        const profit = newType==='sell' ? (price-price)*shares : 0;
+        await addTrade({symbol:sym,shares,buyPrice:price,type:newType,profit,currentPrice});
+        document.getElementById('inp-symbol').value='';
+        document.getElementById('inp-shares').value='';
+        document.getElementById('inp-price').value='';
+        alert('✅ تم حفظ الصفقة في السحابة!');
+      })
+    ]),
+
+    // الأسهم الحالية في المحفظة
+    portfolioStocks.length>0 && el('div',{style:{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:"14px",padding:"14px",marginBottom:"14px"}},[
+      el('div',{style:{fontSize:"13px",fontWeight:"700",color:C.blue,marginBottom:"12px"}},"💼 أسهمي الحالية"),
+      ...portfolioStocks.map(s=>{
+        const current = state.stocks.find(x=>x.id===s.symbol);
+        const currentPrice = current?.price||s.buyPrice;
+        const pnl = (currentPrice-s.buyPrice)*s.shares*USD_RATE;
+        const pnlPct = ((currentPrice-s.buyPrice)/s.buyPrice*100);
+        const rec = current?.signal||'—';
+        const recColor = sigColor(rec);
+        return el('div',{style:{
+          display:"flex",justifyContent:"space-between",alignItems:"center",
+          padding:"10px 0",borderBottom:"1px solid var(--border)"
+        }},[
+          el('div',{},[
+            el('div',{style:{fontSize:"13px",fontWeight:"700",color:"var(--text)"}},s.symbol),
+            el('div',{style:{fontSize:"10px",color:"var(--text3)"}},`${s.shares} سهم • دخل بـ $${f(s.buyPrice)}`),
+            el('div',{style:{fontSize:"10px",color:recColor,fontWeight:"700"}},`توصية: ${rec}`)
+          ]),
+          el('div',{style:{textAlign:"left"}},[
+            el('div',{style:{fontSize:"13px",fontWeight:"800",color:pnl>=0?C.green:C.red}},`${pnl>=0?"+":""}${f(pnl,0)} ر`),
+            el('div',{style:{fontSize:"10px",color:pnl>=0?C.green:C.red}},`${pnlPct>=0?"+":""}${f(pnlPct)}%`),
+            pnl<=-s.buyPrice*s.shares*USD_RATE*0.03 && el('div',{style:{fontSize:"9px",color:C.red,fontWeight:"700",background:"rgba(255,45,122,.15)",borderRadius:"4px",padding:"2px 6px",marginTop:"2px"}},"🛑 وقف الخسارة!")
+          ])
+        ]);
+      })
+    ]),
+
+    // سجل الصفقات
+    tradeHistory.length>0 && el('div',{style:{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:"14px",padding:"14px",marginBottom:"14px"}},[
+      el('div',{style:{fontSize:"13px",fontWeight:"700",color:C.yellow,marginBottom:"12px"}},"📋 سجل صفقاتي"),
+      ...tradeHistory.slice(0,10).map((t,i)=>el('div',{style:{
+        display:"flex",justifyContent:"space-between",alignItems:"center",
+        padding:"8px 0",borderBottom:i<tradeHistory.length-1?"1px solid var(--border)":"none"
+      }},[
+        el('div',{},[
+          el('div',{style:{display:"flex",gap:"6px",alignItems:"center"}},[
+            el('span',{style:{fontSize:"10px",color:t.type==='buy'?C.green:C.red,background:t.type==='buy'?"rgba(0,255,136,.1)":"rgba(255,45,122,.1)",padding:"2px 8px",borderRadius:"5px",fontWeight:"700"}},t.type==='buy'?"شراء":"بيع"),
+            el('span',{style:{fontSize:"12px",fontWeight:"700",color:"var(--text)"}},t.symbol)
+          ]),
+          el('div',{style:{fontSize:"10px",color:"var(--text3)",marginTop:"2px"}},`${t.shares} سهم • $${f(t.buyPrice)} • ${new Date(t.date).toLocaleDateString('ar-SA')}`)
+        ]),
+        t.type==='sell' && el('div',{style:{fontSize:"12px",fontWeight:"800",color:t.profit>=0?C.green:C.red}},`${t.profit>=0?"+":""}${f(t.profit,0)} ر`)
+      ]))
+    ]),
+
+    !portfolioLoaded && el('div',{style:{textAlign:"center",padding:"30px 0",color:"var(--text3)"}},[
+      el('div',{style:{fontSize:"13px"}},"جاري تحميل بياناتك من السحابة...")
+    ]),
+
+    portfolioLoaded && portfolioStocks.length===0 && el('div',{style:{textAlign:"center",padding:"30px 0"}},[
+      el('div',{style:{fontSize:"40px",marginBottom:"12px"}},"📭"),
+      el('div',{style:{fontSize:"14px",color:"var(--text3)"}},"ما عندك أسهم بعد — سجّل أول صفقة! 🚀")
+    ])
+  ]);
+}
+
 // ===== MAIN RENDER =====
 function render() {
   const app = document.getElementById('app');
@@ -1148,6 +1383,7 @@ function render() {
     else if(state.tab==="market")  content.appendChild(renderMarketTab());
     else if(state.tab==="future")  content.appendChild(renderFutureTab());
     else if(state.tab==="tips")    content.appendChild(renderTipsTab());
+    else if(state.tab==="portfolio") content.appendChild(renderPortfolioTab());
 
     wrapper.appendChild(content);
     if(state.selected) wrapper.appendChild(renderModal());
