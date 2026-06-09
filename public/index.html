@@ -235,6 +235,10 @@ let state = {
   selected: null,
   catFilter: "الكل",
   searchQuery: "",
+  newSymbol: "",
+  newShares: "",
+  newPrice: "",
+  newTradeType: "buy",
   dataSource: "simulated",
   news: {},
   earnings: {}
@@ -721,7 +725,7 @@ function renderHeader() {
     const day = now.getUTCDay();
     if(day===0||day===6) return false;
     const mins = utcH*60+utcM;
-    return mins>=830&&mins<=2100; // 13:30-21:00 UTC
+    return mins>=810&&mins<=1200; // 13:30-20:00 UTC = 4:30م-11م بتوقيت السعودية
   })();
 
   return el('div',{style:{padding:"14px 14px 0",background:"var(--bg)",position:"sticky",top:0,zIndex:20}},[
@@ -1262,30 +1266,36 @@ function renderPortfolioTab() {
       el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"10px"}},[
         el('div',{},[
           el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"رمز السهم"),
-          el('input',{
-            type:"text",placeholder:"AAPL",id:"inp-symbol",
-            style:{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",
-                   borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",
-                   fontFamily:"inherit",boxSizing:"border-box"}
-          })
+          (() => {
+            const inp = document.createElement('input');
+            inp.type = "text"; inp.placeholder = "AAPL";
+            inp.value = state.newSymbol || '';
+            Object.assign(inp.style,{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",fontFamily:"inherit",boxSizing:"border-box"});
+            inp.oninput = e => { state.newSymbol = e.target.value; };
+            return inp;
+          })()
         ]),
         el('div',{},[
           el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"عدد الأسهم"),
-          el('input',{
-            type:"number",placeholder:"10",id:"inp-shares",
-            style:{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",
-                   borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",
-                   fontFamily:"inherit",boxSizing:"border-box"}
-          })
+          (() => {
+            const inp = document.createElement('input');
+            inp.type = "number"; inp.placeholder = "10";
+            inp.value = state.newShares || '';
+            Object.assign(inp.style,{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",fontFamily:"inherit",boxSizing:"border-box"});
+            inp.oninput = e => { state.newShares = e.target.value; };
+            return inp;
+          })()
         ]),
         el('div',{},[
           el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"السعر $"),
-          el('input',{
-            type:"number",placeholder:"150.00",id:"inp-price",
-            style:{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",
-                   borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",
-                   fontFamily:"inherit",boxSizing:"border-box"}
-          })
+          (() => {
+            const inp = document.createElement('input');
+            inp.type = "number"; inp.placeholder = "150.00";
+            inp.value = state.newPrice || '';
+            Object.assign(inp.style,{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",fontFamily:"inherit",boxSizing:"border-box"});
+            inp.oninput = e => { state.newPrice = e.target.value; };
+            return inp;
+          })()
         ])
       ]),
 
@@ -1294,17 +1304,15 @@ function renderPortfolioTab() {
         border:`1px solid ${C.green}`,color:C.green,borderRadius:"10px",
         padding:"10px",fontSize:"13px",fontWeight:"700"
       },async ()=>{
-        const sym = document.getElementById('inp-symbol').value.toUpperCase();
-        const shares = parseFloat(document.getElementById('inp-shares').value);
-        const price = parseFloat(document.getElementById('inp-price').value);
+        const sym = (state.newSymbol||'').toUpperCase();
+        const shares = parseFloat(state.newShares||0);
+        const price = parseFloat(state.newPrice||0);
         if(!sym||!shares||!price){alert('أكمل جميع الحقول');return;}
         const currentStock = state.stocks.find(s=>s.id===sym);
         const currentPrice = currentStock?.price||price;
-        const profit = newType==='sell' ? (price-price)*shares : 0;
-        await addTrade({symbol:sym,shares,buyPrice:price,type:newType,profit,currentPrice});
-        document.getElementById('inp-symbol').value='';
-        document.getElementById('inp-shares').value='';
-        document.getElementById('inp-price').value='';
+        const profit = state.newTradeType==='sell' ? (price-price)*shares : 0;
+        await addTrade({symbol:sym,shares,buyPrice:price,type:state.newTradeType||'buy',profit,currentPrice});
+        state.newSymbol=''; state.newShares=''; state.newPrice='';
         alert('✅ تم حفظ الصفقة في السحابة!');
       })
     ]),
