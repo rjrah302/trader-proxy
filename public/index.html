@@ -866,9 +866,10 @@ function renderRecTab() {
       el('div',{style:{marginTop:"10px",background:"rgba(0,255,136,.05)",borderRadius:"10px",padding:"10px 12px",display:"flex",justifyContent:"space-between"}},[
         txt("إجمالي الربح المتوقع",{fontSize:"12px",color:"var(--text3)"}),
         txt(`+${f(top3.reduce((sum,s,i)=>{
-          const p=[0.4,0.35,0.25][i];
-          const sh=Math.floor(state.capital*p*USD_RATE/s.priceInSar);
-          return sum+sh*s.priceInSar*(s.profitPct/100);
+          const p=[0.3,0.25,0.2,0.15,0.1][i]||0.1;
+          const sh=Math.floor(state.capital*p*USD_RATE/(s.priceInSar||1));
+          const profit=sh*(s.priceInSar||0)*((s.profitPct||0)/100);
+          return sum+(isNaN(profit)?0:profit);
         },0),0)} ر`,{fontSize:"15px",fontWeight:"900",color:C.green,textShadow:`0 0 10px ${C.green}`})
       ])
     ]),
