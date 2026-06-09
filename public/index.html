@@ -1263,16 +1263,31 @@ function renderPortfolioTab() {
       ]),
 
       // الحقول
-      el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"10px"}},[
-        el('div',{},[
-          el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"رمز السهم"),
+      el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"10px"}},[
+        el('div',{style:{gridColumn:"1 / -1"}},[
+          el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"4px"}},"اختار السهم"),
           (() => {
-            const inp = document.createElement('input');
-            inp.type = "text"; inp.placeholder = "AAPL";
-            inp.value = state.newSymbol || '';
-            Object.assign(inp.style,{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",fontFamily:"inherit",boxSizing:"border-box"});
-            inp.oninput = e => { state.newSymbol = e.target.value; };
-            return inp;
+            const sel = document.createElement('select');
+            Object.assign(sel.style,{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:"8px",padding:"8px",color:"var(--text)",fontSize:"12px",fontFamily:"inherit",boxSizing:"border-box",direction:"rtl"});
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = ''; defaultOpt.textContent = '-- اختار سهم --';
+            sel.appendChild(defaultOpt);
+            uniqueStocks.forEach(s => {
+              const opt = document.createElement('option');
+              opt.value = s.id;
+              const currentPrice = state.prices[s.id]?.price || '';
+              opt.textContent = `${s.name} (${s.id})${currentPrice?' - $'+Number(currentPrice).toFixed(2):''}`;
+              if(s.id === state.newSymbol) opt.selected = true;
+              sel.appendChild(opt);
+            });
+            sel.onchange = e => {
+              state.newSymbol = e.target.value;
+              // نضع السعر الحالي تلقائياً
+              const currentStock = state.stocks.find(x=>x.id===e.target.value);
+              if(currentStock) state.newPrice = currentStock.price.toFixed(2);
+              render();
+            };
+            return sel;
           })()
         ]),
         el('div',{},[
