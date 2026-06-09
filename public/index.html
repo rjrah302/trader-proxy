@@ -205,7 +205,9 @@ let state = {
   selected: null,
   catFilter: "الكل",
   searchQuery: "",
-  dataSource: "simulated"
+  dataSource: "simulated",
+  news: {},
+  earnings: {}
 };
 
 const CATS = {large:"كبيرة 💎", mid:"متوسطة 📊", small:"صغيرة 💰", future:"المستقبل 🚀"};
@@ -252,6 +254,20 @@ function calcIndicators(s, price) {
   if(volR > 1.3) { if(buy>sell) buy++; else sell++; }
   if(price <= bb_l) buy++; if(price >= bb_u) sell++;
   buy += peScore;
+
+  // ===== تأثير الأخبار =====
+  const stockNews = (state.news && state.news[s.id]) || [];
+  const posNews = stockNews.filter(n=>n.sentiment==='positive').length;
+  const negNews = stockNews.filter(n=>n.sentiment==='negative').length;
+  buy += posNews;
+  sell += negNews;
+
+  // ===== تأثير تقارير الأرباح =====
+  const earning = state.earnings && state.earnings[s.id];
+  if(earning && earning.daysUntil <= 3) {
+    // أرباح خلال 3 أيام = خطر عالي
+    sell += 2;
+  }
 
   const sig  = buy>sell+2?"شراء قوي":buy>sell?"شراء":sell>buy+2?"بيع قوي":sell>buy?"بيع":"انتظار";
   const sigC = sig.includes("شراء")?"green":sig.includes("بيع")?"red":"yellow";
@@ -308,10 +324,66 @@ function buildStocks() {
   });
 }
 
+// ===== FETCH NEWS & EARNINGS =====
+async function fetchNewsAndEarnings() {
+  const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
+  const symbols = uniqueStocks.slice(0,20).map(s=>s.id).join(','); // أهم 20 سهم للأخبار
+  
+  try {
+    // أخبار السوق
+    const newsUrl = `https://financialmodelingprep.com/api/v3/stock_news?tickers=${symbols}&limit=50&apikey=${apiKey}`;
+    const newsRes = await fetch(newsUrl);
+    const newsData = await newsRes.json();
+    
+    state.news = {};
+    if(Array.isArray(newsData)) {
+      newsData.forEach(n => {
+        const sym = n.symbol;
+        if(!state.news[sym]) state.news[sym] = [];
+        if(state.news[sym].length < 3) {
+          // تحليل بسيط للعنوان — إيجابي أو سلبي
+          const title = (n.title || '').toLowerCase();
+          const positive = ['beat','record','growth','surge','rise','up','gain','profit','strong','bullish','buy','upgrade'].some(w=>title.includes(w));
+          const negative = ['miss','fall','drop','decline','loss','cut','down','bearish','sell','downgrade','warning','risk'].some(w=>title.includes(w));
+          state.news[sym].push({
+            title: n.title,
+            sentiment: positive ? 'positive' : negative ? 'negative' : 'neutral',
+            date: n.publishedDate
+          });
+        }
+      });
+    }
+  } catch(e) {
+    state.news = {};
+  }
+
+  try {
+    // تقارير الأرباح القادمة
+    const today = new Date().toISOString().split('T')[0];
+    const nextWeek = new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0];
+    const earnUrl = `https://financialmodelingprep.com/api/v3/earning_calendar?from=${today}&to=${nextWeek}&apikey=${apiKey}`;
+    const earnRes = await fetch(earnUrl);
+    const earnData = await earnRes.json();
+    
+    state.earnings = {};
+    if(Array.isArray(earnData)) {
+      earnData.forEach(e => {
+        state.earnings[e.symbol] = {
+          date: e.date,
+          epsEstimate: e.epsEstimated,
+          daysUntil: Math.ceil((new Date(e.date) - new Date()) / (1000*60*60*24))
+        };
+      });
+    }
+  } catch(e) {
+    state.earnings = {};
+  }
+}
+
 async function loadData() {
   state.loading = true;
   render();
-  await fetchPrices();
+  await Promise.all([fetchPrices(), fetchNewsAndEarnings()]);
   buildStocks();
   calcRecs();
   state.loading = false;
