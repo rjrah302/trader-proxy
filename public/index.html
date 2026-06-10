@@ -1434,7 +1434,7 @@ function renderLongTermTab() {
               return el('div',{style:{fontSize:"12px",fontWeight:"800",color:C.orange}},`${saved} ر مجموع`);
             })()
           ]),
-          el('div',{style:{display:"flex",gap:"6px"}},[
+          el('div',{style:{display:"flex",gap:"6px",marginBottom:"6px"}},[
             ...[500,1000,2000].map(amt=>btn(`+${amt} ر`,{
               background:"var(--bg2)",border:`1px solid ${C.orange}44`,
               color:C.orange,borderRadius:"8px",padding:"5px 10px",
@@ -1444,6 +1444,26 @@ function renderLongTermTab() {
               localStorage.setItem('monthlyInvest', JSON.stringify(state.monthlyInvest));
               render();
             }))
+          ]),
+          el('div',{style:{display:"flex",gap:"6px"}},[
+            ...[500,1000,2000].map(amt=>btn(`-${amt} ر`,{
+              background:"var(--bg2)",border:"1px solid rgba(255,45,122,.3)",
+              color:C.red,borderRadius:"8px",padding:"5px 10px",
+              fontSize:"11px",fontWeight:"700",flex:"1"
+            },()=>{
+              state.monthlyInvest[s.id] = Math.max(0,(state.monthlyInvest[s.id]||0) - amt);
+              localStorage.setItem('monthlyInvest', JSON.stringify(state.monthlyInvest));
+              render();
+            })),
+            btn("🗑️ حذف",{
+              background:"rgba(255,45,122,.1)",border:`1px solid ${C.red}44`,
+              color:C.red,borderRadius:"8px",padding:"5px 10px",
+              fontSize:"11px",fontWeight:"700"
+            },()=>{
+              state.monthlyInvest[s.id] = 0;
+              localStorage.setItem('monthlyInvest', JSON.stringify(state.monthlyInvest));
+              render();
+            })
           ]),
           sharesPerMonth>0 && el('div',{style:{fontSize:"10px",color:"var(--text3)",marginTop:"5px",textAlign:"center"}},
             `500 ر = ${sharesPerMonth} سهم ≈ ${(sharesPerMonth*price*USD_RATE).toFixed(0)} ر`)
