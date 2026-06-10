@@ -1321,20 +1321,32 @@ function renderLongTermTab() {
 
 
 
-    // حاسبة الاستثمار الشهري
-    el('div',{style:{background:"var(--bg3)",border:`1px solid ${C.orange}33`,borderRadius:"14px",padding:"14px",marginBottom:"14px"}},[
-      el('div',{style:{fontSize:"13px",fontWeight:"700",color:C.orange,marginBottom:"12px"}},"🧮 حاسبة الاستثمار الشهري"),
-      el('div',{style:{fontSize:"12px",color:"var(--text3)",marginBottom:"10px"}},"لو استثمرت 500 ريال شهرياً في أقوى 5 أسهم:"),
-      el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"6px"}},[
-        ...[
-          {l:"بعد سنة",v:`${(500*12*1.2).toFixed(0)} ر`,c:C.yellow,d:"+20%"},
-          {l:"بعد 3 سنوات",v:`${(500*36*1.8).toFixed(0)} ر`,c:C.green,d:"+80%"},
-          {l:"بعد 5 سنوات",v:`${(500*60*2.5).toFixed(0)} ر`,c:C.orange,d:"+150%"}
-        ].map(x=>el('div',{style:{background:"var(--bg2)",borderRadius:"10px",padding:"10px",textAlign:"center"}},[
-          el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"4px"}},x.l),
-          el('div',{style:{fontSize:"14px",fontWeight:"900",color:x.c,textShadow:`0 0 8px ${x.c}`}},x.v),
-          el('div',{style:{fontSize:"10px",color:x.c}},x.d)
-        ]))
+    // شرح تواريخ الأرباح
+    el('div',{style:{background:"var(--bg3)",border:`1px solid ${C.blue}33`,borderRadius:"14px",padding:"14px",marginBottom:"14px"}},[
+      el('div',{style:{fontSize:"13px",fontWeight:"700",color:C.blue,marginBottom:"12px"}},"🗓️ دليل تواريخ الأرباح"),
+      el('div',{style:{fontSize:"12px",color:"var(--text3)",marginBottom:"10px"}},"كل شركة تعلن أرباحها كل 3 أشهر — هذا يؤثر على سعر السهم بشكل كبير:"),
+      el('div',{style:{display:"flex",flexDirection:"column",gap:"8px"}},[
+        el('div',{style:{background:"rgba(0,255,136,.08)",border:`1px solid ${C.green}33`,borderRadius:"10px",padding:"10px",display:"flex",alignItems:"center",gap:"10px"}},[
+          txt("🟢",{fontSize:"18px",flexShrink:"0"}),
+          el('div',{},[
+            el('div',{style:{fontSize:"12px",fontWeight:"700",color:C.green,marginBottom:"2px"}},"أكثر من 30 يوم — وقت مناسب للشراء"),
+            el('div',{style:{fontSize:"11px",color:"var(--text3)"}},"السوق هادئ والسعر مستقر — أفضل وقت لتضيف لاستثمارك")
+          ])
+        ]),
+        el('div',{style:{background:"rgba(255,224,51,.08)",border:`1px solid ${C.yellow}33`,borderRadius:"10px",padding:"10px",display:"flex",alignItems:"center",gap:"10px"}},[
+          txt("🟡",{fontSize:"18px",flexShrink:"0"}),
+          el('div',{},[
+            el('div',{style:{fontSize:"12px",fontWeight:"700",color:C.yellow,marginBottom:"2px"}},"أقل من 30 يوم — راقب"),
+            el('div',{style:{fontSize:"11px",color:"var(--text3)"}},"السوق يبدأ يتحرك مع التوقعات — تابع الأخبار قبل الشراء")
+          ])
+        ]),
+        el('div',{style:{background:"rgba(255,45,122,.08)",border:`1px solid ${C.red}33`,borderRadius:"10px",padding:"10px",display:"flex",alignItems:"center",gap:"10px"}},[
+          txt("🔴",{fontSize:"18px",flexShrink:"0"}),
+          el('div',{},[
+            el('div',{style:{fontSize:"12px",fontWeight:"700",color:C.red,marginBottom:"2px"}},"أقل من 7 أيام — كن حذراً!"),
+            el('div',{style:{fontSize:"11px",color:"var(--text3)"}},"خطر التقلب عالي — انتظر بعد الإعلان ثم قرر")
+          ])
+        ])
       ])
     ]),
 
