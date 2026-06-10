@@ -241,7 +241,9 @@ let state = {
   newTradeType: "buy",
   dataSource: "simulated",
   news: {},
-  earnings: {}
+  earnings: {},
+  ltEarnings: {},
+  monthlyInvest: {}
 };
 
 const CATS = {large:"كبيرة 💎", mid:"متوسطة 📊", small:"صغيرة 💰", future:"المستقبل 🚀"};
@@ -414,10 +416,31 @@ async function fetchNewsAndEarnings() {
   }
 }
 
+async function fetchLongTermEarnings() {
+  const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
+  const symbols = LONG_TERM.map(s=>s.id).join(',');
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const future = new Date(Date.now() + 120*24*60*60*1000).toISOString().split('T')[0];
+    const url = `https://financialmodelingprep.com/api/v3/earning_calendar?from=${today}&to=${future}&apikey=${apiKey}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    state.ltEarnings = {};
+    if(Array.isArray(data)) {
+      data.forEach(e => {
+        if(symbols.includes(e.symbol)) {
+          const days = Math.ceil((new Date(e.date) - new Date()) / (1000*60*60*24));
+          state.ltEarnings[e.symbol] = {date: e.date, days};
+        }
+      });
+    }
+  } catch(e) { state.ltEarnings = {}; }
+}
+
 async function loadData() {
   state.loading = true;
   render();
-  await Promise.all([fetchPrices(), fetchNewsAndEarnings()]);
+  await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
   buildStocks();
   calcRecs();
   state.loading = false;
@@ -824,7 +847,8 @@ function renderHeader() {
         {id:"market",l:"📊 السوق",c:C.blue},
         {id:"future",l:"🚀 المستقبل",c:C.purple},
         {id:"tips",l:"📚 تعلم",c:C.green},
-        {id:"portfolio",l:"💼 محفظتي",c:C.purple}
+        {id:"portfolio",l:"💼 محفظتي",c:C.purple},
+        {id:"longterm",l:"📈 استثمار",c:C.orange}
       ].map(t=>btn(t.l,{
         flexShrink:"0",
         background:state.tab===t.id?`${t.c}15`:"var(--bg3)",
@@ -1041,6 +1065,48 @@ function renderTipsTab() {
   ];
 
   return el('div',{style:{paddingTop:"8px"}},[
+
+    // ===== ملخص التبويبات =====
+    el('div',{style:{background:"linear-gradient(135deg,rgba(0,200,255,.06),rgba(180,79,255,.06))",border:"1px solid rgba(0,200,255,.2)",borderRadius:"14px",padding:"14px",marginBottom:"14px"}},[
+      el('div',{style:{fontSize:"14px",fontWeight:"900",color:C.blue,marginBottom:"12px"}},"🗺️ دليل الأداة — ايش كل خانة؟"),
+      
+      // توصيتي
+      el('div',{style:{background:"rgba(255,224,51,.06)",borderRadius:"10px",padding:"12px",marginBottom:"8px",border:`1px solid ${C.yellow}22`}},[
+        el('div',{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}},[
+          txt("🎯",{fontSize:"16px"}),
+          el('div',{style:{fontSize:"13px",fontWeight:"800",color:C.yellow}},"توصيتي")
+        ]),
+        el('div',{style:{fontSize:"12px",color:"var(--text2)",lineHeight:"1.8"}},"أسهم كبيرة ومستقرة للتداول اليومي والأسبوعي — ربح 2-5% — استخدم 90% من رأسمالك هنا — التوصيات تتجدد يومياً بناءً على 8 مؤشرات فنية وأخبار حقيقية")
+      ]),
+
+      // المستقبل
+      el('div',{style:{background:"rgba(180,79,255,.06)",borderRadius:"10px",padding:"12px",marginBottom:"8px",border:`1px solid ${C.purple}22`}},[
+        el('div',{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}},[
+          txt("🚀",{fontSize:"16px"}),
+          el('div',{style:{fontSize:"13px",fontWeight:"800",color:C.purple}},"المستقبل")
+        ]),
+        el('div',{style:{fontSize:"12px",color:"var(--text2)",lineHeight:"1.8"}},"أسهم ناشئة ومتقلبة للمضاربة على ارتفاع ضخم محتمل — ربح 100%+ أو خسارة كبيرة — استخدم 10% فقط من رأسمالك — تحتاج صبر أشهر أو سنوات")
+      ]),
+
+      // استثمار
+      el('div',{style:{background:"rgba(255,122,0,.06)",borderRadius:"10px",padding:"12px",marginBottom:"8px",border:`1px solid ${C.orange}22`}},[
+        el('div',{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}},[
+          txt("📈",{fontSize:"16px"}),
+          el('div',{style:{fontSize:"13px",fontWeight:"800",color:C.orange}},"استثمار")
+        ]),
+        el('div',{style:{fontSize:"12px",color:"var(--text2)",lineHeight:"1.8"}},"أقوى 10 أسهم نمو عالمية للاستثمار طويل المدى — احتفظ بها 3-5 سنوات — استثمر مبلغاً ثابتاً كل شهر بدون ضغط أو متابعة يومية")
+      ]),
+
+      // محفظتي
+      el('div',{style:{background:"rgba(180,79,255,.06)",borderRadius:"10px",padding:"12px",border:`1px solid ${C.purple}22`}},[
+        el('div',{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}},[
+          txt("💼",{fontSize:"16px"}),
+          el('div',{style:{fontSize:"13px",fontWeight:"800",color:C.purple}},"محفظتي")
+        ]),
+        el('div',{style:{fontSize:"12px",color:"var(--text2)",lineHeight:"1.8"}},"سجّل كل صفقاتك وتابع ربحك وخسارتك لحظياً — محفوظة في السحابة من أي جهاز — تحذير تلقائي عند وقف الخسارة")
+      ])
+    ]),
+
     ...tips.map(t=>el('div',{style:{
       background:"var(--card)",border:`1px solid ${t.color}22`,
       borderRadius:"14px",padding:"14px",marginBottom:"10px"
@@ -1163,6 +1229,228 @@ function renderLoading() {
     }}),
     el('div',{style:{fontSize:"14px",color:C.green,textShadow:`0 0 10px ${C.green}`}},"جاري تحميل السوق..."),
     el('div',{style:{fontSize:"11px",color:"var(--text3)"}},"الاتصال بـ FMP API")
+  ]);
+}
+
+// ===== LONG TERM INVESTMENT TAB =====
+const LONG_TERM = [{"id": "NVDA", "name": "Nvidia", "why": "قائد الذكاء الاصطناعي — احتكار شبه كامل", "sector": "AI", "growth": "122%", "market": "تريليونات", "score": 98}, {"id": "MSFT", "name": "Microsoft", "why": "Azure + AI + Office — إمبراطورية لا تتوقف", "sector": "سحابة/AI", "growth": "18%", "market": "ضخم جداً", "score": 95}, {"id": "AMZN", "name": "Amazon", "why": "AWS أكبر سحابة + تجارة إلكترونية عالمية", "sector": "سحابة/تجارة", "growth": "23%", "market": "تريليونات", "score": 94}, {"id": "GOOGL", "name": "Alphabet", "why": "بحث + YouTube + Cloud + Gemini AI", "sector": "AI/إعلانات", "growth": "15%", "market": "ضخم", "score": 93}, {"id": "META", "name": "Meta", "why": "3 مليار مستخدم + AI + نظارات المستقبل", "sector": "تواصل/AI", "growth": "25%", "market": "ضخم", "score": 92}, {"id": "LLY", "name": "Eli Lilly", "why": "أدوية السمنة والسكري — طلب عالمي هائل", "sector": "دواء", "growth": "36%", "market": "تريليون+", "score": 91}, {"id": "TSLA", "name": "Tesla", "why": "EV + طاقة + روبوتات + ذاتي القيادة", "sector": "EV/تقنية", "growth": "19%", "market": "ضخم", "score": 88}, {"id": "NOW", "name": "ServiceNow", "why": "برمجيات المؤسسات — عقود حكومية ضخمة", "sector": "سحابة", "growth": "22%", "market": "كبير", "score": 87}, {"id": "PLTR", "name": "Palantir", "why": "بيانات + AI للحكومات والجيش", "sector": "AI/دفاع", "growth": "30%", "market": "ضخم", "score": 86}, {"id": "ORCL", "name": "Oracle", "why": "قواعد بيانات + سحابة + AI — نمو متسارع", "sector": "سحابة", "growth": "17%", "market": "كبير", "score": 85}];
+
+function renderLongTermTab() {
+  const monthly = 500;
+  // تحميل الاستثمارات المحفوظة
+  if(!state.monthlyInvestLoaded) {
+    const saved = localStorage.getItem('monthlyInvest');
+    if(saved) state.monthlyInvest = JSON.parse(saved);
+    state.monthlyInvestLoaded = true;
+  }
+  const totalInvested = Object.values(state.monthlyInvest).reduce((sum,v)=>sum+v,0);
+
+  return el('div',{style:{paddingTop:"8px"}},[
+    // هيدر
+    (() => {
+      // حساب الأيام المتبقية للمراجعة الربع سنوية
+      const lastReview = localStorage.getItem('lastReview') || '2026-06-10';
+      const lastDate = new Date(lastReview);
+      const nextReview = new Date(lastDate);
+      nextReview.setDate(nextReview.getDate() + 90);
+      const daysLeft = Math.ceil((nextReview - new Date()) / (1000*60*60*24));
+      const isTime = daysLeft <= 0;
+      const progressPct = Math.max(0, Math.min(100, ((90-daysLeft)/90)*100));
+      
+      return el('div',{style:{
+        background:"linear-gradient(135deg,rgba(255,122,0,.08),rgba(255,224,51,.08))",
+        border:`1px solid ${isTime?C.red:C.orange}44`,
+        borderRadius:"14px",padding:"14px",marginBottom:"14px"
+      }},[
+        el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px"}},[
+          el('div',{},[
+            el('div',{style:{fontSize:"16px",fontWeight:"900",color:C.orange,marginBottom:"4px",textShadow:`0 0 10px ${C.orange}`}},"📈 الاستثمار طويل المدى"),
+            el('div',{style:{fontSize:"12px",color:"var(--text3)",lineHeight:"1.8"}},"استثمر مبلغاً ثابتاً كل شهر في أقوى أسهم النمو")
+          ]),
+          el('div',{style:{textAlign:"left",flexShrink:"0"}},[
+            el('div',{style:{
+              background:isTime?"rgba(255,45,122,.15)":"rgba(255,122,0,.15)",
+              border:`1px solid ${isTime?C.red:C.orange}44`,
+              borderRadius:"10px",padding:"6px 10px",textAlign:"center"
+            }},[
+              el('div',{style:{fontSize:"20px",fontWeight:"900",color:isTime?C.red:C.orange}},isTime?"!":""+Math.abs(daysLeft)),
+              el('div',{style:{fontSize:"9px",color:"var(--text3)"}},isTime?"حان وقت المراجعة":"يوم متبقي")
+            ])
+          ])
+        ]),
+        
+        // شريط التقدم
+        el('div',{style:{marginBottom:"8px"}},[
+          el('div',{style:{display:"flex",justifyContent:"space-between",marginBottom:"4px"}},[
+            txt("آخر مراجعة: "+lastReview,{fontSize:"10px",color:"var(--text3)"}),
+            txt("المراجعة القادمة: "+nextReview.toISOString().split("T")[0],{fontSize:"10px",color:"var(--text3)"})
+          ]),
+          el('div',{style:{height:"6px",background:"var(--bg3)",borderRadius:"3px",overflow:"hidden"}},[
+            el('div',{style:{
+              height:"100%",
+              width:`${progressPct}%`,
+              background:isTime?C.red:`linear-gradient(90deg,${C.orange},${C.yellow})`,
+              borderRadius:"3px",transition:"width .8s"
+            }})
+          ])
+        ]),
+
+        // زر المراجعة
+        isTime && btn("🔄 سجّل مراجعة جديدة الآن",{
+          width:"100%",background:"rgba(255,45,122,.15)",
+          border:`1px solid ${C.red}`,color:C.red,
+          borderRadius:"10px",padding:"8px",fontSize:"12px",fontWeight:"700",
+          marginTop:"4px"
+        },()=>{
+          localStorage.setItem('lastReview', new Date().toISOString().split('T')[0]);
+          alert('✅ تم تسجيل المراجعة! العداد يبدأ من جديد.');
+          render();
+        })
+      ]);
+    })(),
+
+    // إجمالي استثماراتك
+    totalInvested>0 && el('div',{style:{
+      background:`${C.orange}10`,border:`1px solid ${C.orange}33`,
+      borderRadius:"12px",padding:"10px 14px",marginBottom:"10px",
+      display:"flex",justifyContent:"space-between",alignItems:"center"
+    }},[
+      txt("💰 إجمالي استثماراتك",{fontSize:"12px",color:"var(--text3)"}),
+      txt(`${totalInvested.toLocaleString()} ر`,{fontSize:"16px",fontWeight:"900",color:C.orange,textShadow:`0 0 8px ${C.orange}`})
+    ]),
+
+
+
+    // حاسبة الاستثمار الشهري
+    el('div',{style:{background:"var(--bg3)",border:`1px solid ${C.orange}33`,borderRadius:"14px",padding:"14px",marginBottom:"14px"}},[
+      el('div',{style:{fontSize:"13px",fontWeight:"700",color:C.orange,marginBottom:"12px"}},"🧮 حاسبة الاستثمار الشهري"),
+      el('div',{style:{fontSize:"12px",color:"var(--text3)",marginBottom:"10px"}},"لو استثمرت 500 ريال شهرياً في أقوى 5 أسهم:"),
+      el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"6px"}},[
+        ...[
+          {l:"بعد سنة",v:`${(500*12*1.2).toFixed(0)} ر`,c:C.yellow,d:"+20%"},
+          {l:"بعد 3 سنوات",v:`${(500*36*1.8).toFixed(0)} ر`,c:C.green,d:"+80%"},
+          {l:"بعد 5 سنوات",v:`${(500*60*2.5).toFixed(0)} ر`,c:C.orange,d:"+150%"}
+        ].map(x=>el('div',{style:{background:"var(--bg2)",borderRadius:"10px",padding:"10px",textAlign:"center"}},[
+          el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"4px"}},x.l),
+          el('div',{style:{fontSize:"14px",fontWeight:"900",color:x.c,textShadow:`0 0 8px ${x.c}`}},x.v),
+          el('div',{style:{fontSize:"10px",color:x.c}},x.d)
+        ]))
+      ])
+    ]),
+
+    // أفضل 10 أسهم للاستثمار طويل المدى
+    el('div',{style:{fontSize:"13px",fontWeight:"700",color:C.orange,marginBottom:"10px"}},"🏆 أفضل 10 أسهم للاستثمار طويل المدى"),
+    
+    ...LONG_TERM.map((s,i)=>{
+      const current = state.stocks.find(x=>x.id===s.id);
+      const price = current?.price||0;
+      const sharesPerMonth = Math.floor((monthly*0.1*USD_RATE)/(price||1));
+      
+      return el('div',{style:{
+        background:"var(--card)",
+        border:`1px solid ${C.orange}22`,
+        borderRadius:"14px",padding:"14px",
+        marginBottom:"10px",position:"relative",overflow:"hidden"
+      }},[
+        el('div',{style:{position:"absolute",top:0,left:0,right:0,height:"2px",background:`linear-gradient(90deg,transparent,${C.orange},transparent)`}}),
+        
+        // الرأس
+        el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"10px"}},[
+          el('div',{},[
+            el('div',{style:{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}},[
+              el('div',{style:{
+                width:"24px",height:"24px",borderRadius:"6px",
+                background:`${C.orange}20`,border:`1px solid ${C.orange}44`,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:"12px",fontWeight:"900",color:C.orange
+              }},String(i+1)),
+              txt(s.sector,{fontSize:"10px",color:"var(--text3)"})
+            ]),
+            el('div',{style:{fontSize:"15px",fontWeight:"900",color:"var(--text)"}},s.name),
+            el('div',{style:{fontSize:"11px",color:"var(--text3)"}},s.id)
+          ]),
+          el('div',{style:{textAlign:"left"}},[
+            el('div',{style:{
+              background:`${C.orange}15`,border:`1px solid ${C.orange}44`,
+              color:C.orange,padding:"4px 10px",borderRadius:"8px",
+              fontWeight:"900",fontSize:"12px",marginBottom:"4px"
+            }},`${s.score}/100`),
+            price>0 && el('div',{style:{fontSize:"11px",color:"var(--text3)"}},`$${price.toFixed(2)}`)
+          ])
+        ]),
+
+        // السبب
+        el('div',{style:{background:"var(--bg3)",borderRadius:"8px",padding:"8px 10px",marginBottom:"10px"}},[
+          el('div',{style:{fontSize:"11px",color:C.yellow,fontWeight:"700",marginBottom:"4px"}},"💡 لماذا هذا السهم؟"),
+          txt(s.why,{fontSize:"12px",color:"var(--text2)",lineHeight:"1.6"})
+        ]),
+
+        // معايير النمو
+        el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"5px",marginBottom:"10px"}},[
+          el('div',{style:{background:"rgba(0,255,136,.06)",borderRadius:"8px",padding:"7px",border:`1px solid ${C.green}22`}},[
+            el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"📈 نمو الإيرادات"),
+            el('div',{style:{fontSize:"12px",fontWeight:"700",color:C.green,textShadow:`0 0 6px ${C.green}`}},s.growth)
+          ]),
+          el('div',{style:{background:"rgba(0,200,255,.06)",borderRadius:"8px",padding:"7px",border:`1px solid ${C.blue}22`}},[
+            el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"🌍 حجم السوق"),
+            el('div',{style:{fontSize:"12px",fontWeight:"700",color:C.blue,textShadow:`0 0 6px ${C.blue}`}},s.market)
+          ]),
+          el('div',{style:{
+            background:s.score>=90?"rgba(0,255,136,.06)":s.score>=80?"rgba(255,224,51,.06)":"rgba(255,122,0,.06)",
+            borderRadius:"8px",padding:"7px",
+            border:`1px solid ${s.score>=90?C.green:s.score>=80?C.yellow:C.orange}22`
+          }},[
+            el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"⭐ التقييم"),
+            el('div',{style:{
+              fontSize:"12px",fontWeight:"700",
+              color:s.score>=90?C.green:s.score>=80?C.yellow:C.orange,
+              textShadow:`0 0 6px ${s.score>=90?C.green:s.score>=80?C.yellow:C.orange}`
+            }},s.score>=90?"ممتاز ✅":s.score>=80?"جيد جداً":"جيد")
+          ])
+        ]),
+
+        // تاريخ الأرباح
+        (() => {
+          const earn = state.ltEarnings && state.ltEarnings[s.id];
+          if(!earn) return null;
+          const col = earn.days<=7?C.red:earn.days<=30?C.yellow:C.green;
+          const msg = earn.days<=7?"⚠️ تقرير الأرباح قريب — كن حذراً!":earn.days<=30?"🟡 تقرير الأرباح خلال شهر":"🟢 وقت مناسب للشراء";
+          return el('div',{style:{
+            background:`${col}10`,border:`1px solid ${col}33`,
+            borderRadius:"8px",padding:"7px 10px",marginBottom:"8px",
+            display:"flex",justifyContent:"space-between",alignItems:"center"
+          }},[
+            txt(msg,{fontSize:"11px",color:col,fontWeight:"700"}),
+            txt(`${earn.days} يوم • ${earn.date}`,{fontSize:"10px",color:"var(--text3)"})
+          ]);
+        })(),
+
+        // الاستثمار الشهري
+        el('div',{style:{background:"var(--bg3)",borderRadius:"8px",padding:"8px 10px"}},[
+          el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}},[
+            txt("💰 استثمارك الشهري",{fontSize:"11px",color:"var(--text3)",fontWeight:"700"}),
+            (() => {
+              const saved = state.monthlyInvest[s.id] || 0;
+              return el('div',{style:{fontSize:"12px",fontWeight:"800",color:C.orange}},`${saved} ر مجموع`);
+            })()
+          ]),
+          el('div',{style:{display:"flex",gap:"6px"}},[
+            ...[500,1000,2000].map(amt=>btn(`+${amt} ر`,{
+              background:"var(--bg2)",border:`1px solid ${C.orange}44`,
+              color:C.orange,borderRadius:"8px",padding:"5px 10px",
+              fontSize:"11px",fontWeight:"700",flex:"1"
+            },()=>{
+              state.monthlyInvest[s.id] = (state.monthlyInvest[s.id]||0) + amt;
+              localStorage.setItem('monthlyInvest', JSON.stringify(state.monthlyInvest));
+              render();
+            }))
+          ]),
+          sharesPerMonth>0 && el('div',{style:{fontSize:"10px",color:"var(--text3)",marginTop:"5px",textAlign:"center"}},
+            `500 ر = ${sharesPerMonth} سهم ≈ ${(sharesPerMonth*price*USD_RATE).toFixed(0)} ر`)
+        ])
+      ]);
+    }),
+
   ]);
 }
 
@@ -1407,6 +1695,7 @@ function render() {
     else if(state.tab==="future")  content.appendChild(renderFutureTab());
     else if(state.tab==="tips")    content.appendChild(renderTipsTab());
     else if(state.tab==="portfolio") content.appendChild(renderPortfolioTab());
+    else if(state.tab==="longterm")  content.appendChild(renderLongTermTab());
 
     wrapper.appendChild(content);
     if(state.selected) wrapper.appendChild(renderModal());
