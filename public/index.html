@@ -247,7 +247,8 @@ let state = {
   earnings: {},
   ltEarnings: {},
   monthlyInvest: {},
-  realIndicators: {}
+  realIndicators: {},
+  companyProfiles: {}
 };
 
 const CATS = {large:"كبيرة 💎", mid:"متوسطة 📊", small:"صغيرة 💰", future:"المستقبل 🚀"};
@@ -270,6 +271,11 @@ function calcIndicators(s, price) {
   const seed = dailySeed(s.id);
   const beta = s.beta || 1;
   const real = state.realIndicators && state.realIndicators[s.id];
+  const profile = state.companyProfiles && state.companyProfiles[s.id];
+  
+  // نستخدم Beta الحقيقي إذا متوفر
+  const realBeta = profile?.beta || beta;
+  const realAvgVol = profile?.avgVolume || 0;
 
   // نستخدم المؤشرات الحقيقية إذا متوفرة — وإلا نستخدم التقريبية
   const rsi  = real ? real.rsi  : seededRnd(seed+1, 22, 78);
@@ -283,7 +289,7 @@ function calcIndicators(s, price) {
   const bb_l = real ? real.bb_lower : price * (1 - seededRnd(seed+9, 0.01, 0.03));
 
   const vol     = Math.floor(seededRnd(seed+6, 500000, 15000000));
-  const avgVol  = Math.floor(seededRnd(seed+7, 800000, 8000000));
+  const avgVol  = realAvgVol > 0 ? realAvgVol : Math.floor(seededRnd(seed+7, 800000, 8000000));
   const volR    = vol / avgVol;
   const sup     = price * (1 - seededRnd(seed+10, 0.008, 0.025));
   const res     = price * (1 + seededRnd(seed+11, 0.008, 0.025));
@@ -323,6 +329,32 @@ function calcIndicators(s, price) {
           profitPct:Math.abs(res-price)/price*100,indicatorsReal:isReal};
 }
 
+// ===== FETCH COMPANY PROFILES (Beta + Volume + MarketCap) =====
+async function fetchCompanyProfiles() {
+  const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
+  state.companyProfiles = {};
+
+  for(const s of uniqueStocks) {
+    try {
+      const url = `https://financialmodelingprep.com/stable/profile?symbol=${s.id}&apikey=${apiKey}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const profile = Array.isArray(data) ? data[0] : null;
+      if(profile) {
+        state.companyProfiles[s.id] = {
+          beta: profile.beta || s.beta,
+          avgVolume: profile.averageVolume || 0,
+          marketCap: profile.marketCap || 0,
+          sector: profile.sector || s.sector,
+          employees: profile.fullTimeEmployees || 0,
+          lastDividend: profile.lastDividend || 0
+        };
+      }
+      await new Promise(r => setTimeout(r, 150));
+    } catch(e) {}
+  }
+}
+
 // ===== FETCH HISTORICAL DATA & REAL INDICATORS =====
 async function fetchHistoricalIndicators() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
@@ -335,7 +367,7 @@ async function fetchHistoricalIndicators() {
   for(const sym of topSymbols) {
     await (async (sym) => {
     try {
-      const url = `https://financialmodelingprep.com/api/v3/historical-price-full/${sym}?timeseries=50&apikey=${apiKey}`;
+      const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=50&apikey=${apiKey}`;
       const res = await fetch(url);
       const data = await res.json();
       const prices = (data.historical || []).map(d => d.close).reverse();
@@ -443,7 +475,7 @@ async function fetchNewsAndEarnings() {
   
   try {
     // أخبار السوق
-    const newsUrl = `https://financialmodelingprep.com/api/v3/stock_news?tickers=${symbols}&limit=50&apikey=${apiKey}`;
+    const newsUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbols}&limit=50&apikey=${apiKey}`;
     const newsRes = await fetch(newsUrl);
     const newsData = await newsRes.json();
     
@@ -473,7 +505,7 @@ async function fetchNewsAndEarnings() {
     // تقارير الأرباح القادمة
     const today = new Date().toISOString().split('T')[0];
     const nextWeek = new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0];
-    const earnUrl = `https://financialmodelingprep.com/api/v3/earning_calendar?from=${today}&to=${nextWeek}&apikey=${apiKey}`;
+    const earnUrl = `https://financialmodelingprep.com/stable/earning-calendar?from=${today}&to=${nextWeek}&apikey=${apiKey}`;
     const earnRes = await fetch(earnUrl);
     const earnData = await earnRes.json();
     
@@ -498,7 +530,7 @@ async function fetchLongTermEarnings() {
   try {
     const today = new Date().toISOString().split('T')[0];
     const future = new Date(Date.now() + 120*24*60*60*1000).toISOString().split('T')[0];
-    const url = `https://financialmodelingprep.com/api/v3/earning_calendar?from=${today}&to=${future}&apikey=${apiKey}`;
+    const url = `https://financialmodelingprep.com/stable/earning-calendar?from=${today}&to=${future}&apikey=${apiKey}`;
     const res = await fetch(url);
     const data = await res.json();
     state.ltEarnings = {};
@@ -530,7 +562,12 @@ async function loadData() {
 
   // نجيب البيانات التاريخية مرة واحدة فقط لما السوق يفتح
   if(state.marketOpen && !state.historicalFetched) {
-    await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings(), fetchHistoricalIndicators()]);
+    await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
+  // نجيب profiles و indicators مرة واحدة عند فتح السوق
+  if(state.marketOpen && !state.historicalFetched) {
+    fetchCompanyProfiles();
+    fetchHistoricalIndicators();
+  }
     state.historicalFetched = true;
   } else {
     await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
@@ -803,6 +840,14 @@ function recCard(s, rank, pct) {
             fontSize:"14px",fontWeight:"900",color:rc
           }},rank),
           txt(s.sector,{fontSize:"10px",color:"var(--text3)"}),
+          (() => {
+            const profile = state.companyProfiles && state.companyProfiles[s.id];
+            if(!profile?.marketCap) return null;
+            const mc = profile.marketCap >= 1e12 ? `${(profile.marketCap/1e12).toFixed(1)}T` :
+                       profile.marketCap >= 1e9  ? `${(profile.marketCap/1e9).toFixed(0)}B` : null;
+            if(!mc) return null;
+            return el('span',{style:{fontSize:"9px",color:"var(--text3)",background:"var(--bg3)",padding:"1px 5px",borderRadius:"3px"}},`💰${mc}`);
+          })(),
           el('span',{style:{fontSize:"9px",color:catColor(s.cat),background:`${catColor(s.cat)}15`,padding:"1px 6px",borderRadius:"4px"}},CATS[s.cat]||s.cat)
         ]),
         el('div',{style:{fontSize:"17px",fontWeight:"900",color:"var(--text)"}},s.name),
