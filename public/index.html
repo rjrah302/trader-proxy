@@ -240,10 +240,14 @@ let state = {
   newPrice: "",
   newTradeType: "buy",
   dataSource: "simulated",
+  marketOpen: false,
+  lastMarketRecs: null,  // آخر توصيات وقت السوق مفتوح
+  historicalFetched: false, // هل جلبنا البيانات التاريخية اليوم
   news: {},
   earnings: {},
   ltEarnings: {},
-  monthlyInvest: {}
+  monthlyInvest: {},
+  realIndicators: {}
 };
 
 const CATS = {large:"كبيرة 💎", mid:"متوسطة 📊", small:"صغيرة 💰", future:"المستقبل 🚀"};
@@ -265,22 +269,27 @@ function dailySeed(id) {
 function calcIndicators(s, price) {
   const seed = dailySeed(s.id);
   const beta = s.beta || 1;
-  const rsi     = seededRnd(seed+1, 22, 78);
-  const ma20    = price * (1 + seededRnd(seed+2, -0.006, 0.006));
-  const ma50    = price * (1 + seededRnd(seed+3, -0.018, 0.018));
-  const macd    = seededRnd(seed+4, -1.5, 1.5);
-  const macdSig = macd + seededRnd(seed+5, -0.4, 0.4);
-  const macdH   = macd - macdSig;
+  const real = state.realIndicators && state.realIndicators[s.id];
+
+  // نستخدم المؤشرات الحقيقية إذا متوفرة — وإلا نستخدم التقريبية
+  const rsi  = real ? real.rsi  : seededRnd(seed+1, 22, 78);
+  const ma20 = real ? real.ma20 : price * (1 + seededRnd(seed+2, -0.006, 0.006));
+  const ma50 = real ? real.ma50 : price * (1 + seededRnd(seed+3, -0.018, 0.018));
+  const macdH= real ? real.macdHist : (() => {
+    const macd = seededRnd(seed+4, -1.5, 1.5);
+    return macd - (macd + seededRnd(seed+5, -0.4, 0.4));
+  })();
+  const bb_u = real ? real.bb_upper : price * (1 + seededRnd(seed+8, 0.01, 0.03));
+  const bb_l = real ? real.bb_lower : price * (1 - seededRnd(seed+9, 0.01, 0.03));
+
   const vol     = Math.floor(seededRnd(seed+6, 500000, 15000000));
   const avgVol  = Math.floor(seededRnd(seed+7, 800000, 8000000));
   const volR    = vol / avgVol;
-  const bb_u    = price * (1 + seededRnd(seed+8, 0.01, 0.03));
-  const bb_l    = price * (1 - seededRnd(seed+9, 0.01, 0.03));
   const sup     = price * (1 - seededRnd(seed+10, 0.008, 0.025));
   const res     = price * (1 + seededRnd(seed+11, 0.008, 0.025));
-  // P/E تقريبي
   const pe      = seededRnd(seed+12, 10, 60);
   const peScore = pe < 20 ? 2 : pe < 35 ? 1 : 0;
+  const isReal  = !!real;
 
   let buy=0, sell=0;
   if(rsi < 35) buy++; if(rsi > 65) sell++;
@@ -311,7 +320,74 @@ function calcIndicators(s, price) {
 
   return {rsi,ma20,ma50,macdH,vol,avgVol,volR,bb_u,bb_l,sup,res,pe,
           signal:sig,signalColor:sigC,strength:str,buySignals:buy,sellSignals:sell,
-          profitPct:Math.abs(res-price)/price*100};
+          profitPct:Math.abs(res-price)/price*100,indicatorsReal:isReal};
+}
+
+// ===== FETCH HISTORICAL DATA & REAL INDICATORS =====
+async function fetchHistoricalIndicators() {
+  const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
+  // نجيب كل الأسهم — يتم مرة واحدة فقط عند فتح السوق
+  const topSymbols = uniqueStocks.map(s=>s.id);
+  
+  state.realIndicators = {};
+  
+  // نجيب بشكل متسلسل عشان ما نتجاوز حد الطلبات
+  for(const sym of topSymbols) {
+    await (async (sym) => {
+    try {
+      const url = `https://financialmodelingprep.com/api/v3/historical-price-full/${sym}?timeseries=50&apikey=${apiKey}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const prices = (data.historical || []).map(d => d.close).reverse();
+      
+      if(prices.length < 14) return;
+
+      // ===== RSI الحقيقي =====
+      const gains = [], losses = [];
+      for(let i=1; i<prices.length; i++) {
+        const diff = prices[i] - prices[i-1];
+        gains.push(diff > 0 ? diff : 0);
+        losses.push(diff < 0 ? Math.abs(diff) : 0);
+      }
+      const avgGain = gains.slice(-14).reduce((a,b)=>a+b,0)/14;
+      const avgLoss = losses.slice(-14).reduce((a,b)=>a+b,0)/14;
+      const rs = avgLoss === 0 ? 100 : avgGain/avgLoss;
+      const rsi = 100 - (100/(1+rs));
+
+      // ===== MA20 و MA50 الحقيقية =====
+      const ma20 = prices.slice(-20).reduce((a,b)=>a+b,0)/Math.min(20,prices.length);
+      const ma50 = prices.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,prices.length);
+
+      // ===== MACD الحقيقي =====
+      function ema(data, period) {
+        const k = 2/(period+1);
+        let emaVal = data[0];
+        for(let i=1; i<data.length; i++) emaVal = data[i]*k + emaVal*(1-k);
+        return emaVal;
+      }
+      const ema12 = ema(prices.slice(-26), 12);
+      const ema26 = ema(prices.slice(-26), 26);
+      const macdLine = ema12 - ema26;
+      const signal = ema([macdLine], 9);
+      const macdHist = macdLine - signal;
+
+      // ===== بولينجر الحقيقي =====
+      const last20 = prices.slice(-20);
+      const mean = last20.reduce((a,b)=>a+b,0)/20;
+      const std = Math.sqrt(last20.reduce((sum,p)=>sum+Math.pow(p-mean,2),0)/20);
+      const bb_upper = mean + 2*std;
+      const bb_lower = mean - 2*std;
+
+      // ===== حفظ البيانات التاريخية للشارت =====
+      const chartData = prices.slice(-30);
+
+      state.realIndicators[sym] = {rsi, ma20, ma50, macdHist, bb_upper, bb_lower, chartData};
+
+    } catch(e) {}
+    })(sym);
+    // انتظر 200ms بين كل طلب عشان ما نضغط على API
+    await new Promise(r => setTimeout(r, 200));
+  }
 }
 
 // ===== FETCH PRICES =====
@@ -437,12 +513,42 @@ async function fetchLongTermEarnings() {
   } catch(e) { state.ltEarnings = {}; }
 }
 
+function checkMarketStatus() {
+  const now = new Date();
+  const utcH = now.getUTCHours();
+  const utcM = now.getUTCMinutes();
+  const day = now.getUTCDay();
+  if(day===0||day===6) return false;
+  const mins = utcH*60+utcM;
+  return mins>=810&&mins<=1200;
+}
+
 async function loadData() {
   state.loading = true;
+  state.marketOpen = checkMarketStatus();
   render();
-  await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
+
+  // نجيب البيانات التاريخية مرة واحدة فقط لما السوق يفتح
+  if(state.marketOpen && !state.historicalFetched) {
+    await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings(), fetchHistoricalIndicators()]);
+    state.historicalFetched = true;
+  } else {
+    await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
+  }
+
   buildStocks();
-  calcRecs();
+
+  // التوصيات تتحدث فقط لما السوق مفتوح
+  if(state.marketOpen) {
+    calcRecs();
+    state.lastMarketRecs = state.recs; // نحفظ آخر توصية
+  } else if(!state.recs && state.lastMarketRecs) {
+    // السوق مغلق — نستخدم آخر توصية محفوظة
+    state.recs = state.lastMarketRecs;
+  } else if(!state.recs) {
+    // أول مرة والسوق مغلق — نحسب بالبيانات المتوفرة
+    calcRecs();
+  }
   state.loading = false;
   state.lastPriceUpdate = new Date();
   state.priceCountdown = UPDATE_INTERVAL;
@@ -500,23 +606,44 @@ function btn(html,style,onclick){
 }
 
 // ===== MINI SPARKLINE =====
-function sparkline(change, width=80, height=28) {
-  const pts=[]; let y=50;
-  const seed = Math.random();
-  for(let i=0;i<16;i++){
-    y+=((Math.random()-.499)*12)+(change>0?.5:-.5);
-    y=Math.max(5,Math.min(95,y));
-    pts.push(`${i*(100/15)},${y}`);
-  }
-  const col=change>=0?C.green:C.red;
-  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.setAttribute('width',width);svg.setAttribute('height',height);
+function sparkline(s, width=80, height=28) {
+  const real = state.realIndicators && state.realIndicators[s.id];
+  const change = s.change || 0;
+  const col = change>=0?C.green:C.red;
+  
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('width',width); svg.setAttribute('height',height);
   svg.setAttribute('viewBox','0 0 100 100');
   svg.setAttribute('preserveAspectRatio','none');
-  const poly=document.createElementNS('http://www.w3.org/2000/svg','polyline');
-  poly.setAttribute('points',pts.join(' '));
-  poly.setAttribute('fill','none');poly.setAttribute('stroke',col);
-  poly.setAttribute('stroke-width','3');poly.setAttribute('stroke-linecap','round');
+
+  let pts = [];
+  
+  if(real && real.chartData && real.chartData.length > 1) {
+    // شارت حقيقي من البيانات التاريخية
+    const data = real.chartData;
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+    pts = data.map((p,i) => `${(i/(data.length-1))*100},${100-((p-min)/range)*90+5}`);
+    
+    // نضيف علامة حقيقي
+    svg.setAttribute('title','بيانات حقيقية');
+  } else {
+    // شارت تقريبي
+    let y = 50;
+    for(let i=0;i<16;i++){
+      y += ((Math.random()-.499)*12)+(change>0?.5:-.5);
+      y = Math.max(5,Math.min(95,y));
+      pts.push(`${i*(100/15)},${y}`);
+    }
+  }
+
+  const poly = document.createElementNS('http://www.w3.org/2000/svg','polyline');
+  poly.setAttribute('points', pts.join(' '));
+  poly.setAttribute('fill','none');
+  poly.setAttribute('stroke', real?.chartData ? col : col+'99');
+  poly.setAttribute('stroke-width','3');
+  poly.setAttribute('stroke-linecap','round');
   svg.appendChild(poly);
   return svg;
 }
@@ -565,7 +692,8 @@ function stockCard(s) {
           txt(s.id,{fontSize:"10px",color:"var(--text3)",background:"#0d1526",padding:"1px 6px",borderRadius:"4px",fontWeight:"700"}),
           txt(s.sector,{fontSize:"9px",color:"var(--text3)"}),
           el('span',{style:{fontSize:"9px",color:cc,background:`${cc}15`,padding:"1px 6px",borderRadius:"4px",fontWeight:"700"}},CATS[s.cat]||s.cat),
-          s.isReal && el('span',{style:{width:"6px",height:"6px",borderRadius:"50%",background:C.green,display:"inline-block",boxShadow:`0 0 6px ${C.green}`}})
+          s.isReal && el('span',{style:{width:"6px",height:"6px",borderRadius:"50%",background:C.green,display:"inline-block",boxShadow:`0 0 6px ${C.green}`}}),
+          s.indicatorsReal && el('span',{style:{fontSize:"9px",color:C.blue,background:`${C.blue}15`,padding:"1px 5px",borderRadius:"3px",fontWeight:"700"}},"📊 مؤشرات حقيقية")
         ]),
         el('div',{style:{fontSize:"14px",fontWeight:"800",color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},s.name)
       ]),
@@ -600,7 +728,7 @@ function stockCard(s) {
 
     // Chart + Signal
     el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}},[
-      sparkline(s.change),
+      sparkline(s),
       el('div',{style:{
         background:`${rc}15`,border:`1px solid ${rc}55`,
         color:rc,padding:"6px 14px",borderRadius:"8px",
@@ -748,7 +876,7 @@ function renderHeader() {
     const day = now.getUTCDay();
     if(day===0||day===6) return false;
     const mins = utcH*60+utcM;
-    return mins>=810&&mins<=1200; // 13:30-20:00 UTC = 4:30م-11م بتوقيت السعودية
+    return mins>=810&&mins<=1200;
   })();
 
   return el('div',{style:{padding:"14px 14px 0",background:"var(--bg)",position:"sticky",top:0,zIndex:20}},[
