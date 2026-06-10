@@ -1446,31 +1446,35 @@ function renderLongTermTab() {
               return el('div',{style:{fontSize:"12px",fontWeight:"800",color:C.orange}},`${saved} ر مجموع`);
             })()
           ]),
-          el('div',{style:{display:"flex",gap:"6px",marginBottom:"6px"}},[
-            ...[500,1000,2000].map(amt=>btn(`+${amt} ر`,{
-              background:"var(--bg2)",border:`1px solid ${C.orange}44`,
-              color:C.orange,borderRadius:"8px",padding:"5px 10px",
-              fontSize:"11px",fontWeight:"700",flex:"1"
+          el('div',{style:{display:"flex",gap:"6px",alignItems:"center"}},[
+            (() => {
+              const inp = document.createElement('input');
+              inp.type = "number";
+              inp.placeholder = "أدخل المبلغ بالريال";
+              inp.value = state.monthlyInvest[s.id] || '';
+              Object.assign(inp.style,{
+                flex:"1",background:"var(--bg2)",
+                border:`1px solid ${C.orange}44`,
+                borderRadius:"8px",padding:"8px 10px",
+                color:"var(--text)",fontSize:"12px",
+                fontFamily:"inherit",boxSizing:"border-box",
+                direction:"rtl"
+              });
+              inp.oninput = e => { state.monthlyInvest[s.id] = parseFloat(e.target.value)||0; };
+              return inp;
+            })(),
+            btn("✅ حفظ",{
+              background:`${C.orange}20`,border:`1px solid ${C.orange}`,
+              color:C.orange,borderRadius:"8px",padding:"8px 12px",
+              fontSize:"12px",fontWeight:"700",flexShrink:"0"
             },()=>{
-              state.monthlyInvest[s.id] = (state.monthlyInvest[s.id]||0) + amt;
               localStorage.setItem('monthlyInvest', JSON.stringify(state.monthlyInvest));
               render();
-            }))
-          ]),
-          el('div',{style:{display:"flex",gap:"6px"}},[
-            ...[500,1000,2000].map(amt=>btn(`-${amt} ر`,{
-              background:"var(--bg2)",border:"1px solid rgba(255,45,122,.3)",
-              color:C.red,borderRadius:"8px",padding:"5px 10px",
-              fontSize:"11px",fontWeight:"700",flex:"1"
-            },()=>{
-              state.monthlyInvest[s.id] = Math.max(0,(state.monthlyInvest[s.id]||0) - amt);
-              localStorage.setItem('monthlyInvest', JSON.stringify(state.monthlyInvest));
-              render();
-            })),
-            btn("🗑️ حذف",{
+            }),
+            btn("🗑️",{
               background:"rgba(255,45,122,.1)",border:`1px solid ${C.red}44`,
-              color:C.red,borderRadius:"8px",padding:"5px 10px",
-              fontSize:"11px",fontWeight:"700"
+              color:C.red,borderRadius:"8px",padding:"8px 10px",
+              fontSize:"12px",flexShrink:"0"
             },()=>{
               state.monthlyInvest[s.id] = 0;
               localStorage.setItem('monthlyInvest', JSON.stringify(state.monthlyInvest));
