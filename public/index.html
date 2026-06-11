@@ -292,8 +292,9 @@ function calcIndicators(s, price) {
   const vol     = Math.floor(seededRnd(seed+6, 500000, 15000000));
   const avgVol  = realAvgVol > 0 ? realAvgVol : Math.floor(seededRnd(seed+7, 800000, 8000000));
   const volR    = vol / avgVol;
-  const sup     = price * (1 - seededRnd(seed+10, 0.008, 0.025));
-  const res     = price * (1 + seededRnd(seed+11, 0.008, 0.025));
+  // نستخدم دعم/مقاومة حقيقية إذا متوفرة
+  const sup = real?.support || price * (1 - seededRnd(seed+10, 0.008, 0.025));
+  const res = real?.resistance || price * (1 + seededRnd(seed+11, 0.008, 0.025));
   const pe      = seededRnd(seed+12, 10, 60);
   const peScore = pe < 20 ? 2 : pe < 35 ? 1 : 0;
   const isReal  = !!real;
@@ -343,7 +344,8 @@ function calcIndicators(s, price) {
 
   const sig  = buy>sell+2?"شراء قوي":buy>sell?"شراء":sell>buy+2?"بيع قوي":sell>buy?"بيع":"انتظار";
   const sigC = sig.includes("شراء")?"green":sig.includes("بيع")?"red":"yellow";
-  const str  = Math.min(100, Math.abs(buy-sell)*15 + seededRnd(seed+13, 5, 20));
+  // قوة السهم = نقاط الشراء - نقاط البيع بدون عشوائية
+  const str = Math.min(100, Math.max(0, (buy - sell) * 12 + (real ? 10 : 0)));
 
   return {rsi,ma20,ma50,macdH,vol,avgVol,volR,bb_u,bb_l,sup,res,pe,
           signal:sig,signalColor:sigC,strength:str,buySignals:buy,sellSignals:sell,
@@ -1265,48 +1267,33 @@ function renderMarketTab() {
   return el('div',{},[
     // Search bar
     (() => {
-      const wrapper = document.createElement('div');
-      wrapper.style.position = "relative";
-      wrapper.style.marginBottom = "10px";
+      const d = document.createElement('div');
+      d.style.cssText = "position:relative;margin-bottom:10px";
       
       const inp = document.createElement('input');
+      inp.id = "market-search";
       inp.type = "text";
       inp.placeholder = "🔍 ابحث عن سهم... (AAPL, Apple, تكنولوجيا)";
       inp.value = state.searchQuery;
-      Object.assign(inp.style, {
-        width:"100%", background:"var(--bg3)", border:"1px solid var(--border)",
-        borderRadius:"12px", padding:"10px 14px", color:"var(--text)",
-        fontSize:"13px", fontFamily:"inherit", direction:"rtl",
-        outline:"none", boxSizing:"border-box"
+      inp.style.cssText = "width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:10px 14px;color:var(--text);font-size:13px;font-family:inherit;direction:rtl;outline:none;box-sizing:border-box";
+      
+      inp.addEventListener('input', function() {
+        state.searchQuery = this.value;
+        // نحدث الأسهم فقط بدون render
+        const list = document.getElementById('stocks-list-container');
+        if(list) {
+          const f = state.stocks.filter(s=>
+            s.name.toLowerCase().includes(state.searchQuery.toLowerCase())||
+            s.id.toLowerCase().includes(state.searchQuery.toLowerCase())||
+            s.sector.includes(state.searchQuery)
+          ).filter(s=>state.catFilter==="الكل"||s.cat===state.catFilter);
+          list.innerHTML = '';
+          f.forEach(s=>list.appendChild(stockCard(s)));
+        }
       });
       
-      // نحدث البحث بدون إعادة رسم كاملة
-      inp.oninput = (e) => {
-        state.searchQuery = e.target.value;
-        // نحدث قائمة الأسهم فقط بدون إعادة رسم الـ input
-        const listEl = document.getElementById('stocks-list');
-        if(listEl) {
-          const filtered = getFilteredStocks();
-          listEl.innerHTML = '';
-          filtered.forEach(s => listEl.appendChild(stockCard(s)));
-          document.getElementById('stocks-count').textContent = filtered.length + ' سهم';
-        }
-      };
-      
-      wrapper.appendChild(inp);
-      
-      if(state.searchQuery) {
-        const clearBtn = document.createElement('button');
-        clearBtn.textContent = '✕';
-        Object.assign(clearBtn.style, {
-          position:"absolute", left:"10px", top:"50%", transform:"translateY(-50%)",
-          background:"none", border:"none", color:"var(--text3)", fontSize:"16px", cursor:"pointer"
-        });
-        clearBtn.onclick = () => { state.searchQuery = ""; render(); };
-        wrapper.appendChild(clearBtn);
-      }
-      
-      return wrapper;
+      d.appendChild(inp);
+      return d;
     })(),
     // Cat filter
     el('div',{style:{display:"flex",gap:"5px",overflowX:"auto",paddingBottom:"6px",marginBottom:"6px",scrollbarWidth:"none"}},[
@@ -1334,9 +1321,9 @@ function renderMarketTab() {
       },()=>{state.sort=s.id;render();}))
     ]),
 
-    el('div',{id:"stocks-count",style:{fontSize:"11px",color:"var(--text3)",marginBottom:"8px"}},`${filtered.length} سهم`),
+    el('div',{style:{fontSize:"11px",color:"var(--text3)",marginBottom:"8px"}},`${getFilteredStocks().length} سهم`),
 
-    el('div',{id:"stocks-list"},getFilteredStocks().map(s=>stockCard(s)))
+    el('div',{id:"stocks-list-container"},getFilteredStocks().map(s=>stockCard(s)))
   ]);
 }
 
