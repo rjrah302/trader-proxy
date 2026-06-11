@@ -1241,9 +1241,8 @@ function renderRecTab() {
 }
 
 // ===== MARKET TAB =====
-function renderMarketTab() {
-  const sectors = ["الكل",...new Set(uniqueStocks.map(s=>s.sector))];
-  const filtered = state.stocks
+function getFilteredStocks() {
+  return state.stocks
     .filter(s=>state.searchQuery===""||
       s.name.toLowerCase().includes(state.searchQuery.toLowerCase())||
       s.id.toLowerCase().includes(state.searchQuery.toLowerCase())||
@@ -1257,30 +1256,58 @@ function renderMarketTab() {
       if(state.sort==="rsi")return a.rsi-b.rsi;
       return 0;
     });
+}
+
+function renderMarketTab() {
+  const sectors = ["الكل",...new Set(uniqueStocks.map(s=>s.sector))];
+
 
   return el('div',{},[
     // Search bar
-    el('div',{style:{position:"relative",marginBottom:"10px"}},[
-      el('input',{
-        type:"text",
-        placeholder:"🔍 ابحث عن سهم... (AAPL, Apple, تكنولوجيا)",
-        value:state.searchQuery,
-        oninput:(e)=>{state.searchQuery=e.target.value;render();},
-        onkeyup:(e)=>{state.searchQuery=e.target.value;render();},
-        onchange:(e)=>{state.searchQuery=e.target.value;render();},
-        style:{
-          width:"100%",background:"var(--bg3)",border:"1px solid var(--border)",
-          borderRadius:"12px",padding:"10px 14px",color:"var(--text)",
-          fontSize:"13px",fontFamily:"inherit",direction:"rtl",
-          outline:"none",boxSizing:"border-box"
+    (() => {
+      const wrapper = document.createElement('div');
+      wrapper.style.position = "relative";
+      wrapper.style.marginBottom = "10px";
+      
+      const inp = document.createElement('input');
+      inp.type = "text";
+      inp.placeholder = "🔍 ابحث عن سهم... (AAPL, Apple, تكنولوجيا)";
+      inp.value = state.searchQuery;
+      Object.assign(inp.style, {
+        width:"100%", background:"var(--bg3)", border:"1px solid var(--border)",
+        borderRadius:"12px", padding:"10px 14px", color:"var(--text)",
+        fontSize:"13px", fontFamily:"inherit", direction:"rtl",
+        outline:"none", boxSizing:"border-box"
+      });
+      
+      // نحدث البحث بدون إعادة رسم كاملة
+      inp.oninput = (e) => {
+        state.searchQuery = e.target.value;
+        // نحدث قائمة الأسهم فقط بدون إعادة رسم الـ input
+        const listEl = document.getElementById('stocks-list');
+        if(listEl) {
+          const filtered = getFilteredStocks();
+          listEl.innerHTML = '';
+          filtered.forEach(s => listEl.appendChild(stockCard(s)));
+          document.getElementById('stocks-count').textContent = filtered.length + ' سهم';
         }
-      }),
-      state.searchQuery && el('button',{
-        onclick:()=>{state.searchQuery="";render();},
-        style:{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",
-               background:"none",border:"none",color:"var(--text3)",fontSize:"16px",cursor:"pointer"}
-      },"✕")
-    ]),
+      };
+      
+      wrapper.appendChild(inp);
+      
+      if(state.searchQuery) {
+        const clearBtn = document.createElement('button');
+        clearBtn.textContent = '✕';
+        Object.assign(clearBtn.style, {
+          position:"absolute", left:"10px", top:"50%", transform:"translateY(-50%)",
+          background:"none", border:"none", color:"var(--text3)", fontSize:"16px", cursor:"pointer"
+        });
+        clearBtn.onclick = () => { state.searchQuery = ""; render(); };
+        wrapper.appendChild(clearBtn);
+      }
+      
+      return wrapper;
+    })(),
     // Cat filter
     el('div',{style:{display:"flex",gap:"5px",overflowX:"auto",paddingBottom:"6px",marginBottom:"6px",scrollbarWidth:"none"}},[
       ...["الكل",...Object.keys(CATS)].map(cat=>btn(
@@ -1307,9 +1334,9 @@ function renderMarketTab() {
       },()=>{state.sort=s.id;render();}))
     ]),
 
-    el('div',{style:{fontSize:"11px",color:"var(--text3)",marginBottom:"8px"}},`${filtered.length} سهم`),
+    el('div',{id:"stocks-count",style:{fontSize:"11px",color:"var(--text3)",marginBottom:"8px"}},`${filtered.length} سهم`),
 
-    ...filtered.map(s=>stockCard(s))
+    el('div',{id:"stocks-list"},filtered.map(s=>stockCard(s)))
   ]);
 }
 
