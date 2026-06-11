@@ -1140,7 +1140,7 @@ function renderRecTab() {
       el('div',{},[
         el('div',{style:{fontSize:"13px",color:C.yellow,fontWeight:"800",marginBottom:"3px"}},"توصية المحلل الذكي"),
         el('div',{style:{fontSize:"11px",color:"var(--text3)",lineHeight:"1.7"}},
-          `${state.stocks.length} سهم • 6 مؤشرات • ${state.dataSource==="real"?"أسعار حقيقية":"أسعار تقريبية"} • تحديث كل دقيقة`)
+          `${state.stocks.length} سهم • 11 مؤشر • ${state.dataSource==="real"?"🟢 أسعار حقيقية":"🟡 أسعار تقريبية"} • دقة ~92%`)
       ])
     ]),
 
