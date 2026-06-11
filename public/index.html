@@ -617,46 +617,69 @@ async function fetchLongTermEarnings() {
 }
 
 function checkMarketStatus() {
+  return getMarketSession() === "open";
+}
+
+function getMarketSession() {
   const now = new Date();
   const utcH = now.getUTCHours();
   const utcM = now.getUTCMinutes();
   const day = now.getUTCDay();
-  if(day===0||day===6) return false;
   const mins = utcH*60+utcM;
-  return mins>=810&&mins<=1200;
+  const month = now.getUTCMonth() + 1; // 1-12
+
+  // التوقيت الصيفي (مارس-نوفمبر): السوق 13:30-20:00 UTC = 4:30م-11م سعودي
+  // التوقيت الشتوي (نوفمبر-مارس): السوق 14:30-21:00 UTC = 5:30م-12م سعودي
+  const isSummer = month >= 3 && month <= 11;
+  const marketOpen = isSummer ? 810 : 870;   // 13:30 أو 14:30 UTC
+  const marketClose = isSummer ? 1200 : 1260; // 20:00 أو 21:00 UTC
+
+  if(day===0||day===6) return "weekend";
+  if(mins>=marketOpen&&mins<=marketClose) return "open";
+  if(mins>marketClose&&mins<=marketClose+210) return "afterhours";
+  if(mins>=marketOpen-180&&mins<marketOpen) return "premarket";
+  return "closed";
 }
 
 async function loadData() {
   state.loading = true;
-  state.marketOpen = checkMarketStatus();
+  state.marketOpen = true; // الأداة شغالة 24/7
   render();
 
-  // نجيب البيانات التاريخية مرة واحدة فقط لما السوق يفتح
-  if(state.marketOpen && !state.historicalFetched) {
-    await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
-  // نجيب profiles و indicators مرة واحدة عند فتح السوق
-  if(state.marketOpen && !state.historicalFetched) {
-    fetchCompanyProfiles();
-    fetchHistoricalIndicators();
-  }
-    state.historicalFetched = true;
-  } else {
-    await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
-  }
+  const session = getMarketSession();
+  const isOfficialOpen = session === "open"; // السوق الرسمي 4:30م-11م فقط
 
+  // نجيب الأسعار دائماً
+  await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
   buildStocks();
 
-  // التوصيات تتحدث فقط لما السوق مفتوح
-  if(state.marketOpen) {
+  if(isOfficialOpen && !state.historicalFetched) {
+    // ① السوق فتح لأول مرة اليوم — نحمّل المؤشرات
+    state.loadingIndicators = true;
+    render();
+
+    // ② ننتظر اكتمال 200 يوم + 11 مؤشر
+    await Promise.all([fetchHistoricalIndicators(), fetchCompanyProfiles()]);
+    
+    // ③ بعد الاكتمال — نحسب التوصية مرة واحدة ✅
+    state.historicalFetched = true;
+    state.loadingIndicators = false;
+    buildStocks();
     calcRecs();
-    state.lastMarketRecs = state.recs; // نحفظ آخر توصية
-  } else if(!state.recs && state.lastMarketRecs) {
-    // السوق مغلق — نستخدم آخر توصية محفوظة
-    state.recs = state.lastMarketRecs;
-  } else if(!state.recs) {
-    // أول مرة والسوق مغلق — نحسب بالبيانات المتوفرة
-    calcRecs();
+    state.lastMarketRecs = state.recs;
+
+  } else if(isOfficialOpen) {
+    // السوق مفتوح والمؤشرات محملة — أسعار فقط، التوصيات ثابتة ✅
+
+  } else {
+    // خارج السوق الرسمي — نعرض آخر توصية محفوظة
+    if(!state.recs && state.lastMarketRecs) {
+      state.recs = state.lastMarketRecs;
+    } else if(!state.recs) {
+      calcRecs(); // أول مرة فقط
+    }
   }
+
   state.loading = false;
   state.lastPriceUpdate = new Date();
   state.priceCountdown = UPDATE_INTERVAL;
@@ -1027,9 +1050,19 @@ function renderHeader() {
         ]),
         el('span',{style:{fontSize:"9px",color:"var(--text3)"}},[
           el('span',{style:{
-            color:isMarketOpen?C.green:C.red,
+            color:(() => {
+              const s = getMarketSession();
+              return s==="open"?C.green:s==="afterhours"||s==="premarket"?C.yellow:C.red;
+            })(),
             fontSize:"8px",marginLeft:"4px"
-          }},isMarketOpen?"● مفتوح":"● مغلق"),
+          }},(() => {
+            const session = getMarketSession();
+            if(session==="open") return "● مفتوح";
+            if(session==="afterhours") return "● After Hours";
+            if(session==="premarket") return "● Pre-Market";
+            if(session==="weekend") return "● عطلة";
+            return "● مغلق";
+          })()),
           document.createTextNode(state.lastPriceUpdate?state.lastPriceUpdate.toLocaleTimeString('ar-SA'):"--")
         ])
       ])
@@ -2002,10 +2035,9 @@ setInterval(()=>{
   state.recCountdown--;
 
   if(state.recCountdown<=0) {
-    if(state.stocks.length>0) {
-      calcRecs();
-      render();
-    }
+    // التوصيات لا تتحدث تلقائياً — تُحسب مرة واحدة فقط عند فتح السوق
+    state.recCountdown = REC_INTERVAL;
+    render(); // نحدث الواجهة فقط (الأسعار)
   }
 
   if(state.priceCountdown<=0) {
