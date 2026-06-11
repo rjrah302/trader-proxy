@@ -1266,6 +1266,8 @@ function renderMarketTab() {
         placeholder:"🔍 ابحث عن سهم... (AAPL, Apple, تكنولوجيا)",
         value:state.searchQuery,
         oninput:(e)=>{state.searchQuery=e.target.value;render();},
+        onkeyup:(e)=>{state.searchQuery=e.target.value;render();},
+        onchange:(e)=>{state.searchQuery=e.target.value;render();},
         style:{
           width:"100%",background:"var(--bg3)",border:"1px solid var(--border)",
           borderRadius:"12px",padding:"10px 14px",color:"var(--text)",
