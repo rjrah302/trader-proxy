@@ -1336,7 +1336,7 @@ function renderMarketTab() {
 
     el('div',{id:"stocks-count",style:{fontSize:"11px",color:"var(--text3)",marginBottom:"8px"}},`${filtered.length} سهم`),
 
-    el('div',{id:"stocks-list"},filtered.map(s=>stockCard(s)))
+    el('div',{id:"stocks-list"},getFilteredStocks().map(s=>stockCard(s)))
   ]);
 }
 
