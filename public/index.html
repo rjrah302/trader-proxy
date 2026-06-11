@@ -306,6 +306,26 @@ function calcIndicators(s, price) {
   if(price <= bb_l) buy++; if(price >= bb_u) sell++;
   buy += peScore;
 
+  // ===== Stochastic RSI =====
+  if(real?.stochRsi !== undefined) {
+    if(real.stochRsi < 20) { buy++; buy++; } // تشبع بيع قوي
+    else if(real.stochRsi < 30) { buy++; }    // تشبع بيع
+    else if(real.stochRsi > 80) { sell++; sell++; } // تشبع شراء قوي
+    else if(real.stochRsi > 70) { sell++; }   // تشبع شراء
+  }
+
+  // ===== دعم ومقاومة =====
+  if(real?.nearSupport) { buy++; buy++; }     // قريب من الدعم = فرصة
+  if(real?.nearResistance) { sell++; sell++; } // قريب من المقاومة = خطر
+
+  // ===== ATR — وقف خسارة ذكي =====
+  // نستخدم ATR لتحسين نسبة المخاطرة/المكافأة
+  const atrStop = real?.atrPct ? real.atrPct * 1.5 : 3; // وقف = 1.5x ATR
+  const atrTarget = real?.atrPct ? real.atrPct * 3 : 6;  // هدف = 3x ATR
+  const riskReward = atrTarget / atrStop;
+  if(riskReward >= 2) buy++;   // نسبة مخاطرة/مكافأة ممتازة
+  if(riskReward < 1) sell++;   // نسبة سيئة
+
   // ===== تأثير الأخبار =====
   const stockNews = (state.news && state.news[s.id]) || [];
   const posNews = stockNews.filter(n=>n.sentiment==='positive').length;
@@ -367,7 +387,7 @@ async function fetchHistoricalIndicators() {
   for(const sym of topSymbols) {
     await (async (sym) => {
     try {
-      const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=50&apikey=${apiKey}`;
+      const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=200&apikey=${apiKey}`;
       const res = await fetch(url);
       const data = await res.json();
       const prices = (data.historical || []).map(d => d.close).reverse();
@@ -413,7 +433,57 @@ async function fetchHistoricalIndicators() {
       // ===== حفظ البيانات التاريخية للشارت =====
       const chartData = prices.slice(-30);
 
-      state.realIndicators[sym] = {rsi, ma20, ma50, macdHist, bb_upper, bb_lower, chartData};
+      // ===== Stochastic RSI =====
+      const rsiPeriod = 14;
+      const stochPeriod = 14;
+      const rsiValues = [];
+      for(let i=rsiPeriod; i<prices.length; i++) {
+        const slice = prices.slice(i-rsiPeriod, i);
+        const g = [], l = [];
+        for(let j=1; j<slice.length; j++) {
+          const d = slice[j]-slice[j-1];
+          g.push(d>0?d:0); l.push(d<0?Math.abs(d):0);
+        }
+        const ag = g.reduce((a,b)=>a+b,0)/rsiPeriod;
+        const al = l.reduce((a,b)=>a+b,0)/rsiPeriod;
+        const rs2 = al===0?100:ag/al;
+        rsiValues.push(100-(100/(1+rs2)));
+      }
+      const recentRsi = rsiValues.slice(-stochPeriod);
+      const minRsi = Math.min(...recentRsi);
+      const maxRsi = Math.max(...recentRsi);
+      const stochRsi = maxRsi===minRsi ? 50 : ((rsiValues[rsiValues.length-1]-minRsi)/(maxRsi-minRsi))*100;
+
+      // ===== ATR — وقف خسارة ذكي =====
+      const atrPeriod = 14;
+      const highs = (data.historical||[]).map(d=>d.high).reverse().slice(-atrPeriod-1);
+      const lows  = (data.historical||[]).map(d=>d.low).reverse().slice(-atrPeriod-1);
+      const trValues = [];
+      for(let i=1; i<highs.length; i++) {
+        const tr = Math.max(
+          highs[i]-lows[i],
+          Math.abs(highs[i]-prices[prices.length-atrPeriod-1+i-1]),
+          Math.abs(lows[i]-prices[prices.length-atrPeriod-1+i-1])
+        );
+        trValues.push(tr);
+      }
+      const atr = trValues.reduce((a,b)=>a+b,0)/atrPeriod;
+      const atrPct = (atr/prices[prices.length-1])*100; // ATR كنسبة مئوية
+
+      // ===== دعم ومقاومة =====
+      const last200 = prices.slice(-200);
+      const last20h = (data.historical||[]).map(d=>d.high).reverse().slice(-20);
+      const last20l = (data.historical||[]).map(d=>d.low).reverse().slice(-20);
+      const resistance = Math.max(...last20h);
+      const support = Math.min(...last20l);
+      const currentPrice = prices[prices.length-1];
+      const nearSupport = currentPrice <= support * 1.02;    // السعر قريب من الدعم (2%)
+      const nearResistance = currentPrice >= resistance * 0.98; // السعر قريب من المقاومة (2%)
+
+      state.realIndicators[sym] = {
+        rsi, ma20, ma50, macdHist, bb_upper, bb_lower, chartData,
+        stochRsi, atr, atrPct, support, resistance, nearSupport, nearResistance
+      };
 
     } catch(e) {}
     })(sym);
@@ -1350,6 +1420,12 @@ function renderModal() {
       el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"12px"}},[
         ...[
           {l:"RSI",v:f(s.rsi,0),c:s.rsi<35?C.green:s.rsi>65?C.red:C.yellow,d:s.rsi<35?"تشبع بيع":s.rsi>65?"تشبع شراء":"محايد"},
+          ...(state.realIndicators[s.id]?.stochRsi!==undefined?[{
+            l:"Stoch RSI",
+            v:f(state.realIndicators[s.id].stochRsi,0),
+            c:state.realIndicators[s.id].stochRsi<20?C.green:state.realIndicators[s.id].stochRsi>80?C.red:C.yellow,
+            d:state.realIndicators[s.id].stochRsi<20?"تشبع بيع قوي":state.realIndicators[s.id].stochRsi>80?"تشبع شراء قوي":"محايد"
+          }]:[]),
           {l:"MA20",v:f(s.ma20),c:s.price>s.ma20?C.green:C.red,d:s.price>s.ma20?"فوق MA20 ✅":"تحت MA20 ⚠️"},
           {l:"MA50",v:f(s.ma50),c:s.price>s.ma50?C.green:C.red,d:s.price>s.ma50?"فوق MA50 ✅":"تحت MA50 ⚠️"},
           {l:"MACD",v:f(s.macdH,2),c:s.macdH>0?C.green:C.red,d:s.macdH>0?"زخم صاعد":"زخم هابط"},
@@ -1369,8 +1445,14 @@ function renderModal() {
         el('div',{style:{fontSize:"12px",color:"var(--text3)",fontWeight:"700",marginBottom:"10px"}},"خطة التداول"),
         ...[
           {l:"⚡ نقطة الدخول",v:`$${f(s.price)}`,c:"var(--text)"},
-          {l:"🛑 وقف الخسارة (3%)",v:`$${f(s.price*.97)}`,c:C.red},
+          {l:`🛑 وقف الخسارة (${f(state.realIndicators[s.id]?.atrPct?state.realIndicators[s.id].atrPct*1.5:3,1)}% ATR)`,
+           v:`$${f(s.price*(1-(state.realIndicators[s.id]?.atrPct?state.realIndicators[s.id].atrPct*1.5/100:0.03)))}`,
+           c:C.red},
           {l:"🎯 الهدف الأول",v:`$${f(s.res)}`,c:C.green},
+          ...(state.realIndicators[s.id]?.support?[
+            {l:"🔵 خط الدعم",v:`$${f(state.realIndicators[s.id].support)}`,c:C.blue},
+            {l:"🔴 خط المقاومة",v:`$${f(state.realIndicators[s.id].resistance)}`,c:C.red}
+          ]:[]),
           {l:"🚀 الهدف الثاني",v:`$${f(s.res*1.02)}`,c:C.green}
         ].map((x,i)=>el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<3?"1px solid var(--border)":"none"}},[
           txt(x.l,{fontSize:"12px",color:"var(--text3)"}),
