@@ -1523,7 +1523,7 @@ function earningsBadge(symbol) {
 
 function renderFutureTab() {
   const futures = state.stocks
-    .filter(s=>s.cat==="future")
+    .filter(s=>s.cat==="future" || (s.beta||1) >= 1.8)
     .filter(s=>s.signal.includes("شراء"))
     .sort((a,b)=>{
       const sciA = (FUTURE_SCIENCE[a.id]?.score || 0) * 10;
