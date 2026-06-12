@@ -113,7 +113,6 @@ const STOCKS = [
   {id:"TSLA",  name:"Tesla",       sector:"سيارات/EV",    cat:"large",  tip:"أعلى تقلب — فرص وأخطار",             beta:2.0},
   {id:"WMT",   name:"Walmart",     sector:"تجزئة",        cat:"large",  tip:"مستقر — يتحرك مع المستهلك",          beta:0.7},
   {id:"COST",  name:"Costco",      sector:"تجزئة",        cat:"large",  tip:"نمو ثابت وولاء عملاء عالي",          beta:0.8},
-  {id:"AMZN",  name:"Amazon",      sector:"تجارة",        cat:"large",  tip:"أكبر منصة تجارة إلكترونية",          beta:1.2},
   // 🏦 مالية / بنوك
   {id:"JPM",   name:"JPMorgan",    sector:"بنوك",         cat:"large",  tip:"أكبر بنك أمريكي — مستقر",            beta:1.1},
   {id:"GS",    name:"Goldman",     sector:"استثمار",      cat:"large",  tip:"يتحرك مع أسواق رأس المال",           beta:1.4},
@@ -195,7 +194,6 @@ const STOCKS = [
   {id:"EA",   name:"Electronic Arts", sector:"ألعاب",         cat:"mid",    tip:"FIFA وBattlefield وApex",              beta:0.9},
   {id:"TTWO", name:"Take-Two",        sector:"ألعاب",         cat:"mid",    tip:"GTA وNBA 2K — ألعاب ضخمة",            beta:1.3},
   {id:"RBLX", name:"Roblox",          sector:"ميتافيرس",      cat:"mid",    tip:"عالم الميتافيرس للجيل الجديد",         beta:1.7},
-  {id:"NFLX", name:"Netflix",         sector:"ترفيه",         cat:"large",  tip:"النمو في الاشتراكات يحرك السهم",      beta:1.3},
   // 🚀 مستقبل إضافي
   {id:"ACHR", name:"Archer Aviation", sector:"طيران كهربائي", cat:"future", tip:"سيارات طائرة كهربائية",               beta:2.5},
   {id:"ASTS", name:"AST SpaceMobile", sector:"إنترنت فضاء",  cat:"future", tip:"إنترنت من الفضاء مباشرة للجوال",      beta:2.8},
@@ -212,6 +210,61 @@ const STOCKS = [
   {id:"HIMS", name:"Hims & Hers",      sector:"صحة رقمية",    cat:"small",  tip:"منصة الرعاية الصحية الرقمية",         beta:1.8},
   {id:"OPEN", name:"Opendoor",         sector:"عقارات/تقنية", cat:"small",  tip:"شراء وبيع المنازل بالتقنية",          beta:2.1},
   {id:"DKNG", name:"DraftKings",       sector:"مراهنات رياضية",cat:"small", tip:"المراهنات الرياضية القانونية",         beta:1.9},
+
+  // ===== 50 سهم إضافي بأسعار منخفضة =====
+  // 💡 تكنولوجيا رخيصة
+  {id:"GFAI", name:"Guardforce AI", sector:"AI/أمن",       cat:"small",  tip:"روبوتات أمنية بالذكاء الاصطناعي",     beta:2.8},
+  {id:"AITX", name:"AI Technology", sector:"AI/أمن",       cat:"small",  tip:"حلول أمنية بالذكاء الاصطناعي",        beta:3.0},
+  {id:"NVTS", name:"Navitas Semi",  sector:"شرائح",        cat:"small",  tip:"شرائح طاقة لمراكز البيانات — نمو 25%", beta:2.1},
+  {id:"SMCI", name:"Super Micro",   sector:"خوادم AI",     cat:"mid",    tip:"خوادم الذكاء الاصطناعي — شريك Nvidia", beta:1.9},
+  {id:"PGY",  name:"Pagaya Tech",   sector:"فينتك/AI",     cat:"small",  tip:"AI لمعالجة القروض — نمو 67% الأرباح",  beta:2.2},
+  {id:"CXAI", name:"CXApp",         sector:"AI/مؤسسات",    cat:"small",  tip:"تجربة الموظفين بالذكاء الاصطناعي",    beta:2.5},
+  {id:"LAES", name:"SEALSQ",        sector:"أمن رقمي",     cat:"small",  tip:"شرائح أمن كمومية للإنترنت",            beta:2.9},
+  // 🏦 مالية رخيصة
+  {id:"HBAN", name:"Huntington",    sector:"بنوك",         cat:"small",  tip:"بنك إقليمي أمريكي ينمو في الجنوب",    beta:1.1},
+  {id:"NWG",  name:"NatWest",       sector:"بنوك",         cat:"small",  tip:"بنك بريطاني — نمو في إدارة الثروات",   beta:0.9},
+  {id:"PSEC", name:"Prospect Cap",  sector:"استثمار",      cat:"small",  tip:"شركة استثمار — توزيعات أرباح عالية",  beta:1.2},
+  {id:"CURO", name:"CURO Group",    sector:"فينتك",        cat:"small",  tip:"خدمات مالية للفئات المحدودة",          beta:1.8},
+  {id:"ATLC", name:"Atlanticus",    sector:"ائتمان",       cat:"small",  tip:"بطاقات ائتمان للسوق المتخصص",         beta:1.5},
+  // ⚡ طاقة رخيصة
+  {id:"TELL", name:"Tellurian",     sector:"غاز طبيعي",    cat:"small",  tip:"تصدير الغاز الطبيعي المسال LNG",       beta:2.3},
+  {id:"INDO", name:"Indonesia Energy",sector:"نفط",        cat:"small",  tip:"نفط إندونيسيا — أسواق آسيا الناشئة",  beta:2.8},
+  {id:"SPRU", name:"Spruce Power",  sector:"طاقة شمسية",   cat:"small",  tip:"طاقة شمسية للمنازل — نموذج اشتراك",   beta:1.9},
+  {id:"CSLR", name:"Complete Solar",sector:"طاقة شمسية",   cat:"small",  tip:"تركيب الطاقة الشمسية للمنازل",        beta:2.2},
+  {id:"NRGV", name:"Energy Vault",  sector:"تخزين طاقة",   cat:"small",  tip:"تخزين الطاقة بالجاذبية — تقنية فريدة", beta:2.4},
+  // 🏥 صحة رخيصة
+  {id:"OPRX", name:"OptimizeRx",    sector:"صحة رقمية",    cat:"small",  tip:"تواصل رقمي بين الأطباء والمرضى",       beta:1.8},
+  {id:"PNTM", name:"Pontem",        sector:"بيوتك",        cat:"small",  tip:"علاجات الأمراض النادرة",               beta:2.1},
+  {id:"LUNG", name:"Pulmatrix",     sector:"دواء تنفسي",   cat:"small",  tip:"علاجات أمراض الرئة والتنفس",           beta:2.3},
+  {id:"GRFS", name:"Grifols",       sector:"بلازما دم",    cat:"small",  tip:"علاجات مشتقة من بلازما الدم",          beta:1.4},
+  // 🚗 سيارات وتنقل
+  {id:"GOEV", name:"Canoo",         sector:"EV",           cat:"small",  tip:"مركبات كهربائية متعددة الاستخدام",     beta:2.8},
+  {id:"WKHS", name:"Workhorse",     sector:"EV توصيل",     cat:"small",  tip:"شاحنات توصيل كهربائية للبريد",         beta:2.5},
+  {id:"AYRO", name:"AYRO",          sector:"EV صغير",      cat:"small",  tip:"مركبات كهربائية خفيفة للحرم الجامعي",  beta:2.9},
+  {id:"RIDE", name:"Lordstown",     sector:"EV شاحنات",    cat:"small",  tip:"شاحنات كهربائية للأعمال",              beta:3.0},
+  {id:"SOLO", name:"ElectraMeccanica",sector:"EV صغير",    cat:"small",  tip:"سيارة كهربائية أحادية المقعد للمدن",   beta:2.7},
+  // 🎮 ترفيه وألعاب رخيصة
+  {id:"MVIS", name:"MicroVision",   sector:"LiDAR",        cat:"small",  tip:"ليدار للسيارات ذاتية القيادة",         beta:2.6},
+  {id:"KOSS", name:"Koss Corp",     sector:"إلكترونيات",   cat:"small",  tip:"سماعات رأس — قضية براءات اختراع Apple",beta:2.1},
+  {id:"GXII", name:"GreenTree",     sector:"فنادق صين",    cat:"small",  tip:"سلسلة فنادق اقتصادية في الصين",        beta:1.9},
+  {id:"NKLA", name:"Nikola",        sector:"هيدروجين",     cat:"small",  tip:"شاحنات هيدروجين — إعادة هيكلة",        beta:3.0},
+  {id:"MULN", name:"Mullen Auto",   sector:"EV",           cat:"small",  tip:"مركبات كهربائية تجارية",               beta:3.0},
+  // 📡 اتصالات وإنترنت
+  {id:"VOD",  name:"Vodafone",      sector:"اتصالات",      cat:"small",  tip:"شبكات الجيل الخامس في أوروبا وأفريقيا",beta:0.8},
+  {id:"NOK",  name:"Nokia",         sector:"اتصالات/AI",   cat:"small",  tip:"بنية تحتية للـ 5G وشبكات AI",          beta:0.9},
+  {id:"SATS", name:"EchoStar",      sector:"أقمار صناعية", cat:"small",  tip:"اتصالات عبر الأقمار الصناعية",         beta:1.3},
+  {id:"LUMN", name:"Lumen Tech",    sector:"شبكات",        cat:"small",  tip:"شبكات الألياف الضوئية للمؤسسات",       beta:1.7},
+  {id:"DISH", name:"DISH Network",  sector:"إذاعة/5G",     cat:"small",  tip:"يحاول التحول لشبكة 5G الافتراضية",     beta:1.6},
+  // 🏗️ بناء وعقارات
+  {id:"QXO",  name:"QXO Inc",       sector:"مواد بناء",    cat:"small",  tip:"أكبر موزع مواد بناء في أمريكا الشمالية",beta:1.4},
+  {id:"RDFN", name:"Redfin",        sector:"عقارات رقمية", cat:"small",  tip:"منصة عقارات رقمية تنافس Zillow",       beta:1.9},
+  {id:"EXPI", name:"eXp World",     sector:"عقارات",       cat:"small",  tip:"وكالة عقارات افتراضية عالمية",         beta:1.7},
+  // 🌍 متنوع
+  {id:"PENN", name:"PENN Entertainment",sector:"كازينو/رياضة",cat:"small",tip:"كازينو + مراهنات رياضية ESPN BET",   beta:1.8},
+  {id:"LAZR", name:"Luminar Tech",  sector:"LiDAR",        cat:"small",  tip:"ليدار للسيارات ذاتية القيادة Volvo",   beta:2.5},
+  {id:"GROY", name:"Gold Royalty",  sector:"ذهب",          cat:"small",  tip:"شركة حقوق ذهبية — نمو 133% إيرادات",   beta:1.6},
+  {id:"CEI",  name:"Camber Energy", sector:"طاقة",         cat:"small",  tip:"طاقة متجددة وتقليدية مدمجة",           beta:3.0},
+  {id:"ARM",  name:"ARM Holdings",  sector:"شرائح/AI",     cat:"large",  tip:"تصميم شرائح AI — كل جهاز تقريباً يستخدم تقنية ARM",  beta:1.6},
 ];
 
 // إزالة المكررات
@@ -220,6 +273,7 @@ const uniqueStocks = STOCKS.filter((s,i,a) => a.findIndex(x=>x.id===s.id)===i);
 // ===== STATE =====
 let state = {
   prices: {},      // أسعار حقيقية من FMP
+  lastPrices: {},  // آخر أسعار حقيقية محفوظة
   stocks: [],      // بيانات كاملة
   recs: null,      // التوصيات المحسوبة
   loading: true,
@@ -517,6 +571,12 @@ async function fetchPrices() {
       }
     });
     state.dataSource = results.length > 5 ? 'real' : 'simulated';
+    // نحفظ آخر أسعار حقيقية
+    if(results.length > 5) {
+      Object.assign(state.lastPrices, state.prices);
+      // نحفظ في localStorage عشان تبقى حتى بعد إغلاق المتصفح
+      try { localStorage.setItem('lastPrices', JSON.stringify(state.lastPrices)); } catch(e) {}
+    }
   } catch(e) {
     state.dataSource = 'simulated';
   }
@@ -525,8 +585,33 @@ async function fetchPrices() {
 function buildStocks() {
   state.stocks = uniqueStocks.map(s => {
     const p = state.prices[s.id];
-    const fallback = {AAPL:211,NVDA:135,MSFT:447,GOOGL:178,META:512,AMD:156,PLTR:24,CRM:290,ORCL:140,INTC:22,AMZN:193,TSLA:182,WMT:90,COST:920,JPM:198,GS:510,BAC:40,V:310,PYPL:67,JNJ:155,LLY:780,PFE:27,MRNA:45,XOM:115,CVX:155,ENPH:72,NFLX:628,DIS:98,SPOT:380,RKLB:14,IONQ:12,JOBY:6,LUNR:8,RIVN:13,QBTS:5,ARRY:15,HOOD:25,SOFI:14,UBER:75,LYFT:18,SNAP:10,COIN:220,NIO:5,PLUG:3,F:11,GM:52,AAL:12,BA:175,RTX:125};
-    const price = p?.price || fallback[s.id] || 50;
+    // أسعار احتياطية محدثة - يونيو 2026
+    const fallback = {
+      // تكنولوجيا كبيرة
+      AAPL:291,NVDA:135,MSFT:447,GOOGL:178,META:580,AMD:156,PLTR:24,
+      CRM:290,ORCL:140,INTC:22,AMZN:193,TSLA:280,ADBE:380,
+      // استهلاك
+      WMT:90,COST:920,NKE:65,SBUX:82,MCD:305,TGT:108,ABNB:145,
+      // مالية
+      JPM:270,GS:570,BAC:44,V:365,PYPL:67,MS:135,BLK:1050,SCHW:82,AXP:290,SQ:67,
+      // صحة
+      JNJ:163,LLY:890,PFE:27,MRNA:45,ABBV:224,ISRG:600,REGN:650,VRTX:520,
+      // طاقة
+      XOM:118,CVX:158,ENPH:72,FSLR:185,VLO:155,SLB:42,NEE:75,AMT:210,
+      // ترفيه/اتصالات
+      NFLX:1050,DIS:100,SPOT:620,
+      // سيارات
+      F:11,GM:52,RIVN:14,
+      // أسهم المستقبل — محدثة
+      RKLB:120,IONQ:35,JOBY:8,LUNR:26,QBTS:7,ARRY:12,
+      ASTS:30,ACHR:10,SOUN:13,RXRX:8,BBAI:4,AEVA:3,
+      // صغيرة/رخيصة
+      HOOD:35,SOFI:16,UBER:82,LYFT:15,SNAP:8,COIN:245,
+      NIO:4,PLUG:2,AAL:11,BA:178,RTX:128,
+      HIMS:28,OPEN:3,DKNG:18,LAZR:4,NOK:5,VOD:10,
+      SMCI:40,NVTS:14,PGY:16,HBAN:16,
+    };
+    const price = p?.price || state.lastPrices[s.id]?.price || fallback[s.id] || 50;
     const change = p?.change || seededRnd(dailySeed(s.id)+20, -3, 3);
     const ind = calcIndicators(s, price);
     return {
@@ -904,14 +989,45 @@ function recCard(s, rank, pct) {
   const stopPrice = s.price * 0.97;
 
   const reasons = [];
-  if(s.rsi<38) reasons.push(`RSI ${f(s.rsi,0)} — تشبع بيع قوي`);
-  if(s.price>s.ma20&&s.ma20>s.ma50) reasons.push("Golden Cross — MA20 فوق MA50 ✅");
-  if(s.macdH>0) reasons.push("MACD إيجابي — زخم شراء");
-  if(s.volR>1.3) reasons.push(`حجم ${f(s.volR,1)}x فوق المعتاد`);
-  if(s.pe<25) reasons.push(`P/E ${f(s.pe,0)} — سعر جذاب`);
-  if(s.price<=s.bb_l*1.01) reasons.push("عند حد بولينجر السفلي");
-  if(reasons.length===0) reasons.push(`${s.buySignals} إشارات شراء مقابل ${s.sellSignals} بيع`);
-  if(s.isReal) reasons.push("✅ سعر حقيقي من السوق");
+  const real = state.realIndicators && state.realIndicators[s.id];
+
+  // شرح RSI
+  if(s.rsi < 30) reasons.push(`RSI ${f(s.rsi,0)} — تشبع بيع قوي جداً — أدنى مستوى ومن المتوقع ارتداد`);
+  else if(s.rsi < 38) reasons.push(`RSI ${f(s.rsi,0)} — منطقة تشبع بيع — ضغط البيع يتراجع`);
+  
+  // شرح Stochastic RSI
+  if(real?.stochRsi !== undefined) {
+    if(real.stochRsi < 20) reasons.push(`Stochastic RSI ${f(real.stochRsi,0)} — إشارة دخول مبكرة قبل RSI`);
+  }
+
+  // شرح المتوسطات
+  if(s.price>s.ma20&&s.ma20>s.ma50) reasons.push(`Golden Cross ✅ — MA20 فوق MA50 — اتجاه صاعد قوي`);
+  else if(s.price>s.ma20) reasons.push(`السعر فوق MA20 — زخم إيجابي قصير المدى`);
+
+  // شرح MACD
+  if(s.macdH>0) reasons.push(`MACD إيجابي — زخم الشراء أقوى من البيع الآن`);
+
+  // شرح الحجم
+  if(s.volR>2) reasons.push(`حجم التداول اليوم أعلى من المعتاد بـ ${f(s.volR,1)} مرة — دخول كبار المتداولين`);
+  else if(s.volR>1.3) reasons.push(`حجم التداول اليوم أعلى من المعتاد بـ ${f(s.volR,1)} مرة — نشاط متزايد`);
+
+  // شرح الدعم والمقاومة
+  if(real?.nearSupport) reasons.push(`السعر $${f(s.price)} قريب من خط الدعم $${f(s.sup)} — منطقة ارتداد قوية`);
+  
+  // شرح بولينجر
+  if(s.price<=s.bb_l*1.01) reasons.push(`السعر عند الحد السفلي لبولينجر — إشارة ارتداد محتملة`);
+
+  // شرح P/E
+  if(s.pe<20) reasons.push(`P/E ${f(s.pe,0)} — السهم رخيص مقارنة بأرباح الشركة`);
+  else if(s.pe<25) reasons.push(`P/E ${f(s.pe,0)} — تقييم جذاب`);
+
+  // شرح الهدف
+  reasons.push(`المقاومة التالية $${f(s.res)} — ربح محتمل ${f(s.profitPct)}% لو وصلها`);
+
+  // لو ما في أسباب كافية
+  if(reasons.length < 2) reasons.push(`${s.buySignals} إشارات شراء مقابل ${s.sellSignals} إشارات بيع`);
+  
+  if(s.isReal) reasons.push("✅ السعر حقيقي من السوق الآن");
 
   return el('div',{style:{
     background:"var(--card)",
@@ -1039,7 +1155,7 @@ function renderHeader() {
         }},"📊"),
         el('div',{},[
           el('div',{style:{fontSize:"15px",fontWeight:"900",color:"var(--text)",letterSpacing:"-0.5px"}},"تريدر برو X"),
-          el('div',{style:{fontSize:"9px",color:"var(--text3)"}},"50 سهم أمريكي • تحليل احترافي")
+          el('div',{style:{fontSize:"9px",color:"var(--text3)"}},`${uniqueStocks.length} سهم أمريكي • تحليل احترافي`)
         ])
       ]),
       el('div',{style:{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"2px"}},[
@@ -1237,7 +1353,7 @@ function renderRecTab() {
       ...watch.map((s,i)=>el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<watch.length-1?"1px solid rgba(255,224,51,.1)":"none"}},[
         el('div',{},[
           el('div',{style:{fontSize:"12px",fontWeight:"700",color:"var(--text)"}},s.name),
-          el('div',{style:{fontSize:"10px",color:"var(--text3)"}},`RSI ${f(s.rsi,0)} • حجم ${s.volR>1?"نشط":"عادي"}`)
+          el('div',{style:{fontSize:"10px",color:"var(--text3)"}},`RSI ${f(s.rsi,0)} • حجم ${s.volR>1?"أعلى من المعتاد":"عادي"}`)
         ]),
         el('div',{style:{background:"rgba(255,224,51,.1)",border:"1px solid rgba(255,224,51,.3)",color:C.yellow,padding:"3px 10px",borderRadius:"7px",fontSize:"11px",fontWeight:"700"}},"انتظار")
       ]))
@@ -1460,7 +1576,12 @@ function renderTipsTab() {
     {icon:"⚡",title:"MACD — مؤشر الزخم",color:C.yellow,lines:["الشريط فوق الصفر = زخم شراء نشط","الشريط تحت الصفر = زخم هبوطي","التقاطع مع خط الإشارة = نقطة دخول أو خروج"]},
     {icon:"💎",title:"P/E — تقييم السهم",color:C.purple,lines:["P/E منخفض (أقل من 20) = السهم رخيص نسبياً","P/E عالي (أكثر من 40) = توقعات نمو كبيرة أو مبالغة","قارن دائماً مع متوسط القطاع"]},
     {icon:"💰",title:"إدارة المال — قواعد ذهبية",color:C.orange,lines:["لا تخاطر بأكثر من 2% من رأسمالك في صفقة واحدة","وقف الخسارة دائماً — بدونه تخاطر بكل رأسمالك","أسهم المستقبل = 10% فقط من محفظتك"]},
-    {icon:"🎯",title:"كيف تجمع المؤشرات؟",color:C.green,lines:["شراء مثالي: RSI<35 + MACD↑ + MA20>MA50 + حجم عالٍ + P/E معقول","لا تدخل بإشارة واحدة — اجمع 3 مؤشرات على الأقل","السوق الأمريكي يفتح 4:30م - 11م بتوقيت السعودية"]},
+    {icon:"🔵",title:"اشتري عند الدعم — مو بسعر السوق",color:C.blue,lines:["الأداة تعطيك سعر الدعم — انتظر السهم ينزل له","استخدم Limit Order بسعر الدعم مو Market Order","الدخول عند الدعم = ربح أكبر ومخاطرة أقل"]},
+    {icon:"🎯",title:"كيف تجمع المؤشرات؟",color:C.green,lines:["شراء مثالي: RSI<35 + Stoch RSI<20 + MACD↑ + MA20>MA50 + قريب من الدعم + حجم عالٍ","لا تدخل بإشارة واحدة — اجمع 3 مؤشرات على الأقل","السوق الأمريكي يفتح 4:30م - 11م بتوقيت السعودية (شتاء: 5:30م)"]},
+    {icon:"📐",title:"Stochastic RSI — أسرع من RSI",color:C.blue,lines:["أقل من 20 = تشبع بيع قوي جداً — إشارة دخول مبكرة","أكثر من 80 = تشبع شراء قوي — احذر من الدخول","يعطيك إشارة قبل RSI العادي بوقت أطول"]},
+    {icon:"📏",title:"ATR — وقف الخسارة الذكي",color:C.orange,lines:["ATR = متوسط تحرك السهم اليومي","وقف الخسارة = السعر - (ATR × 1.5)","سهم متقلب = وقف أوسع / سهم مستقر = وقف أضيق"]},
+    {icon:"🔵",title:"الدعم والمقاومة",color:C.blue,lines:["الدعم = سعر السهم يرتد منه للأعلى — اشتري عنده","المقاومة = سعر السهم يرتد منه للأسفل — بيع عنده","كلما تكرر الدعم/المقاومة = كلما كان أقوى"]},
+    {icon:"⏰",title:"توقيت التداول الأمثل",color:C.yellow,lines:["4:30م-5:00م = تقلب عالي — راقب فقط ❌","5:00م-9:00م = أفضل وقت للتداول ✅","9:00م-11:00م = تقلب مرة ثانية — كن حذراً ⚠️"]},
   ];
 
   return el('div',{style:{paddingTop:"8px"}},[
@@ -1475,7 +1596,7 @@ function renderTipsTab() {
           txt("🎯",{fontSize:"16px"}),
           el('div',{style:{fontSize:"13px",fontWeight:"800",color:C.yellow}},"توصيتي")
         ]),
-        el('div',{style:{fontSize:"12px",color:"var(--text2)",lineHeight:"1.8"}},"أسهم كبيرة ومستقرة للتداول اليومي والأسبوعي — ربح 2-5% — استخدم 90% من رأسمالك هنا — التوصيات تتجدد يومياً بناءً على 8 مؤشرات فنية وأخبار حقيقية")
+        el('div',{style:{fontSize:"12px",color:"var(--text2)",lineHeight:"1.8"}},"أسهم كبيرة وصغيرة ومتنوعة للتداول اليومي والأسبوعي — ربح 2-5% — استخدم 90% من رأسمالك هنا — التوصيات تتجدد يومياً بناءً على 11 مؤشر حقيقي + أخبار + دعم/مقاومة")
       ]),
 
       // المستقبل
@@ -1586,7 +1707,7 @@ function renderModal() {
           {l:"MA50",v:f(s.ma50),c:s.price>s.ma50?C.green:C.red,d:s.price>s.ma50?"فوق MA50 ✅":"تحت MA50 ⚠️"},
           {l:"MACD",v:f(s.macdH,2),c:s.macdH>0?C.green:C.red,d:s.macdH>0?"زخم صاعد":"زخم هابط"},
           {l:"P/E",v:f(s.pe,0),c:s.pe<25?C.green:s.pe<40?C.yellow:C.red,d:s.pe<25?"تقييم جذاب":s.pe<40?"تقييم معقول":"تقييم مرتفع"},
-          {l:"الحجم",v:fK(s.volume),c:s.volR>1.3?C.green:s.volR>0.8?C.yellow:"var(--text3)",d:s.volR>1.3?"نشاط عالي":s.volR>0.8?"طبيعي":"منخفض"}
+          {l:"الحجم",v:fK(s.volume),c:s.volR>1.3?C.green:s.volR>0.8?C.yellow:"var(--text3)",d:s.volR>1.3?`أعلى من المعتاد بـ ${f(s.volR,1)} مرة`:s.volR>0.8?"طبيعي":"أقل من المعتاد"}
         ].map(x=>el('div',{style:{background:"var(--bg3)",borderRadius:"10px",padding:"8px 10px"}},[
           el('div',{style:{display:"flex",justifyContent:"space-between",marginBottom:"3px"}},[
             txt(x.l,{fontSize:"10px",color:"var(--text3)"}),
@@ -2155,14 +2276,40 @@ function render() {
 }
 
 // ===== TIMERS =====
+let lastDay = new Date().getDate();
+let midDayFetched = false;
+
+// تحقق من تحديث منتصف اليوم كل دقيقة
+setInterval(()=>{
+  const now = new Date();
+  const today = now.getDate();
+  const mins = now.getUTCHours()*60 + now.getUTCMinutes();
+  const month = now.getUTCMonth()+1;
+  const isSummer = month>=3&&month<=11;
+  const midDay = isSummer ? 960 : 1020; // 7:00م سعودي
+
+  if(today !== lastDay) {
+    state.historicalFetched = false;
+    midDayFetched = false;
+    lastDay = today;
+  }
+
+  if(mins>=midDay && mins<=midDay+5 && !midDayFetched && state.historicalFetched) {
+    midDayFetched = true;
+    state.historicalFetched = false;
+    console.log("🔄 تحديث منتصف التداول 7:00م");
+  }
+}, 60000);
+
 setInterval(()=>{
   state.priceCountdown--;
   state.recCountdown--;
 
   if(state.recCountdown<=0) {
-    // التوصيات لا تتحدث تلقائياً — تُحسب مرة واحدة فقط عند فتح السوق
+    // نحدث الواجهة كل 30 ثانية — الأسعار تتحدث
+    // التوصيات تُحسب مرتين: 4:30م عند الفتح + 7:00م منتصف التداول
     state.recCountdown = REC_INTERVAL;
-    render(); // نحدث الواجهة فقط (الأسعار)
+    render();
   }
 
   if(state.priceCountdown<=0) {
