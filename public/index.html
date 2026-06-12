@@ -964,19 +964,26 @@ function recCard(s, rank, pct) {
     ]),
 
     // Price boxes
-    el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"6px",marginBottom:"12px"}},[
+    el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"8px"}},[
       el('div',{style:{background:"var(--bg3)",borderRadius:"10px",padding:"8px 10px"}},[
-        el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"السعر"),
+        el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"💰 السعر الحالي"),
         el('div',{style:{fontSize:"14px",fontWeight:"800",color:"var(--text)"}},`$${f(s.price)}`),
         el('div',{style:{fontSize:"10px",color:"var(--text3)"}},`${f(s.price*USD_RATE)} ر`)
       ]),
+      el('div',{style:{background:"rgba(0,200,255,.05)",borderRadius:"10px",padding:"8px 10px",border:"1px solid rgba(0,200,255,.2)"}},[
+        el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"🔵 اشتري عند"),
+        el('div',{style:{fontSize:"14px",fontWeight:"800",color:C.blue,textShadow:`0 0 8px ${C.blue}`}},`$${f(s.sup)}`),
+        el('div',{style:{fontSize:"10px",color:C.blue}},"خط الدعم")
+      ])
+    ]),
+    el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"12px"}},[
       el('div',{style:{background:"rgba(0,255,136,.05)",borderRadius:"10px",padding:"8px 10px",border:"1px solid rgba(0,255,136,.15)"}},[
-        el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"🎯 الهدف"),
+        el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"🎯 بيع عند"),
         el('div',{style:{fontSize:"14px",fontWeight:"800",color:C.green,textShadow:`0 0 8px ${C.green}`}},`$${f(s.res)}`),
         el('div',{style:{fontSize:"10px",color:C.green}},`+${f(s.profitPct)}%`)
       ]),
       el('div',{style:{background:"rgba(255,45,122,.05)",borderRadius:"10px",padding:"8px 10px",border:"1px solid rgba(255,45,122,.15)"}},[
-        el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"🛑 الوقف"),
+        el('div',{style:{fontSize:"9px",color:"var(--text3)",marginBottom:"2px"}},"🛑 وقف الخسارة"),
         el('div',{style:{fontSize:"14px",fontWeight:"800",color:C.red,textShadow:`0 0 8px ${C.red}`}},`$${f(stopPrice)}`),
         el('div',{style:{fontSize:"10px",color:C.red}},"-3%")
       ])
