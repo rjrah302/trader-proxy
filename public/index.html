@@ -1330,6 +1330,25 @@ function renderMarketTab() {
 // ===== FUTURE TAB =====
 // تواريخ أرباح أسهم المستقبل - محدثة يدوياً
 // تواريخ الأرباح — محدثة من مصادر موثوقة (TipRanks, Investing.com, Unusual Whales)
+// المعادلة العلمية لأسهم المستقبل
+const FUTURE_SCIENCE = {
+  "RKLB": {growth:63,  gov:true,  market:"تريليونات", score:6},
+  "IONQ": {growth:755, gov:true,  market:"تريليونات", score:6},
+  "JOBY": {growth:34,  gov:true,  market:"تريليونات", score:6},
+  "LUNR": {growth:200, gov:true,  market:"تريليونات", score:6},
+  "RIVN": {growth:30,  gov:false, market:"تريليونات", score:5},
+  "QBTS": {growth:45,  gov:true,  market:"مئات مليارات", score:5},
+  "ASTS": {growth:100, gov:false, market:"تريليونات", score:5},
+  "ACHR": {growth:50,  gov:true,  market:"تريليونات", score:6},
+  "SOUN": {growth:52,  gov:false, market:"مئات مليارات", score:4},
+  "RXRX": {growth:25,  gov:false, market:"مئات مليارات", score:2},
+  "BBAI": {growth:20,  gov:true,  market:"مليارات", score:2},
+  "AEVA": {growth:15,  gov:false, market:"مليارات", score:1},
+  "ARRY": {growth:35,  gov:false, market:"مئات مليارات", score:4},
+  "HOOD": {growth:40,  gov:false, market:"مئات مليارات", score:4},
+  "SOFI": {growth:30,  gov:false, market:"مئات مليارات", score:4},
+};
+
 const LONGTERM_EARNINGS = {
   // أسهم الاستثمار طويل المدى — تواريخ أرباح Q2 2026
   "NVDA": "2026-08-27",  // Nvidia
@@ -1372,7 +1391,11 @@ function renderFutureTab() {
   const futures = state.stocks
     .filter(s=>s.cat==="future")
     .filter(s=>s.signal.includes("شراء"))
-    .sort((a,b)=>b.strength-a.strength);
+    .sort((a,b)=>{
+      const sciA = (FUTURE_SCIENCE[a.id]?.score || 0) * 10;
+      const sciB = (FUTURE_SCIENCE[b.id]?.score || 0) * 10;
+      return (sciB + b.strength) - (sciA + a.strength);
+    });
   return el('div',{style:{paddingTop:"8px"}},[
     el('div',{style:{
       background:"linear-gradient(135deg,rgba(180,79,255,.08),rgba(0,200,255,.08))",
@@ -1388,7 +1411,34 @@ function renderFutureTab() {
           el('div',{style:{fontSize:"14px",color:"var(--text3)",marginBottom:"6px"}},"لا توجد فرص شراء الآن"),
           el('div',{style:{fontSize:"12px",color:"var(--text3)"}},"انتظر إشارة شراء في الأسهم الناشئة")
         ])
-      : el('div',{},futures.map(s=>stockCard(s))),
+      : el('div',{},futures.map(s=>{
+          const sci = FUTURE_SCIENCE[s.id];
+          const wrapper = document.createElement('div');
+          // شارة المعادلة العلمية
+          if(sci) {
+            const badge = el('div',{style:{
+              background:sci.score>=5?"rgba(0,255,136,.08)":sci.score>=4?"rgba(255,224,51,.08)":"rgba(255,45,122,.08)",
+              border:`1px solid ${sci.score>=5?C.green:sci.score>=4?C.yellow:C.red}33`,
+              borderRadius:"8px",padding:"5px 10px",marginBottom:"6px",
+              display:"flex",justifyContent:"space-between",alignItems:"center"
+            }},[
+              el('div',{style:{display:"flex",gap:"8px",fontSize:"11px"}},[
+                txt(`📈 نمو ${sci.growth}%`,{color:sci.growth>=30?C.green:C.red}),
+                txt(`🌍 ${sci.market}`,{color:C.blue}),
+                sci.gov && txt("🏛️ دعم حكومي",{color:C.purple})
+              ].filter(Boolean)),
+              el('div',{style:{
+                background:sci.score>=5?`${C.green}20`:sci.score>=4?`${C.yellow}20`:`${C.red}20`,
+                border:`1px solid ${sci.score>=5?C.green:sci.score>=4?C.yellow:C.red}44`,
+                color:sci.score>=5?C.green:sci.score>=4?C.yellow:C.red,
+                padding:"2px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"700"
+              }},`${sci.score}/6`)
+            ]);
+            wrapper.appendChild(badge);
+          }
+          wrapper.appendChild(stockCard(s));
+          return wrapper;
+        })),
     el('div',{style:{background:"rgba(255,45,122,.05)",border:"1px solid rgba(255,45,122,.15)",borderRadius:"12px",padding:"12px",marginTop:"6px"}},[
       txt("⚠️ أسهم المستقبل عالية المخاطرة — لا تضع فيها أكثر من 10% من رأسمالك.",{fontSize:"11px",color:"rgba(255,45,122,.7)",lineHeight:"1.7"})
     ])
