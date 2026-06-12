@@ -1369,7 +1369,10 @@ function earningsBadge(symbol) {
 }
 
 function renderFutureTab() {
-  const futures = state.stocks.filter(s=>s.cat==="future").sort((a,b)=>b.strength-a.strength);
+  const futures = state.stocks
+    .filter(s=>s.cat==="future")
+    .filter(s=>s.signal.includes("شراء"))
+    .sort((a,b)=>b.strength-a.strength);
   return el('div',{style:{paddingTop:"8px"}},[
     el('div',{style:{
       background:"linear-gradient(135deg,rgba(180,79,255,.08),rgba(0,200,255,.08))",
@@ -1379,7 +1382,13 @@ function renderFutureTab() {
       el('div',{style:{fontSize:"16px",fontWeight:"900",color:C.purple,marginBottom:"6px",textShadow:`0 0 15px ${C.purple}`}},"🚀 أسهم المستقبل"),
       el('div',{style:{fontSize:"12px",color:"var(--text3)",lineHeight:"1.8"}},"شركات ناشئة وتقنيات المستقبل — مخاطرة عالية لكن إمكانية نمو ضخمة على المدى البعيد")
     ]),
-    ...futures.map(s=>stockCard(s)),
+    futures.length === 0 
+      ? el('div',{style:{textAlign:"center",padding:"40px 0"}},[
+          el('div',{style:{fontSize:"40px",marginBottom:"12px"}},"🌙"),
+          el('div',{style:{fontSize:"14px",color:"var(--text3)",marginBottom:"6px"}},"لا توجد فرص شراء الآن"),
+          el('div',{style:{fontSize:"12px",color:"var(--text3)"}},"انتظر إشارة شراء في الأسهم الناشئة")
+        ])
+      : el('div',{},futures.map(s=>stockCard(s))),
     el('div',{style:{background:"rgba(255,45,122,.05)",border:"1px solid rgba(255,45,122,.15)",borderRadius:"12px",padding:"12px",marginTop:"6px"}},[
       txt("⚠️ أسهم المستقبل عالية المخاطرة — لا تضع فيها أكثر من 10% من رأسمالك.",{fontSize:"11px",color:"rgba(255,45,122,.7)",lineHeight:"1.7"})
     ])
