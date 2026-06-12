@@ -132,7 +132,7 @@ const STOCKS = [
   {id:"NFLX",  name:"Netflix",     sector:"ترفيه",        cat:"large",  tip:"النمو في الاشتراكات يحرك السهم",    beta:1.3},
   {id:"DIS",   name:"Disney",      sector:"ترفيه",        cat:"large",  tip:"يحاول الموازنة بين streaming والبارك",beta:1.1},
   {id:"SPOT",  name:"Spotify",     sector:"موسيقى",       cat:"mid",    tip:"نمو قوي في المستخدمين",              beta:1.4},
-  // 🚀 أسهم المستقبل
+  // 🚀 أسهم المجازفة
   {id:"RKLB",  name:"Rocket Lab",  sector:"فضاء 🚀",      cat:"future", tip:"منافس SpaceX في صواريخ الفضاء",      beta:2.2},
   {id:"IONQ",  name:"IonQ",        sector:"كمبيوتر كمي",  cat:"future", tip:"رائد الحوسبة الكمومية",              beta:2.5},
   {id:"JOBY",  name:"Joby Aviation",sector:"طيران كهربائي",cat:"future", tip:"سيارات طائرة — مستقبل النقل",        beta:2.3},
@@ -317,7 +317,7 @@ let state = {
   companyProfiles: {}
 };
 
-const CATS = {large:"كبيرة 💎", mid:"متوسطة 📊", small:"صغيرة 💰", future:"المستقبل 🚀"};
+const CATS = {large:"كبيرة 💎", mid:"متوسطة 📊", small:"صغيرة 💰", future:"المجازفة 🎲"};
 
 // ===== SEEDED RANDOM =====
 function seededRnd(seed, min, max) {
@@ -613,7 +613,7 @@ function buildStocks() {
       NFLX:1050,DIS:100,SPOT:620,
       // سيارات
       F:11,GM:52,RIVN:14,
-      // أسهم المستقبل — محدثة
+      // أسهم المجازفة — محدثة
       RKLB:120,IONQ:35,JOBY:8,LUNR:26,QBTS:7,ARRY:12,
       ASTS:30,ACHR:10,SOUN:13,RXRX:8,BBAI:4,AEVA:3,
       // صغيرة/رخيصة
@@ -1258,7 +1258,7 @@ function renderHeader() {
       ...[
         {id:"rec",l:"🎯 توصيتي",c:C.yellow},
         {id:"market",l:"📊 السوق",c:C.blue},
-        {id:"future",l:"🚀 المستقبل",c:C.purple},
+        {id:"future",l:"🎲 المجازفة",c:C.purple},
         {id:"tips",l:"📚 تعلم",c:C.green},
         {id:"portfolio",l:"💼 محفظتي",c:C.purple},
         {id:"longterm",l:"📈 استثمار",c:C.orange}
@@ -1462,9 +1462,9 @@ function renderMarketTab() {
 }
 
 // ===== FUTURE TAB =====
-// تواريخ أرباح أسهم المستقبل - محدثة يدوياً
+// تواريخ أرباح أسهم المجازفة - محدثة يدوياً
 // تواريخ الأرباح — محدثة من مصادر موثوقة (TipRanks, Investing.com, Unusual Whales)
-// المعادلة العلمية لأسهم المستقبل
+// المعادلة العلمية لأسهم المجازفة
 const FUTURE_SCIENCE = {
   "RKLB": {growth:63,  gov:true,  market:"تريليونات", score:6},
   "IONQ": {growth:755, gov:true,  market:"تريليونات", score:6},
@@ -1536,7 +1536,7 @@ function renderFutureTab() {
       border:"1px solid rgba(180,79,255,.3)",
       borderRadius:"14px",padding:"14px",marginBottom:"14px"
     }},[
-      el('div',{style:{fontSize:"16px",fontWeight:"900",color:C.purple,marginBottom:"6px",textShadow:`0 0 15px ${C.purple}`}},"🚀 أسهم المستقبل"),
+      el('div',{style:{fontSize:"16px",fontWeight:"900",color:C.purple,marginBottom:"6px",textShadow:`0 0 15px ${C.purple}`}},"🚀 أسهم المجازفة"),
       el('div',{style:{fontSize:"12px",color:"var(--text3)",lineHeight:"1.8"}},"شركات ناشئة وتقنيات المستقبل — مخاطرة عالية لكن إمكانية نمو ضخمة على المدى البعيد")
     ]),
     futures.length === 0 
@@ -1574,7 +1574,7 @@ function renderFutureTab() {
           return wrapper;
         })),
     el('div',{style:{background:"rgba(255,45,122,.05)",border:"1px solid rgba(255,45,122,.15)",borderRadius:"12px",padding:"12px",marginTop:"6px"}},[
-      txt("⚠️ أسهم المستقبل عالية المخاطرة — لا تضع فيها أكثر من 10% من رأسمالك.",{fontSize:"11px",color:"rgba(255,45,122,.7)",lineHeight:"1.7"})
+      txt("⚠️ أسهم المجازفة عالية المخاطرة — لا تضع فيها أكثر من 10% من رأسمالك.",{fontSize:"11px",color:"rgba(255,45,122,.7)",lineHeight:"1.7"})
     ])
   ]);
 }
@@ -1586,7 +1586,7 @@ function renderTipsTab() {
     {icon:"〰️",title:"MA20 و MA50 — المتوسطات المتحركة",color:C.blue,lines:["MA20 فوق MA50 = Golden Cross — اتجاه صاعد قوي 🚀","السعر فوق MA20 = زخم إيجابي قصير المدى","السعر تحت MA50 = ضغط بيعي على المدى المتوسط"]},
     {icon:"⚡",title:"MACD — مؤشر الزخم",color:C.yellow,lines:["الشريط فوق الصفر = زخم شراء نشط","الشريط تحت الصفر = زخم هبوطي","التقاطع مع خط الإشارة = نقطة دخول أو خروج"]},
     {icon:"💎",title:"P/E — تقييم السهم",color:C.purple,lines:["P/E منخفض (أقل من 20) = السهم رخيص نسبياً","P/E عالي (أكثر من 40) = توقعات نمو كبيرة أو مبالغة","قارن دائماً مع متوسط القطاع"]},
-    {icon:"💰",title:"إدارة المال — قواعد ذهبية",color:C.orange,lines:["لا تخاطر بأكثر من 2% من رأسمالك في صفقة واحدة","وقف الخسارة دائماً — بدونه تخاطر بكل رأسمالك","أسهم المستقبل = 10% فقط من محفظتك"]},
+    {icon:"💰",title:"إدارة المال — قواعد ذهبية",color:C.orange,lines:["لا تخاطر بأكثر من 2% من رأسمالك في صفقة واحدة","وقف الخسارة دائماً — بدونه تخاطر بكل رأسمالك","أسهم المجازفة = 10% فقط من محفظتك"]},
     {icon:"🔵",title:"اشتري عند الدعم — مو بسعر السوق",color:C.blue,lines:["الأداة تعطيك سعر الدعم — انتظر السهم ينزل له","استخدم Limit Order بسعر الدعم مو Market Order","الدخول عند الدعم = ربح أكبر ومخاطرة أقل"]},
     {icon:"🎯",title:"كيف تجمع المؤشرات؟",color:C.green,lines:["شراء مثالي: RSI<35 + Stoch RSI<20 + MACD↑ + MA20>MA50 + قريب من الدعم + حجم عالٍ","لا تدخل بإشارة واحدة — اجمع 3 مؤشرات على الأقل","السوق الأمريكي يفتح 4:30م - 11م بتوقيت السعودية (شتاء: 5:30م)"]},
     {icon:"📐",title:"Stochastic RSI — أسرع من RSI",color:C.blue,lines:["أقل من 20 = تشبع بيع قوي جداً — إشارة دخول مبكرة","أكثر من 80 = تشبع شراء قوي — احذر من الدخول","يعطيك إشارة قبل RSI العادي بوقت أطول"]},
@@ -1614,9 +1614,9 @@ function renderTipsTab() {
       el('div',{style:{background:"rgba(180,79,255,.06)",borderRadius:"10px",padding:"12px",marginBottom:"8px",border:`1px solid ${C.purple}22`}},[
         el('div',{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}},[
           txt("🚀",{fontSize:"16px"}),
-          el('div',{style:{fontSize:"13px",fontWeight:"800",color:C.purple}},"المستقبل")
+          el('div',{style:{fontSize:"13px",fontWeight:"800",color:C.purple}},"المجازفة")
         ]),
-        el('div',{style:{fontSize:"12px",color:"var(--text2)",lineHeight:"1.8"}},"أسهم ناشئة ومتقلبة للمضاربة على ارتفاع ضخم محتمل — ربح 100%+ أو خسارة كبيرة — استخدم 10% فقط من رأسمالك — تحتاج صبر أشهر أو سنوات")
+        el('div',{style:{fontSize:"12px",color:"var(--text2)",lineHeight:"1.8"}},"أسهم متقلبة عالية المخاطرة — ممكن تضاعف في أيام أو تخسر كل شيء — ادخل بمبلغ تتحمل خسارته كاملاً — 10% فقط من رأسمالك — مو للقلوب الضعيفة 😄")
       ]),
 
       // استثمار
