@@ -1281,12 +1281,13 @@ function renderHeader() {
     // Tabs
     el('div',{style:{display:"flex",gap:"5px",marginBottom:"10px",overflowX:"auto",scrollbarWidth:"none"}},[
       ...[
-        {id:"rec",l:"🎯 توصيتي",c:C.yellow},
         {id:"market",l:"📊 السوق",c:C.blue},
+        {id:"rec",l:"🎯 توصيتي",c:C.yellow},
         {id:"future",l:"🎲 المجازفة",c:C.purple},
-        {id:"tips",l:"📚 تعلم",c:C.green},
+        {id:"longterm",l:"📈 استثمار",c:C.orange},
         {id:"portfolio",l:"💼 محفظتي",c:C.purple},
-        {id:"longterm",l:"📈 استثمار",c:C.orange}
+        {id:"calc",l:"🧮 حاسبة",c:C.yellow},
+        {id:"tips",l:"📚 تعلم",c:C.green}
       ].map(t=>btn(t.l,{
         flexShrink:"0",
         background:state.tab===t.id?`${t.c}15`:"var(--bg3)",
