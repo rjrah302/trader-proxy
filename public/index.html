@@ -1007,7 +1007,6 @@ function recCard(s, rank, pct) {
   const daysMax = expectedDays + 2;
 
   const reasons = [];
-  const real = state.realIndicators && state.realIndicators[s.id];
 
   // شرح RSI
   if(s.rsi < 30) reasons.push(`RSI ${f(s.rsi,0)} — تشبع بيع قوي جداً — أدنى مستوى ومن المتوقع ارتداد`);
