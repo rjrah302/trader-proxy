@@ -1613,6 +1613,7 @@ function renderCalcTab() {
   
   // نبني الحاسبة كـ iframe مستقل عشان ما تتأثر بـ render()
   const iframe = document.createElement('iframe');
+  iframe.id = "calc-frame";
   iframe.style.cssText = "width:100%;height:90vh;border:none;background:transparent";
   iframe.srcdoc = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -2533,6 +2534,9 @@ function renderPortfolioTab() {
 
 // ===== MAIN RENDER =====
 function render() {
+  // لا تعيد الرسم لما تكون في الحاسبة عشان ما تمسح الأرقام
+  if(state.tab === "calc" && document.getElementById('calc-frame')) return;
+  
   const app = document.getElementById('app');
   app.innerHTML = '';
 
