@@ -1000,11 +1000,14 @@ function recCard(s, rank, pct) {
   const stopPrice = s.price * 0.97;
   // حساب المدة المتوقعة بناءً على ATR
   const real = state.realIndicators && state.realIndicators[s.id];
-  const atr = real?.atrPct ? (real.atrPct / 100) * s.price : s.price * 0.02;
+  // ATR بالدولار = atrPct% من السعر
+  const atrDollar = real?.atrPct ? (real.atrPct / 100) * s.price : null;
   const priceDiff = Math.abs(s.res - s.sup);
-  const expectedDays = atr > 0 ? Math.round(priceDiff / atr) : 3;
-  const daysMin = Math.max(1, expectedDays - 1);
-  const daysMax = expectedDays + 2;
+  // لو ما عندنا ATR حقيقي = نستخدم 0.5% من السعر كتقدير محافظ
+  const atrForCalc = atrDollar || (s.price * 0.005);
+  const expectedDays = atrForCalc > 0 ? Math.round(priceDiff / atrForCalc) : 5;
+  const daysMin = Math.max(2, expectedDays - 1);
+  const daysMax = Math.min(30, expectedDays + 3);
 
   const reasons = [];
 
