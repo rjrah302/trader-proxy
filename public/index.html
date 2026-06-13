@@ -315,8 +315,8 @@ let state = {
   monthlyInvest: {},
   calcItems: [],      // قائمة الصفقات في الحاسبة
   calcSearch: "",     // بحث الحاسبة
-  calcPnl: {buy:"", sell:"", qty:""},  // حاسبة الربح
-  calcSl: {price:"", pct:"3", qty:""},  // حاسبة وقف الخسارة
+  pnlVals: {buy:"", sell:"", qty:""},  // حاسبة الربح
+  slVals: {price:"", pct:"3", qty:""},  // حاسبة وقف الخسارة
   realIndicators: {},
   companyProfiles: {}
 };
@@ -1801,9 +1801,9 @@ function renderCalcTab() {
   const pnlBuy = makeCalcField("سعر الشراء $", "225", "buy-price2");
   const pnlSell = makeCalcField("سعر البيع $", "236", "sell-price2");
   const pnlQty = makeCalcField("الكمية", "10", "pnl-qty2");
-  pnlBuy.querySelector('input').value = state.calcPnl.buy;
-  pnlSell.querySelector('input').value = state.calcPnl.sell;
-  pnlQty.querySelector('input').value = state.calcPnl.qty;
+  pnlBuy.querySelector('input').value = state.pnlVals.buy;
+  pnlSell.querySelector('input').value = state.pnlVals.sell;
+  pnlQty.querySelector('input').value = state.pnlVals.qty;
   pnlGrid.appendChild(pnlBuy);
   pnlGrid.appendChild(pnlSell);
   pnlGrid.appendChild(pnlQty);
@@ -1815,12 +1815,12 @@ function renderCalcTab() {
   sec3.appendChild(pnlResult);
 
   function calcPnl() {
-    state.calcPnl.buy = pnlBuy.querySelector('input').value;
-    state.calcPnl.sell = pnlSell.querySelector('input').value;
-    state.calcPnl.qty = pnlQty.querySelector('input').value;
-    const bp = parseFloat(state.calcPnl.buy)||0;
-    const sp = parseFloat(state.calcPnl.sell)||0;
-    const qty = parseFloat(state.calcPnl.qty)||0;
+    state.pnlVals.buy = pnlBuy.querySelector('input').value;
+    state.pnlVals.sell = pnlSell.querySelector('input').value;
+    state.pnlVals.qty = pnlQty.querySelector('input').value;
+    const bp = parseFloat(state.pnlVals.buy)||0;
+    const sp = parseFloat(state.pnlVals.sell)||0;
+    const qty = parseFloat(state.pnlVals.qty)||0;
     if(!bp||!sp||!qty) return;
     const pnlUsd = (sp-bp)*qty;
     const pnlSar = pnlUsd*3.75;
@@ -1851,10 +1851,10 @@ function renderCalcTab() {
 
   const slPrice = makeCalcField("سعر الشراء $", "225", "sl-price2");
   const slPct = makeCalcField("النسبة %", "3", "sl-pct2");
-  slPct.querySelector('input').value = state.calcSl.pct || "3";
+  slPct.querySelector('input').value = state.slVals.pct || "3";
   const slQty = makeCalcField("الكمية", "10", "sl-qty2");
-  slPrice.querySelector('input').value = state.calcSl.price;
-  slQty.querySelector('input').value = state.calcSl.qty;
+  slPrice.querySelector('input').value = state.slVals.price;
+  slQty.querySelector('input').value = state.slVals.qty;
   slGrid.appendChild(slPrice);
   slGrid.appendChild(slPct);
   slGrid.appendChild(slQty);
@@ -1866,12 +1866,12 @@ function renderCalcTab() {
   sec4.appendChild(slResult);
 
   function calcSl() {
-    state.calcSl.price = slPrice.querySelector('input').value;
-    state.calcSl.pct = slPct.querySelector('input').value;
-    state.calcSl.qty = slQty.querySelector('input').value;
-    const price = parseFloat(state.calcSl.price)||0;
-    const pct = parseFloat(state.calcSl.pct)||3;
-    const qty = parseFloat(state.calcSl.qty)||0;
+    state.slVals.price = slPrice.querySelector('input').value;
+    state.slVals.pct = slPct.querySelector('input').value;
+    state.slVals.qty = slQty.querySelector('input').value;
+    const price = parseFloat(state.slVals.price)||0;
+    const pct = parseFloat(state.slVals.pct)||3;
+    const qty = parseFloat(state.slVals.qty)||0;
     if(!price) return;
     const stopPrice = price * (1 - pct/100);
     const lossSar = qty ? (price-stopPrice)*qty*3.75 : 0;
