@@ -1695,6 +1695,31 @@ function renderCalcTab() {
     // 1. حاسبة الصفقات
     const calcItems = state.calcItems || [];
     
+    function updateTotal() {
+      const totalDiv = wrap.querySelector('#c-total');
+      const clearBtn = wrap.querySelector('#c-clear');
+      if(!totalDiv) return;
+      let total = 0;
+      calcItems.forEach(item => { total += item.price * (item.qty||0); });
+      if(total > 0) {
+        totalDiv.style.display = 'block';
+        clearBtn.style.display = 'block';
+        totalDiv.innerHTML = `
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="color:var(--text3);font-size:12px">الإجمالي بالدولار</span>
+            <span style="color:var(--neon-green);font-size:16px;font-weight:900">$${total.toFixed(2)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--text3);font-size:12px">الإجمالي بالريال</span>
+            <span style="color:var(--neon-blue);font-size:16px;font-weight:900">${(total*3.75).toFixed(0)} ر</span>
+          </div>
+        `;
+      } else {
+        totalDiv.style.display = 'none';
+        clearBtn.style.display = 'none';
+      }
+    }
+
     function renderItems() {
       const itemsDiv = wrap.querySelector('#c-items');
       const totalDiv = wrap.querySelector('#c-total');
@@ -1714,8 +1739,12 @@ function renderCalcTab() {
           <button style="background:rgba(255,45,122,.1);border:1px solid rgba(255,45,122,.3);color:var(--neon-pink);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer">✕</button>
         `;
         row.querySelector('input').oninput = function() {
-          calcItems[i].qty = parseInt(this.value)||1;
-          renderItems();
+          const newQty = parseInt(this.value) || 0;
+          calcItems[i].qty = newQty;
+          // نحدث السعر الإجمالي فقط بدون إعادة بناء كل شيء
+          const totalSpan = row.querySelector('span:nth-child(4)');
+          if(totalSpan) totalSpan.textContent = '$' + (item.price * newQty).toFixed(0);
+          updateTotal();
         };
         row.querySelector('button').onclick = () => {
           calcItems.splice(i,1);
@@ -1764,7 +1793,7 @@ function renderCalcTab() {
       });
     };
 
-    wrap.querySelector('#c-clear').onclick = () => { state.calcItems = []; renderItems(); };
+    wrap.querySelector('#c-clear').onclick = () => { state.calcItems = []; calcItems.length = 0; renderItems(); };
     renderItems();
 
     // 2. تحويل العملة - نستعيد القيم المحفوظة
