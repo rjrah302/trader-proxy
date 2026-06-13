@@ -998,6 +998,13 @@ function recCard(s, rank, pct) {
   const shares = Math.floor((investUsd * USD_RATE) / s.priceInSar);
   const profitSar = shares * s.priceInSar * (s.profitPct/100);
   const stopPrice = s.price * 0.97;
+  // حساب المدة المتوقعة بناءً على ATR
+  const real = state.realIndicators && state.realIndicators[s.id];
+  const atr = real?.atr || s.price * 0.02; // ATR أو 2% من السعر كـ fallback
+  const priceDiff = Math.abs(s.res - s.sup);
+  const expectedDays = atr > 0 ? Math.round(priceDiff / atr) : 3;
+  const daysMin = Math.max(1, expectedDays - 1);
+  const daysMax = expectedDays + 2;
 
   const reasons = [];
   const real = state.realIndicators && state.realIndicators[s.id];
@@ -2221,10 +2228,26 @@ function renderPortfolioTab() {
             el('div',{style:{fontSize:"10px",color:"var(--text3)"}},`${s.shares} سهم • دخل بـ $${f(s.buyPrice)}`),
             el('div',{style:{fontSize:"10px",color:recColor,fontWeight:"700"}},`توصية: ${rec}`)
           ]),
-          el('div',{style:{textAlign:"left"}},[
+          el('div',{style:{textAlign:"left",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"4px"}},[
             el('div',{style:{fontSize:"13px",fontWeight:"800",color:pnl>=0?C.green:C.red}},`${pnl>=0?"+":""}${f(pnl,0)} ر`),
             el('div',{style:{fontSize:"10px",color:pnl>=0?C.green:C.red}},`${pnlPct>=0?"+":""}${f(pnlPct)}%`),
-            pnl<=-s.buyPrice*s.shares*USD_RATE*0.03 && el('div',{style:{fontSize:"9px",color:C.red,fontWeight:"700",background:"rgba(255,45,122,.15)",borderRadius:"4px",padding:"2px 6px",marginTop:"2px"}},"🛑 وقف الخسارة!")
+            pnl<=-s.buyPrice*s.shares*USD_RATE*0.03 && el('div',{style:{fontSize:"9px",color:C.red,fontWeight:"700",background:"rgba(255,45,122,.15)",borderRadius:"4px",padding:"2px 6px"}},"🛑 وقف الخسارة!"),
+            el('button',{
+              onclick: async ()=>{
+                if(!confirm(`حذف ${s.symbol} من المحفظة؟`)) return;
+                try {
+                  const {deleteDoc, doc} = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+                  await deleteDoc(doc(db, 'portfolio', s.id));
+                  alert('✅ تم الحذف!');
+                  renderPortfolioTab && render();
+                } catch(e) { alert('❌ خطأ في الحذف'); }
+              },
+              style:{
+                background:"rgba(255,45,122,.1)",border:"1px solid rgba(255,45,122,.3)",
+                color:C.red,borderRadius:"6px",padding:"3px 8px",
+                fontSize:"10px",cursor:"pointer",fontFamily:"inherit"
+              }
+            },"🗑️ حذف")
           ])
         ]);
       })
