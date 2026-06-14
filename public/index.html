@@ -702,11 +702,11 @@ async function fetchMarketTrend() {
 
 async function fetchNewsAndEarnings() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
-  const symbols = uniqueStocks.slice(0,20).map(s=>s.id).join(','); // أهم 20 سهم للأخبار
+  const symbols = uniqueStocks.map(s=>s.id).join(','); // كل الأسهم للأخبار
   
   try {
     // أخبار السوق
-    const newsUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbols}&limit=50&apikey=${apiKey}`;
+    const newsUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbols}&limit=150&apikey=${apiKey}`;
     const newsRes = await fetch(newsUrl);
     const newsData = await newsRes.json();
     
