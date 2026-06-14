@@ -1804,16 +1804,75 @@ function earningsBadge(symbol) {
   ]);
 }
 
+// ===== Explosion Engine V1 =====
+function calcExplosionScore(s) {
+  const real = state.realIndicators && state.realIndicators[s.id];
+  const profile = state.companyProfiles && state.companyProfiles[s.id];
+  const beta = profile?.beta || s.beta || 1;
+  const stockNews = (state.news && state.news[s.id]) || [];
+
+  // 1. Beta Engine (30%)
+  let betaScore = 0;
+  if(beta > 3)       betaScore = 30;
+  else if(beta > 2)  betaScore = 25;
+  else if(beta > 1.5) betaScore = 20;
+  else               betaScore = 10;
+
+  // 2. Volume Explosion Engine (25%)
+  let volumeScore = 0;
+  const volR = s.volR || 1;
+  if(volR > 4)       volumeScore = 25;
+  else if(volR > 3)  volumeScore = 20;
+  else if(volR > 2)  volumeScore = 15;
+  else if(volR > 1)  volumeScore = 10;
+
+  // 3. Momentum Engine (20%)
+  let momentumScore = 0;
+  const rsi = real?.rsi || s.rsi || 50;
+  const macdH = real?.macdHist || 0;
+  if(rsi > 50 && rsi < 70) momentumScore += 10; // RSI صاعد مو مشبع
+  if(macdH > 0)             momentumScore += 10; // MACD إيجابي
+
+  // 4. Catalyst Engine (15%)
+  let catalystScore = 0;
+  const posNews = stockNews.filter(n=>n.sentiment==='positive').length;
+  catalystScore = Math.min(15, posNews * 5);
+
+  // 5. Price Engine (10%)
+  let priceScore = 0;
+  const price = s.price || 0;
+  if(price < 20)       priceScore = 10;
+  else if(price < 50)  priceScore = 8;
+  else if(price < 100) priceScore = 5;
+  else                 priceScore = 2;
+
+  const total = betaScore + volumeScore + momentumScore + catalystScore + priceScore;
+
+  // تصنيف الفرصة
+  let label = "", emoji = "";
+  if(total >= 95)      { label = "Potential Explosion"; emoji = "🚀"; }
+  else if(total >= 90) { label = "High Momentum";       emoji = "🔥"; }
+  else if(total >= 85) { label = "Aggressive Opportunity"; emoji = "⚡"; }
+  else if(total >= 80) { label = "Speculative";         emoji = "🎲"; }
+  else                 { label = "";                    emoji = ""; }
+
+  // Risk Meter
+  let riskLevel = "", riskColor = "";
+  if(beta > 3 || volR > 4)          { riskLevel = "شديدة الخطورة"; riskColor = "#ff2d7a"; }
+  else if(beta > 2 || volR > 2.5)   { riskLevel = "مرتفعة";        riskColor = "#ff7a00"; }
+  else if(beta > 1.5)                { riskLevel = "متوسطة";        riskColor = "#ffe033"; }
+  else                               { riskLevel = "منخفضة";        riskColor = "#00ff88"; }
+
+  return { total, label, emoji, betaScore, volumeScore, momentumScore, catalystScore, priceScore, riskLevel, riskColor };
+}
+
 function renderFutureTab() {
   const futures = state.stocks
     .filter(s => s.cat === "future")
     .filter(s => s.price < 150)
-    .filter(s => s.signal.includes("شراء"))
-    .sort((a,b) => {
-      const sciA = (FUTURE_SCIENCE[a.id]?.score||0)*10 + a.strength + (a.price<30?20:a.price<50?10:0);
-      const sciB = (FUTURE_SCIENCE[b.id]?.score||0)*10 + b.strength + (b.price<30?20:b.price<50?10:0);
-      return sciB - sciA;
-    });
+    .map(s => ({...s, explosion: calcExplosionScore(s)}))
+    .filter(s => s.explosion.total >= 80) // فقط الأسهم فوق 80
+    .sort((a,b) => b.explosion.total - a.explosion.total);
   return el('div',{style:{paddingTop:"8px"}},[
     el('div',{style:{
       background:"linear-gradient(135deg,rgba(180,79,255,.08),rgba(0,200,255,.08))",
@@ -1821,7 +1880,7 @@ function renderFutureTab() {
       borderRadius:"14px",padding:"14px",marginBottom:"14px"
     }},[
       el('div',{style:{fontSize:"16px",fontWeight:"900",color:C.purple,marginBottom:"6px",textShadow:`0 0 15px ${C.purple}`}},"🚀 أسهم المجازفة"),
-      el('div',{style:{fontSize:"12px",color:"var(--text3)",lineHeight:"1.8"}},"مخاطرة عالية — ربح ضخم أو خسارة كاملة — 10% من رأسمالك فقط")
+      el('div',{style:{fontSize:"12px",color:"var(--text3)",lineHeight:"1.8"}},`رادار الفرص المتفجرة • ${futures.length} فرصة • 10% من رأسمالك فقط`)
     ]),
     futures.length === 0 
       ? el('div',{style:{textAlign:"center",padding:"40px 0"}},[
@@ -1830,27 +1889,38 @@ function renderFutureTab() {
           el('div',{style:{fontSize:"12px",color:"var(--text3)"}},"انتظر إشارة شراء في الأسهم الناشئة")
         ])
       : el('div',{},futures.map(s=>{
-          const sci = FUTURE_SCIENCE[s.id];
+          const exp = s.explosion;
           const wrapper = document.createElement('div');
-          // شارة المعادلة العلمية
-          if(sci) {
+
+          // Explosion Badge
+          if(exp && exp.label) {
             const badge = el('div',{style:{
-              background:sci.score>=5?"rgba(0,255,136,.08)":sci.score>=4?"rgba(255,224,51,.08)":"rgba(255,45,122,.08)",
-              border:`1px solid ${sci.score>=5?C.green:sci.score>=4?C.yellow:C.red}33`,
-              borderRadius:"8px",padding:"5px 10px",marginBottom:"6px",
-              display:"flex",justifyContent:"space-between",alignItems:"center"
+              background: exp.total>=95?"linear-gradient(135deg,rgba(255,45,122,.15),rgba(180,79,255,.15))":
+                          exp.total>=90?"linear-gradient(135deg,rgba(255,122,0,.15),rgba(255,45,122,.15))":
+                          "rgba(255,224,51,.08)",
+              border:`1px solid ${exp.total>=95?"#ff2d7a":exp.total>=90?"#ff7a00":"#ffe033"}44`,
+              borderRadius:"10px",padding:"8px 12px",marginBottom:"6px"
             }},[
-              el('div',{style:{display:"flex",gap:"8px",fontSize:"11px"}},[
-                txt(`📈 نمو ${sci.growth}%`,{color:sci.growth>=30?C.green:C.red}),
-                txt(`🌍 ${sci.market}`,{color:C.blue}),
-                sci.gov && txt("🏛️ دعم حكومي",{color:C.purple})
-              ].filter(Boolean)),
+              // العنوان والنقاط
+              el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}},[
+                el('div',{style:{fontSize:"13px",fontWeight:"900",color:exp.total>=95?"#ff2d7a":exp.total>=90?"#ff7a00":"#ffe033"}},
+                  `${exp.emoji} ${exp.label}`),
+                el('div',{style:{fontSize:"16px",fontWeight:"900",color:"var(--text)"}},`${exp.total}`)
+              ]),
+              // تفاصيل النقاط
+              el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px",fontSize:"10px",color:"var(--text3)",marginBottom:"6px"}},[
+                el('div',{},`Beta: ${exp.betaScore}/30`),
+                el('div',{},`حجم: ${exp.volumeScore}/25`),
+                el('div',{},`زخم: ${exp.momentumScore}/20`),
+                el('div',{},`محفز: ${exp.catalystScore}/15`),
+              ]),
+              // Risk Meter
               el('div',{style:{
-                background:sci.score>=5?`${C.green}20`:sci.score>=4?`${C.yellow}20`:`${C.red}20`,
-                border:`1px solid ${sci.score>=5?C.green:sci.score>=4?C.yellow:C.red}44`,
-                color:sci.score>=5?C.green:sci.score>=4?C.yellow:C.red,
-                padding:"2px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"700"
-              }},`${sci.score}/6`)
+                display:"inline-flex",alignItems:"center",gap:"4px",
+                background:`${exp.riskColor}15`,border:`1px solid ${exp.riskColor}44`,
+                borderRadius:"6px",padding:"2px 8px",fontSize:"10px",
+                fontWeight:"700",color:exp.riskColor
+              }},`⚠️ مخاطرة ${exp.riskLevel}`)
             ]);
             wrapper.appendChild(badge);
           }
