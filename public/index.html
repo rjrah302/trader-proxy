@@ -687,28 +687,36 @@ function buildStocks() {
     // أسعار احتياطية محدثة - يونيو 2026
     const fallback = {
       // تكنولوجيا كبيرة
-      AAPL:291,NVDA:135,MSFT:447,GOOGL:178,META:580,AMD:156,PLTR:24,
-      CRM:290,ORCL:140,INTC:22,AMZN:193,TSLA:280,ADBE:380,
+      // محدثة يونيو 2026
+      AAPL:211,NVDA:205,MSFT:450,GOOGL:175,META:580,AMD:160,PLTR:26,
+      CRM:295,ORCL:145,INTC:23,AMZN:195,TSLA:280,ADBE:385,
       // استهلاك
-      WMT:90,COST:920,NKE:65,SBUX:82,MCD:305,TGT:108,ABNB:145,
+      WMT:92,COST:930,NKE:68,SBUX:85,MCD:308,TGT:110,ABNB:148,
       // مالية
-      JPM:270,GS:570,BAC:44,V:365,PYPL:67,MS:135,BLK:1050,SCHW:82,AXP:290,SQ:67,
+      JPM:272,GS:575,BAC:45,V:368,PYPL:68,MS:138,BLK:1060,SCHW:84,AXP:292,SQ:68,
+      COF:210,NU:15,
       // صحة
-      JNJ:163,LLY:890,PFE:27,MRNA:45,ABBV:224,ISRG:600,REGN:650,VRTX:520,
+      JNJ:165,LLY:895,PFE:28,MRNA:46,ABBV:226,ISRG:605,REGN:655,VRTX:525,
+      NVO:72,DXCM:72,
       // طاقة
-      XOM:118,CVX:158,ENPH:72,FSLR:185,VLO:155,SLB:42,NEE:75,AMT:210,
+      XOM:120,CVX:160,ENPH:74,FSLR:188,VLO:158,SLB:43,NEE:76,AMT:212,
+      OXY:52,VST:175,CEG:310,
       // ترفيه/اتصالات
-      NFLX:1050,DIS:100,SPOT:620,
+      NFLX:1060,DIS:102,SPOT:625,
       // سيارات
-      F:11,GM:52,RIVN:14,
-      // أسهم المجازفة — محدثة
+      F:11,GM:53,RIVN:14,
+      // تكنولوجيا جديدة
+      DELL:175,AVGO:235,APP:385,
+      // أسهم المجازفة
       RKLB:120,IONQ:35,JOBY:8,LUNR:26,QBTS:7,ARRY:12,
-      ASTS:30,ACHR:5,SOUN:13,RXRX:8,BBAI:4,AEVA:3,
+      ASTS:30,ACHR:5,SOUN:13,RXRX:3,BBAI:4,AEVA:3,
       // صغيرة/رخيصة
-      HOOD:35,SOFI:16,UBER:82,LYFT:15,SNAP:8,COIN:245,
-      NIO:4,PLUG:2,AAL:11,BA:178,RTX:128,
-      HIMS:28,OPEN:3,DKNG:18,LAZR:4,NOK:5,VOD:10,
-      SMCI:40,NVTS:14,PGY:16,HBAN:16,
+      HOOD:36,SOFI:17,UBER:83,LYFT:15,SNAP:8,COIN:248,
+      NIO:4,PLUG:2,AAL:11,BA:180,RTX:130,
+      HIMS:29,OPEN:3,DKNG:19,LAZR:4,NOK:5,VOD:10,
+      SMCI:42,NVTS:14,PGY:16,HBAN:17,
+      // بدائل جديدة
+      SHOP:105,MELI:2100,PATH:14,BILL:55,
       // جديدة يونيو 2026
       DELL:175,AVGO:235,APP:385,NVO:72,DXCM:72,
       COF:210,NU:15,OXY:52,VST:175,CEG:310,
@@ -1831,34 +1839,41 @@ function calcExplosionScore(s) {
   const beta = profile?.beta || s.beta || 1;
   const stockNews = (state.news && state.news[s.id]) || [];
 
-  // 1. Beta Engine (30%)
+  // 1. Beta Engine — تأثير مخفف
   let betaScore = 0;
-  if(beta > 3)       betaScore = 30;
-  else if(beta > 2)  betaScore = 25;
-  else if(beta > 1.5) betaScore = 20;
-  else               betaScore = 10;
+  if(beta > 3)        betaScore = 20;
+  else if(beta > 2)   betaScore = 16;
+  else if(beta > 1.5) betaScore = 12;
+  else                betaScore = 6;
 
-  // 2. Volume Explosion Engine (25%)
-  let volumeScore = 0;
+  // 2. Volume Explosion Engine — الأهم الحين
   const volR = s.volR || 1;
-  if(volR > 4)       volumeScore = 25;
-  else if(volR > 3)  volumeScore = 20;
-  else if(volR > 2)  volumeScore = 15;
-  else if(volR > 1)  volumeScore = 10;
+  let volumeScore = 0;
+  if(volR > 5)        volumeScore = 30;
+  else if(volR > 4)   volumeScore = 25;
+  else if(volR > 3)   volumeScore = 20;
+  else if(volR > 2)   volumeScore = 15;
+  else if(volR > 1.5) volumeScore = 10;
+  else                volumeScore = 0;
 
-  // 3. Momentum Engine (20%)
+  // استبعاد الأسهم ذات الحجم الضعيف
+  if(volR < 1.5) return { total: 0, label: "", emoji: "", betaScore, volumeScore: 0,
+    momentumScore: 0, catalystScore: 0, priceScore: 0, sectorHeat: 0, riskLevel: "", riskColor: "#888" };
+
+  // 3. Momentum Engine — بدون تعديل
   let momentumScore = 0;
   const rsi = real?.rsi || s.rsi || 50;
   const macdH = real?.macdHist || 0;
-  if(rsi > 50 && rsi < 70) momentumScore += 10; // RSI صاعد مو مشبع
-  if(macdH > 0)             momentumScore += 10; // MACD إيجابي
+  if(rsi > 50 && rsi < 70) momentumScore += 10;
+  if(macdH > 0)             momentumScore += 10;
 
-  // 4. Catalyst Engine (15%)
+  // 4. Catalyst Engine — بدون تعديل
   let catalystScore = 0;
   const posNews = stockNews.filter(n=>n.sentiment==='positive').length;
+  const negNews = stockNews.filter(n=>n.sentiment==='negative').length;
   catalystScore = Math.min(15, posNews * 5);
 
-  // 5. Price Engine (10%)
+  // 5. Price Engine — بدون تعديل
   let priceScore = 0;
   const price = s.price || 0;
   if(price < 20)       priceScore = 10;
@@ -1866,10 +1881,16 @@ function calcExplosionScore(s) {
   else if(price < 100) priceScore = 5;
   else                 priceScore = 2;
 
-  // Sector Heat Engine (V2)
+  // Sector Heat Engine — بدون تعديل
   const sectorHeat = getSectorHeat(s.id);
 
-  const total = betaScore + volumeScore + momentumScore + catalystScore + priceScore + sectorHeat;
+  let total = betaScore + volumeScore + momentumScore + catalystScore + priceScore + sectorHeat;
+
+  // عقوبة التشبع الشرائي
+  if(rsi > 80) total -= 10;
+
+  // عقوبة الأخبار السلبية
+  if(negNews > 0) total -= 10;
 
   // تصنيف الفرصة
   let label = "", emoji = "";
