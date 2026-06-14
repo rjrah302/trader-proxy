@@ -344,6 +344,7 @@ let state = {
   lastMarketRecs: _savedRecs,  // آخر توصيات وقت السوق مفتوح
   lastMarketTime: _savedTime,  // وقت آخر تحديث حقيقي
   recsGeneratedToday: !!_savedRecs, // هل تم إنشاء توصيات اليوم
+  cooldownStocks: JSON.parse(localStorage.getItem('cooldown_stocks') || '[]'), // أسهم في فترة تهدئة
   sessionOneRecs: null,  // توصيات الافتتاح
   historicalFetched: _historicalFetchedToday,
   persistence: {},  // تاريخ ظهور كل سهم
@@ -454,8 +455,16 @@ function calcIndicators(s, price) {
 
   // ===== Gap-Up Penalty =====
   const changePct = s.changePct || 0;
-  if(changePct > 15)      sell += 3; // ارتفاع مبالغ فيه
-  else if(changePct > 8)  sell += 2; // Gap Up متوسط
+  if(changePct > 15)      sell += 3;
+  else if(changePct > 8)  sell += 2;
+
+  // ===== Cooldown Engine =====
+  if(state.cooldownStocks?.includes(s.id)) sell += 4;
+  // إضافة للـ cooldown لو كان شراء قوي وانهار
+  if(changePct < -5) {
+    // سيتم التحقق بعد حساب الإشارة في buildStocks
+    s._needsCooldown = true;
+  }
 
   // ===== Extreme Volume Protection =====
   if(volR > 10)     sell += 2; // حجم غير طبيعي
@@ -720,6 +729,7 @@ async function fetchPrices() {
 }
 
 function buildStocks() {
+  // تحديث Cooldown — أسهم هبطت -5% بعد إشارة شراء
   state.stocks = uniqueStocks.map(s => {
     const p = state.prices[s.id];
     // أسعار احتياطية محدثة - يونيو 2026
@@ -762,9 +772,10 @@ function buildStocks() {
     };
     const price = p?.price || state.lastPrices[s.id]?.price || fallback[s.id] || 50;
     const change = p?.change || seededRnd(dailySeed(s.id)+20, -3, 3);
-    const ind = calcIndicators(s, price);
+    const changePct = p?.change || 0; // نسبة التغيير الحقيقية من API
+    const ind = calcIndicators({...s, changePct}, price);
     return {
-      ...s, price, change,
+      ...s, price, change, changePct,
       high: p?.high || price*1.01,
       low: p?.low || price*0.99,
       volume: p?.volume || ind.vol,
@@ -772,6 +783,17 @@ function buildStocks() {
       priceInSar: price * USD_RATE,
       ...ind
     };
+  });
+
+  // تحديث cooldownStocks — شراء قوي فقط انهار
+  state.stocks.forEach(s => {
+    if(s.signal === "شراء قوي" && (s.changePct || 0) < -5) {
+      if(!state.cooldownStocks) state.cooldownStocks = [];
+      if(!state.cooldownStocks.includes(s.id)) {
+        state.cooldownStocks.push(s.id);
+        try { localStorage.setItem('cooldown_stocks', JSON.stringify(state.cooldownStocks)); } catch(e) {}
+      }
+    }
   });
 }
 
