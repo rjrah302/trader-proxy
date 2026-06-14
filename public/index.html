@@ -864,14 +864,11 @@ function calcRecs() {
   const trend = state.marketTrend;
   const mktBonus = trend ? (trend.status==="bullish" ? 2 : trend.status==="bearish" ? -3 : trend.status==="weak" ? -1 : 0) : 0;
 
-  // لو السوق هابط بقوة — نرفع حد الجودة
-  const minStrength = trend?.status === "bearish" ? 60 : 30;
-
+  // لو السوق هابط — نرتب بصرامة لكن ما نوقف التوصيات كلها
   const buys = [...state.stocks]
     .filter(s=>s.signal.includes("شراء"))
     .filter(s=>s.profitPct >= 1.5)
-    .filter(s=>(s.strength + mktBonus*5) >= minStrength)  // فلتر السوق العام
-    .sort((a,b)=>(b.strength+mktBonus*5)-(a.strength+mktBonus*5));
+    .sort((a,b)=>(b.strength + mktBonus*5) - (a.strength + mktBonus*5));
   const sells = [...state.stocks].filter(s=>s.signal.includes("بيع")).sort((a,b)=>b.strength-a.strength);
   const watch = [...state.stocks].filter(s=>s.signal==="انتظار").sort((a,b)=>b.volR-a.volR);
   const future = [...state.stocks]
