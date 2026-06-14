@@ -847,14 +847,24 @@ async function loadData() {
   buildStocks();
 
   if(!state.historicalFetched) {
-    // ② تحقق من cache اليوم في localStorage
+    // ② تحقق من cache — بس لو محفوظ وقت السوق مفتوح
     try {
       const today = new Date().toDateString();
       const cachedDate = localStorage.getItem('indicators_date');
+      const cachedTime = parseInt(localStorage.getItem('indicators_time') || '0');
       const cachedData = localStorage.getItem('indicators_' + today);
 
-      if(cachedDate === today && cachedData) {
-        // ✅ عندنا cache اليوم — نستخدمه فوراً بدون تحميل
+      // السوق يفتح 4:30م سعودي = 13:30 UTC صيف / 14:30 UTC شتاء
+      const nowUTC = new Date().getUTCHours()*60 + new Date().getUTCMinutes();
+      const month = new Date().getUTCMonth()+1;
+      const isSummer = month>=3 && month<=11;
+      const marketOpenUTC = isSummer ? 810 : 870; // 13:30 أو 14:30
+
+      // نستخدم الـ cache بس لو:
+      // 1. محفوظ اليوم
+      // 2. تم حفظه بعد افتتاح السوق
+      // 3. السوق لازال مفتوح أو أغلق اليوم
+      if(cachedDate === today && cachedData && cachedTime >= marketOpenUTC) {
         state.realIndicators = JSON.parse(cachedData);
         state.historicalFetched = true;
         buildStocks();
@@ -866,7 +876,14 @@ async function loadData() {
       }
     } catch(e) {}
 
-    // ③ ما في cache — نحمّل من API
+    // ③ ما في cache صالح — نحمّل من API
+    // لو السوق مغلق ما نحمّل — ننتظر الافتتاح
+    if(!isOfficialOpen) {
+      state.loading = false;
+      render();
+      return;
+    }
+
     state.recs = null;
     state.loadingIndicators = true;
     state.loadingProgress = 0;
@@ -890,6 +907,8 @@ async function loadData() {
       const cacheKey = 'indicators_' + new Date().toDateString();
       localStorage.setItem(cacheKey, JSON.stringify(state.realIndicators));
       localStorage.setItem('indicators_date', new Date().toDateString());
+      const nowMins = new Date().getUTCHours()*60 + new Date().getUTCMinutes();
+      localStorage.setItem('indicators_time', nowMins.toString());
     } catch(e) {}
 
     // ⑤ التوصية تطلع مرة وحدة بعد اكتمال المؤشرات ✅
