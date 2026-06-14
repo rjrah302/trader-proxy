@@ -1804,6 +1804,26 @@ function earningsBadge(symbol) {
   ]);
 }
 
+// ===== Sector Heat Engine V2 =====
+const SECTOR_HEAT = {
+  // قطاعات ساخنة جداً
+  "IONQ": 10, "QBTS": 10, "RGTI": 10,  // كمي
+  "RKLB": 10, "LUNR": 10, "ASTS": 10, "ACHR": 10, "JOBY": 10, // فضاء + طيران
+  "NVDA": 8,  "PLTR": 8,  "AVGO": 8, "APP": 8,  // AI
+  "CEG":  10, "VST": 10,                          // نووي + طاقة AI
+  "IONQ": 10, "ARRY": 7,                          // كمي + طاقة شمسية
+  // دفاع
+  "LMT": 7, "RTX": 7, "NOC": 7,
+  // بيوتك
+  "RXRX": 6, "SOUN": 7, "BBAI": 7,
+  // فضاء ناشئ
+  "AEVA": 6, "LIDR": 6,
+};
+
+function getSectorHeat(stockId) {
+  return SECTOR_HEAT[stockId] || 0;
+}
+
 // ===== Explosion Engine V1 =====
 function calcExplosionScore(s) {
   const real = state.realIndicators && state.realIndicators[s.id];
@@ -1846,7 +1866,10 @@ function calcExplosionScore(s) {
   else if(price < 100) priceScore = 5;
   else                 priceScore = 2;
 
-  const total = betaScore + volumeScore + momentumScore + catalystScore + priceScore;
+  // Sector Heat Engine (V2)
+  const sectorHeat = getSectorHeat(s.id);
+
+  const total = betaScore + volumeScore + momentumScore + catalystScore + priceScore + sectorHeat;
 
   // تصنيف الفرصة
   let label = "", emoji = "";
@@ -1863,7 +1886,7 @@ function calcExplosionScore(s) {
   else if(beta > 1.5)                { riskLevel = "متوسطة";        riskColor = "#ffe033"; }
   else                               { riskLevel = "منخفضة";        riskColor = "#00ff88"; }
 
-  return { total, label, emoji, betaScore, volumeScore, momentumScore, catalystScore, priceScore, riskLevel, riskColor };
+  return { total, label, emoji, betaScore, volumeScore, momentumScore, catalystScore, priceScore, sectorHeat, riskLevel, riskColor };
 }
 
 function renderFutureTab() {
@@ -1913,7 +1936,8 @@ function renderFutureTab() {
                 el('div',{},`حجم: ${exp.volumeScore}/25`),
                 el('div',{},`زخم: ${exp.momentumScore}/20`),
                 el('div',{},`محفز: ${exp.catalystScore}/15`),
-              ]),
+                exp.sectorHeat > 0 && el('div',{style:{color:"#b44fff"}},`🔥 قطاع ساخن: +${exp.sectorHeat}`),
+              ].filter(Boolean)),
               // Risk Meter
               el('div',{style:{
                 display:"inline-flex",alignItems:"center",gap:"4px",
