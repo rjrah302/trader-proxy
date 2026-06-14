@@ -476,15 +476,21 @@ async function fetchHistoricalIndicators() {
       
       if(prices.length < 14) return;
 
-      // ===== RSI الحقيقي =====
-      const gains = [], losses = [];
-      for(let i=1; i<prices.length; i++) {
+      // ===== RSI الحقيقي — Wilder's Smoothing =====
+      const rsiLen = 14;
+      let avgGain = 0, avgLoss = 0;
+      for(let i=1; i<=rsiLen; i++) {
         const diff = prices[i] - prices[i-1];
-        gains.push(diff > 0 ? diff : 0);
-        losses.push(diff < 0 ? Math.abs(diff) : 0);
+        avgGain += diff > 0 ? diff : 0;
+        avgLoss += diff < 0 ? Math.abs(diff) : 0;
       }
-      const avgGain = gains.slice(-14).reduce((a,b)=>a+b,0)/14;
-      const avgLoss = losses.slice(-14).reduce((a,b)=>a+b,0)/14;
+      avgGain /= rsiLen;
+      avgLoss /= rsiLen;
+      for(let i=rsiLen+1; i<prices.length; i++) {
+        const diff = prices[i] - prices[i-1];
+        avgGain = (avgGain*(rsiLen-1) + (diff>0?diff:0)) / rsiLen;
+        avgLoss = (avgLoss*(rsiLen-1) + (diff<0?Math.abs(diff):0)) / rsiLen;
+      }
       const rs = avgLoss === 0 ? 100 : avgGain/avgLoss;
       const rsi = 100 - (100/(1+rs));
 
@@ -492,18 +498,22 @@ async function fetchHistoricalIndicators() {
       const ma20 = prices.slice(-20).reduce((a,b)=>a+b,0)/Math.min(20,prices.length);
       const ma50 = prices.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,prices.length);
 
-      // ===== MACD الحقيقي =====
+      // ===== MACD الحقيقي — Signal من 9 قيم =====
       function ema(data, period) {
         const k = 2/(period+1);
         let emaVal = data[0];
         for(let i=1; i<data.length; i++) emaVal = data[i]*k + emaVal*(1-k);
         return emaVal;
       }
-      const ema12 = ema(prices.slice(-26), 12);
-      const ema26 = ema(prices.slice(-26), 26);
-      const macdLine = ema12 - ema26;
-      const signal = ema([macdLine], 9);
-      const macdHist = macdLine - signal;
+      const macdHistory = [];
+      for(let i=26; i<=prices.length; i++) {
+        const e12 = ema(prices.slice(i-26,i), 12);
+        const e26 = ema(prices.slice(i-26,i), 26);
+        macdHistory.push(e12 - e26);
+      }
+      const macdLine = macdHistory[macdHistory.length-1] || 0;
+      const signalLine = macdHistory.length>=9 ? ema(macdHistory.slice(-9),9) : macdLine;
+      const macdHist = macdLine - signalLine;
 
       // ===== بولينجر الحقيقي =====
       const last20 = prices.slice(-20);
