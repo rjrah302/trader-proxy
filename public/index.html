@@ -311,7 +311,8 @@ let state = {
   pnlVals: {buy:"", sell:"", qty:""},  // حاسبة الربح
   slVals: {price:"", pct:"3", qty:""},  // حاسبة وقف الخسارة
   realIndicators: {},
-  companyProfiles: {}
+  companyProfiles: {},
+  marketTrend: null  // اتجاه السوق العام من SPY
 };
 
 const CATS = {large:"كبيرة 💎", mid:"متوسطة 📊", small:"صغيرة 💰", future:"المجازفة 🎲"};
@@ -686,6 +687,29 @@ function buildStocks() {
   });
 }
 
+// ===== FETCH MARKET TREND (SPY + QQQ) =====
+async function fetchMarketTrend() {
+  const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
+  try {
+    // نجيب SPY (S&P500) و QQQ (ناسداك) — مؤشران للسوق العام
+    const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=SPY&limit=5&apikey=${apiKey}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const prices = (data.historical || []).map(d => d.close).reverse();
+    if(prices.length >= 2) {
+      const change = ((prices[prices.length-1] - prices[prices.length-2]) / prices[prices.length-2]) * 100;
+      state.marketTrend = {
+        change: change,
+        status: change > 1 ? "bullish" : change < -1 ? "bearish" : change < -0.5 ? "weak" : "neutral",
+        label: change > 1 ? "🚀 السوق قوي" : change < -1 ? "📉 السوق هابط" : change < -0.5 ? "⚠️ السوق ضعيف" : "⚡ السوق محايد",
+        color: change > 1 ? "#00ff88" : change < -1 ? "#ff2d7a" : change < -0.5 ? "#ff7a00" : "#ffe033"
+      };
+    }
+  } catch(e) {
+    state.marketTrend = null;
+  }
+}
+
 // ===== FETCH NEWS & EARNINGS =====
 async function fetchNewsAndEarnings() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
@@ -797,7 +821,7 @@ async function loadData() {
   const isOfficialOpen = session === "open";
 
   // ① دايماً نجيب الأسعار والأخبار أولاً
-  await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
+  await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings(), fetchMarketTrend()]);
   buildStocks();
 
   if(!state.historicalFetched) {
@@ -836,10 +860,18 @@ async function loadData() {
 }
 
 function calcRecs() {
+  // تأثير السوق العام على التوصيات
+  const trend = state.marketTrend;
+  const mktBonus = trend ? (trend.status==="bullish" ? 2 : trend.status==="bearish" ? -3 : trend.status==="weak" ? -1 : 0) : 0;
+
+  // لو السوق هابط بقوة — نرفع حد الجودة
+  const minStrength = trend?.status === "bearish" ? 60 : 30;
+
   const buys = [...state.stocks]
     .filter(s=>s.signal.includes("شراء"))
-    .filter(s=>s.profitPct >= 1.5)  // فلتر: ربح أدنى 1.5%
-    .sort((a,b)=>b.strength-a.strength);
+    .filter(s=>s.profitPct >= 1.5)
+    .filter(s=>(s.strength + mktBonus*5) >= minStrength)  // فلتر السوق العام
+    .sort((a,b)=>(b.strength+mktBonus*5)-(a.strength+mktBonus*5));
   const sells = [...state.stocks].filter(s=>s.signal.includes("بيع")).sort((a,b)=>b.strength-a.strength);
   const watch = [...state.stocks].filter(s=>s.signal==="انتظار").sort((a,b)=>b.volR-a.volR);
   const future = [...state.stocks]
@@ -1384,6 +1416,31 @@ function renderRecTab() {
       ])
     ]),
 
+    // S&P 500 اتجاه السوق العام
+    state.marketTrend && el('div',{style:{
+      background:`${state.marketTrend.color}08`,
+      border:`1px solid ${state.marketTrend.color}33`,
+      borderRadius:"14px",padding:"10px 14px",marginBottom:"10px",
+      display:"flex",justifyContent:"space-between",alignItems:"center"
+    }},[
+      el('div',{},[
+        el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"2px"}},"📊 S&P 500 — السوق العام"),
+        el('div',{style:{fontSize:"14px",fontWeight:"800",color:state.marketTrend.color}},state.marketTrend.label)
+      ]),
+      el('div',{style:{
+        fontSize:"16px",fontWeight:"900",
+        color:state.marketTrend.color,
+        textShadow:`0 0 10px ${state.marketTrend.color}`
+      }},`${state.marketTrend.change>=0?"+":""}${state.marketTrend.change.toFixed(2)}%`)
+    ]),
+
+    // تحذير لو السوق هابط
+    state.marketTrend?.status === "bearish" && el('div',{style:{
+      background:"rgba(255,45,122,.08)",border:"1px solid rgba(255,45,122,.3)",
+      borderRadius:"12px",padding:"10px 14px",marginBottom:"10px",
+      fontSize:"12px",color:"#ff2d7a",fontWeight:"700",lineHeight:"1.7"
+    }},"🛑 السوق هابط — التوصيات مفلترة بصرامة — كن حذراً جداً"),
+
     // Header badge
     el('div',{style:{
       background:"linear-gradient(135deg,rgba(255,224,51,.08),rgba(0,200,255,.08))",
@@ -1395,7 +1452,7 @@ function renderRecTab() {
       el('div',{},[
         el('div',{style:{fontSize:"13px",color:C.yellow,fontWeight:"800",marginBottom:"3px"}},"توصية المحلل الذكي"),
         el('div',{style:{fontSize:"11px",color:"var(--text3)",lineHeight:"1.7"}},
-          `${state.stocks.length} سهم • 11 مؤشر • ${state.dataSource==="real"?"🟢 أسعار حقيقية":"🟡 أسعار تقريبية"} • دقة ~92%`)
+          `${state.stocks.length} سهم • 11 مؤشر • ${state.dataSource==="real"?"🟢 أسعار حقيقية":"🟡 أسعار تقريبية"} • S&P مدمج`)
       ])
     ]),
 
