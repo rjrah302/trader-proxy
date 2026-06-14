@@ -291,6 +291,16 @@ const STOCKS = [
 const uniqueStocks = STOCKS.filter((s,i,a) => a.findIndex(x=>x.id===s.id)===i);
 
 // ===== STATE =====
+// استرجاع آخر توصيات محفوظة عند تشغيل التطبيق
+let _savedRecs = null;
+let _savedTime = null;
+try {
+  const saved = localStorage.getItem('last_market_recs');
+  const savedTime = localStorage.getItem('last_market_time');
+  if(saved) _savedRecs = JSON.parse(saved);
+  if(savedTime) _savedTime = new Date(savedTime);
+} catch(e) {}
+
 let state = {
   prices: {},      // أسعار حقيقية من FMP
   lastPrices: {},  // آخر أسعار حقيقية محفوظة
@@ -315,8 +325,8 @@ let state = {
   newTradeType: "buy",
   dataSource: "simulated",
   marketOpen: false,
-  lastMarketRecs: null,  // آخر توصيات وقت السوق مفتوح
-  lastMarketTime: null,  // وقت آخر تحديث حقيقي
+  lastMarketRecs: _savedRecs,  // آخر توصيات وقت السوق مفتوح
+  lastMarketTime: _savedTime,  // وقت آخر تحديث حقيقي
   sessionOneRecs: null,  // توصيات الافتتاح
   historicalFetched: false,
   persistence: {},  // تاريخ ظهور كل سهم
@@ -888,19 +898,22 @@ async function loadData() {
     buildStocks();
     calcRecs();
     state.lastMarketRecs = state.recs;
-    state.lastMarketTime = new Date(); // وقت آخر تحديث حقيقي
+    state.lastMarketTime = new Date();
+    // حفظ في localStorage عشان ما تضيع عند إغلاق المتصفح
+    try {
+      localStorage.setItem('last_market_recs', JSON.stringify(state.recs));
+      localStorage.setItem('last_market_time', new Date().toISOString());
+    } catch(e) {}
 
   } else if(isOfficialOpen) {
     // السوق مفتوح والمؤشرات محملة — أسعار فقط، التوصيات ثابتة ✅
 
   } else {
     // خارج السوق الرسمي
-    if(state.lastMarketRecs) {
-      // ✅ نعرض آخر توصية حقيقية من وقت السوق
+    if(!state.recs && state.lastMarketRecs) {
       state.recs = state.lastMarketRecs;
     }
-    // ❌ لا نحسب توصية جديدة من بيانات عشوائية
-    // state.recs تبقى null لو ما في توصية محفوظة
+    // ❌ لا نحسب توصيات جديدة خارج السوق أبداً
   }
 
   state.loading = false;
@@ -1606,7 +1619,7 @@ function renderRecTab() {
       el('div',{style:{flex:1}},[
         el('div',{style:{fontSize:"13px",color:C.yellow,fontWeight:"800",marginBottom:"3px"}},"توصية المحلل الذكي"),
         el('div',{style:{fontSize:"11px",color:"var(--text3)",lineHeight:"1.7"}},
-          `${state.stocks.length} سهم • 8 مؤشرات • ${state.dataSource==="real"?"🟢 أسعار حقيقية":"🟡 أسعار تقريبية"}`)
+          `${state.stocks.length} سهم • 11 مؤشر • ${state.dataSource==="real"?"🟢 أسعار حقيقية":"🟡 أسعار تقريبية"}`)
       ])
     ]),
 
