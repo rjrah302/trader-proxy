@@ -316,6 +316,7 @@ let state = {
   dataSource: "simulated",
   marketOpen: false,
   lastMarketRecs: null,  // آخر توصيات وقت السوق مفتوح
+  lastMarketTime: null,  // وقت آخر تحديث حقيقي
   sessionOneRecs: null,  // توصيات الافتتاح
   historicalFetched: false,
   persistence: {},  // تاريخ ظهور كل سهم
@@ -887,6 +888,7 @@ async function loadData() {
     buildStocks();
     calcRecs();
     state.lastMarketRecs = state.recs;
+    state.lastMarketTime = new Date(); // وقت آخر تحديث حقيقي
 
   } else if(isOfficialOpen) {
     // السوق مفتوح والمؤشرات محملة — أسعار فقط، التوصيات ثابتة ✅
@@ -1534,10 +1536,13 @@ function renderHeader() {
 // ===== REC TAB =====
 function renderRecTab() {
   if(!state.recs) return el('div',{style:{textAlign:"center",padding:"40px 20px"}},[
-    el('div',{style:{fontSize:"40px",marginBottom:"12px"}},"🔒"),
-    el('div',{style:{fontSize:"15px",fontWeight:"800",color:"var(--text)",marginBottom:"8px"}},"التوصيات متاحة وقت السوق فقط"),
-    el('div',{style:{fontSize:"12px",color:"var(--text3)",lineHeight:"1.8"}},"السوق يفتح الاثنين 4:30م"),
-    el('div',{style:{fontSize:"11px",color:"var(--text3)",marginTop:"8px"}},"المؤشرات تحتاج بيانات حقيقية — لن نعرض توصيات وهمية ✅")
+    el('div',{style:{fontSize:"40px",marginBottom:"12px"}},"🌙"),
+    el('div',{style:{fontSize:"15px",fontWeight:"800",color:"var(--text)",marginBottom:"8px"}},"السوق مغلق الآن"),
+    el('div',{style:{fontSize:"12px",color:"var(--text3)",lineHeight:"1.9",marginBottom:"12px"}},[
+      el('div',{},"لا توجد توصيات محفوظة من جلسة تداول سابقة"),
+      el('div',{style:{marginTop:"4px"}},"ستظهر التوصيات عند افتتاح السوق 4:30م 🚀")
+    ]),
+    el('div',{style:{fontSize:"11px",color:"rgba(0,255,136,.6)"}},"✅ لن نعرض توصيات وهمية — بيانات حقيقية فقط")
   ]);
   const {top3,avoid,watch,future,mktScore} = state.recs;
   const mc = mktScore>60?C.green:mktScore<40?C.red:C.yellow;
@@ -1558,6 +1563,18 @@ function renderRecTab() {
         el('div',{style:{fontSize:"28px",fontWeight:"900",color:mc,textShadow:`0 0 15px ${mc}`}},`${mktScore}%`),
         el('div',{style:{fontSize:"9px",color:"var(--text3)"}},"إيجابية السوق")
       ])
+    ]),
+
+    // Market Snapshot شارة
+    state.lastMarketTime && el('div',{style:{
+      background:"rgba(0,255,136,.05)",
+      border:"1px solid rgba(0,255,136,.2)",
+      borderRadius:"10px",padding:"8px 14px",marginBottom:"10px",
+      display:"flex",justifyContent:"space-between",alignItems:"center"
+    }},[
+      el('div',{style:{fontSize:"11px",color:"#00ff88",fontWeight:"700"}},"📸 Market Snapshot"),
+      el('div',{style:{fontSize:"10px",color:"var(--text3)"}},
+        `آخر تحديث: ${state.lastMarketTime.toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'})} 🟢 توصيات حقيقية`)
     ]),
 
     // S&P 500 + Adaptive Market
