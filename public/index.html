@@ -407,8 +407,8 @@ function calcIndicators(s, price) {
   // نستخدم دعم/مقاومة حقيقية إذا متوفرة
   const sup = real?.support || price * (1 - seededRnd(seed+10, 0.008, 0.025));
   const res = real?.resistance || price * (1 + seededRnd(seed+11, 0.008, 0.025));
-  const pe      = seededRnd(seed+12, 10, 60);
-  const peScore = pe < 20 ? 2 : pe < 35 ? 1 : 0;
+  const pe      = seededRnd(seed+12, 10, 60); // للعرض فقط
+  const peScore = 0; // حذف peScore العشوائي — مو موثوق
   const isReal  = !!real;
 
   let buy=0, sell=0;
@@ -518,12 +518,14 @@ function calcIndicators(s, price) {
   const persistDays = getPersistenceDays(s.id);
   const persistLabel = persistDays >= 3 ? "Elite" : persistDays >= 2 ? "Strong" : persistDays >= 1 ? "Normal" : "";
 
+  const isCooldown = state.cooldownStocks?.includes(s.id) || false;
+
   return {rsi,ma20,ma50,macdH,vol,avgVol,volR,bb_u,bb_l,sup,res,pe,
           signal:sig,signalColor:sigC,strength:str,buySignals:buy,sellSignals:sell,
           profitPct:Math.abs(res-price)/price*100,indicatorsReal:isReal,
           confidence, highConviction:isConviction,
           tradeQuality, riskRewardFinal: parseFloat(riskRewardFinal.toFixed(2)),
-          persistDays, persistLabel};
+          persistDays, persistLabel, isCooldown};
 }
 
 // ===== FETCH COMPANY PROFILES (Beta + Volume + MarketCap) =====
@@ -1386,6 +1388,13 @@ function recCard(s, rank, pct) {
           borderRadius:"6px",padding:"2px 8px",
           fontSize:"10px",fontWeight:"900",color:"#000",textAlign:"center"
         }},"⭐ High Conviction"),
+        // Cooldown Badge
+        s.isCooldown && el('div',{style:{
+          marginTop:"4px",background:"rgba(255,45,122,.15)",
+          border:"1px solid rgba(255,45,122,.4)",
+          borderRadius:"6px",padding:"2px 8px",
+          fontSize:"10px",fontWeight:"700",color:"#ff2d7a",textAlign:"center"
+        }},"⏸️ Cooldown — هبط بقوة سابقاً"),
         // Trade Quality Score
         s.tradeQuality !== undefined && el('div',{style:{
           marginTop:"4px",fontSize:"10px",textAlign:"center",
