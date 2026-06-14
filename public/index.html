@@ -1993,7 +1993,7 @@ function calcExplosionScore(s) {
   else if(changePct > 8)  total -= 10;
 
   // Extreme Volume Protection — حماية من الضجيج المؤقت
-  if(volR > 10) volumeScore = Math.max(0, volumeScore - 5);
+  if(volR > 10) total -= 5;
 
   // تصنيف الفرصة
   let label = "", emoji = "";
