@@ -853,13 +853,13 @@ async function loadData() {
     state.loadingProgress = 0;
     render();
 
-    // ③ نحمّل المؤشرات — timeout 3 دقائق كحد أقصى
+    // ③ نحمّل profiles والمؤشرات مع بعض — بدل ورا ورا
     try {
       await Promise.race([
-        (async () => {
-          await fetchCompanyProfiles();
-          await fetchHistoricalIndicators();
-        })(),
+        Promise.all([
+          fetchCompanyProfiles(),
+          fetchHistoricalIndicators()
+        ]),
         new Promise(r => setTimeout(r, 180000))
       ]);
     } catch(e) {}
