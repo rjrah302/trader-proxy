@@ -892,12 +892,13 @@ async function loadData() {
     // السوق مفتوح والمؤشرات محملة — أسعار فقط، التوصيات ثابتة ✅
 
   } else {
-    // خارج السوق الرسمي — نعرض آخر توصية محفوظة
-    if(!state.recs && state.lastMarketRecs) {
+    // خارج السوق الرسمي
+    if(state.lastMarketRecs) {
+      // ✅ نعرض آخر توصية حقيقية من وقت السوق
       state.recs = state.lastMarketRecs;
-    } else if(!state.recs) {
-      calcRecs(); // أول مرة فقط
     }
+    // ❌ لا نحسب توصية جديدة من بيانات عشوائية
+    // state.recs تبقى null لو ما في توصية محفوظة
   }
 
   state.loading = false;
@@ -1532,7 +1533,12 @@ function renderHeader() {
 
 // ===== REC TAB =====
 function renderRecTab() {
-  if(!state.recs) return el('div',{style:{textAlign:"center",padding:"40px 0",color:"var(--text3)"}},"جاري التحميل...");
+  if(!state.recs) return el('div',{style:{textAlign:"center",padding:"40px 20px"}},[
+    el('div',{style:{fontSize:"40px",marginBottom:"12px"}},"🔒"),
+    el('div',{style:{fontSize:"15px",fontWeight:"800",color:"var(--text)",marginBottom:"8px"}},"التوصيات متاحة وقت السوق فقط"),
+    el('div',{style:{fontSize:"12px",color:"var(--text3)",lineHeight:"1.8"}},"السوق يفتح الاثنين 4:30م"),
+    el('div',{style:{fontSize:"11px",color:"var(--text3)",marginTop:"8px"}},"المؤشرات تحتاج بيانات حقيقية — لن نعرض توصيات وهمية ✅")
+  ]);
   const {top3,avoid,watch,future,mktScore} = state.recs;
   const mc = mktScore>60?C.green:mktScore<40?C.red:C.yellow;
   const mm = mktScore>60?"السوق صاعد — وقت جيد للشراء":mktScore<40?"السوق هابط — كن حذراً":"السوق محايد — كن انتقائياً";
