@@ -525,26 +525,39 @@ async function fetchHistoricalIndicators() {
       // ===== حفظ البيانات التاريخية للشارت =====
       const chartData = prices.slice(-30);
 
-      // ===== Stochastic RSI =====
+      // ===== Stochastic RSI — Wilder's + %D =====
       const rsiPeriod = 14;
       const stochPeriod = 14;
       const rsiValues = [];
+      // Wilder's Smoothing لكل RSI في التاريخ
       for(let i=rsiPeriod; i<prices.length; i++) {
-        const slice = prices.slice(i-rsiPeriod, i);
-        const g = [], l = [];
-        for(let j=1; j<slice.length; j++) {
+        const slice = prices.slice(i-rsiPeriod, i+1);
+        let ag2 = 0, al2 = 0;
+        for(let j=1; j<=rsiPeriod; j++) {
           const d = slice[j]-slice[j-1];
-          g.push(d>0?d:0); l.push(d<0?Math.abs(d):0);
+          ag2 += d>0?d:0;
+          al2 += d<0?Math.abs(d):0;
         }
-        const ag = g.reduce((a,b)=>a+b,0)/rsiPeriod;
-        const al = l.reduce((a,b)=>a+b,0)/rsiPeriod;
-        const rs2 = al===0?100:ag/al;
+        ag2 /= rsiPeriod;
+        al2 /= rsiPeriod;
+        const rs2 = al2===0?100:ag2/al2;
         rsiValues.push(100-(100/(1+rs2)));
       }
+      // %K
       const recentRsi = rsiValues.slice(-stochPeriod);
       const minRsi = Math.min(...recentRsi);
       const maxRsi = Math.max(...recentRsi);
-      const stochRsi = maxRsi===minRsi ? 50 : ((rsiValues[rsiValues.length-1]-minRsi)/(maxRsi-minRsi))*100;
+      const stochK = maxRsi===minRsi ? 50 : ((rsiValues[rsiValues.length-1]-minRsi)/(maxRsi-minRsi))*100;
+      // %D = متوسط آخر 3 قيم من %K (أهدأ وأدق)
+      const kValues = rsiValues.slice(-stochPeriod-2).map((_,idx,arr) => {
+        if(idx < stochPeriod-1) return null;
+        const recent = arr.slice(idx-stochPeriod+1, idx+1);
+        const mn = Math.min(...recent), mx = Math.max(...recent);
+        return mx===mn ? 50 : ((arr[idx]-mn)/(mx-mn))*100;
+      }).filter(v=>v!==null);
+      const stochRsi = kValues.length >= 3 ?
+        (kValues[kValues.length-1]+kValues[kValues.length-2]+kValues[kValues.length-3])/3
+        : stochK;
 
       // ===== ATR — وقف خسارة ذكي =====
       const atrPeriod = 14;
