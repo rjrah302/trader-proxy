@@ -207,7 +207,6 @@ const STOCKS = [
   {id:"MARA", name:"Marathon Digital", sector:"تعدين BTC",    cat:"small",  tip:"تعدين البيتكوين — يتبع العملات",      beta:2.9},
   {id:"RIOT", name:"Riot Platforms",   sector:"تعدين BTC",    cat:"small",  tip:"منافس Marathon في تعدين البيتكوين",   beta:2.8},
   {id:"CLSK", name:"CleanSpark",       sector:"تعدين BTC",    cat:"small",  tip:"تعدين بيتكوين بطاقة متجددة",          beta:2.7},
-  {id:"HIMS", name:"Hims & Hers",      sector:"صحة رقمية",    cat:"small",  tip:"منصة الرعاية الصحية الرقمية",         beta:1.8},
   {id:"OPEN", name:"Opendoor",         sector:"عقارات/تقنية", cat:"small",  tip:"شراء وبيع المنازل بالتقنية",          beta:2.1},
   {id:"DKNG", name:"DraftKings",       sector:"مراهنات رياضية",cat:"small", tip:"المراهنات الرياضية القانونية",         beta:1.9},
 
@@ -218,8 +217,6 @@ const STOCKS = [
   {id:"NVTS", name:"Navitas Semi",  sector:"شرائح",        cat:"small",  tip:"شرائح طاقة لمراكز البيانات — نمو 25%", beta:2.1},
   {id:"SMCI", name:"Super Micro",   sector:"خوادم AI",     cat:"mid",    tip:"خوادم الذكاء الاصطناعي — شريك Nvidia", beta:1.9},
   {id:"PGY",  name:"Pagaya Tech",   sector:"فينتك/AI",     cat:"small",  tip:"AI لمعالجة القروض — نمو 67% الأرباح",  beta:2.2},
-  {id:"CXAI", name:"CXApp",         sector:"AI/مؤسسات",    cat:"small",  tip:"تجربة الموظفين بالذكاء الاصطناعي",    beta:2.5},
-  {id:"LAES", name:"SEALSQ",        sector:"أمن رقمي",     cat:"small",  tip:"شرائح أمن كمومية للإنترنت",            beta:2.9},
   // 🏦 مالية رخيصة
   {id:"HBAN", name:"Huntington",    sector:"بنوك",         cat:"small",  tip:"بنك إقليمي أمريكي ينمو في الجنوب",    beta:1.1},
   {id:"NWG",  name:"NatWest",       sector:"بنوك",         cat:"small",  tip:"بنك بريطاني — نمو في إدارة الثروات",   beta:0.9},
@@ -238,17 +235,9 @@ const STOCKS = [
   {id:"LUNG", name:"Pulmatrix",     sector:"دواء تنفسي",   cat:"small",  tip:"علاجات أمراض الرئة والتنفس",           beta:2.3},
   {id:"GRFS", name:"Grifols",       sector:"بلازما دم",    cat:"small",  tip:"علاجات مشتقة من بلازما الدم",          beta:1.4},
   // 🚗 سيارات وتنقل
-  {id:"GOEV", name:"Canoo",         sector:"EV",           cat:"small",  tip:"مركبات كهربائية متعددة الاستخدام",     beta:2.8},
-  {id:"WKHS", name:"Workhorse",     sector:"EV توصيل",     cat:"small",  tip:"شاحنات توصيل كهربائية للبريد",         beta:2.5},
-  {id:"AYRO", name:"AYRO",          sector:"EV صغير",      cat:"small",  tip:"مركبات كهربائية خفيفة للحرم الجامعي",  beta:2.9},
-  {id:"RIDE", name:"Lordstown",     sector:"EV شاحنات",    cat:"small",  tip:"شاحنات كهربائية للأعمال",              beta:3.0},
-  {id:"SOLO", name:"ElectraMeccanica",sector:"EV صغير",    cat:"small",  tip:"سيارة كهربائية أحادية المقعد للمدن",   beta:2.7},
   // 🎮 ترفيه وألعاب رخيصة
   {id:"MVIS", name:"MicroVision",   sector:"LiDAR",        cat:"small",  tip:"ليدار للسيارات ذاتية القيادة",         beta:2.6},
-  {id:"KOSS", name:"Koss Corp",     sector:"إلكترونيات",   cat:"small",  tip:"سماعات رأس — قضية براءات اختراع Apple",beta:2.1},
   {id:"GXII", name:"GreenTree",     sector:"فنادق صين",    cat:"small",  tip:"سلسلة فنادق اقتصادية في الصين",        beta:1.9},
-  {id:"NKLA", name:"Nikola",        sector:"هيدروجين",     cat:"small",  tip:"شاحنات هيدروجين — إعادة هيكلة",        beta:3.0},
-  {id:"MULN", name:"Mullen Auto",   sector:"EV",           cat:"small",  tip:"مركبات كهربائية تجارية",               beta:3.0},
   // 📡 اتصالات وإنترنت
   {id:"VOD",  name:"Vodafone",      sector:"اتصالات",      cat:"small",  tip:"شبكات الجيل الخامس في أوروبا وأفريقيا",beta:0.8},
   {id:"NOK",  name:"Nokia",         sector:"اتصالات/AI",   cat:"small",  tip:"بنية تحتية للـ 5G وشبكات AI",          beta:0.9},
@@ -263,7 +252,6 @@ const STOCKS = [
   {id:"PENN", name:"PENN Entertainment",sector:"كازينو/رياضة",cat:"small",tip:"كازينو + مراهنات رياضية ESPN BET",   beta:1.8},
   {id:"LAZR", name:"Luminar Tech",  sector:"LiDAR",        cat:"small",  tip:"ليدار للسيارات ذاتية القيادة Volvo",   beta:2.5},
   {id:"GROY", name:"Gold Royalty",  sector:"ذهب",          cat:"small",  tip:"شركة حقوق ذهبية — نمو 133% إيرادات",   beta:1.6},
-  {id:"CEI",  name:"Camber Energy", sector:"طاقة",         cat:"small",  tip:"طاقة متجددة وتقليدية مدمجة",           beta:3.0},
   {id:"ARM",  name:"ARM Holdings",  sector:"شرائح/AI",     cat:"large",  tip:"تصميم شرائح AI — كل جهاز تقريباً يستخدم تقنية ARM",  beta:1.6},
   // ===== 10 أسهم جديدة كلياً =====
   {id:"CRWD", name:"CrowdStrike",   sector:"أمن سيبراني",  cat:"large",  tip:"رائد الأمن السيبراني السحابي",          beta:1.4},
@@ -276,6 +264,27 @@ const STOCKS = [
   {id:"HROW", name:"Harrow Health", sector:"دواء عيون",    cat:"small",  tip:"أدوية العيون المتخصصة",                  beta:1.7},
   {id:"DNUT", name:"Krispy Kreme",  sector:"مطاعم",        cat:"small",  tip:"دونات عالمية — شراكة مع McDonald's",     beta:1.2},
   {id:"VNET", name:"21Vianet",      sector:"سحابة صين",    cat:"small",  tip:"مراكز بيانات سحابية في الصين",           beta:1.8},
+  // ===== أسهم جديدة =====
+  // AI/تقنية
+  {id:"DELL", name:"Dell",           sector:"خوادم AI",      cat:"large",  tip:"خوادم AI مع Nvidia — نمو ضخم",           beta:1.3},
+  {id:"AVGO", name:"Broadcom",       sector:"شرائح AI",      cat:"large",  tip:"شرائح AI وشبكات — نمو 220%",             beta:1.4},
+  {id:"APP",  name:"Applovin",       sector:"AI إعلانات",    cat:"large",  tip:"تقنية إعلانات AI — أسرع سهم نمو 2024",  beta:2.1},
+  // صحة/دواء
+  {id:"NVO",  name:"Novo Nordisk",   sector:"دواء",          cat:"large",  tip:"صانع أوزمبيك — رائد أدوية السمنة",      beta:0.6},
+  {id:"DXCM", name:"Dexcom",         sector:"أجهزة طبية",    cat:"mid",    tip:"مراقبة السكري الرقمية — نمو مستمر",     beta:1.3},
+  // مالية
+  {id:"COF",  name:"Capital One",    sector:"بنوك",          cat:"large",  tip:"بطاقات ائتمان رقمية — نمو قوي",         beta:1.4},
+  {id:"NU",   name:"Nubank",         sector:"فينتك",         cat:"mid",    tip:"أكبر بنك رقمي في أمريكا اللاتينية",     beta:1.6},
+  // طاقة
+  {id:"OXY",  name:"Occidental",     sector:"نفط",           cat:"large",  tip:"نفط — وارن بافيت يحبها",                beta:1.2},
+  {id:"VST",  name:"Vistra",         sector:"طاقة AI",       cat:"large",  tip:"طاقة مراكز البيانات — نمو 260%",        beta:1.8},
+  {id:"CEG",  name:"Constellation",  sector:"طاقة نووية",    cat:"large",  tip:"طاقة نووية لمراكز AI — شراكة Microsoft",beta:0.9},
+  // بدائل الضعيفة
+  {id:"HIMS", name:"Hims & Hers",    sector:"صحة رقمية",    cat:"small",  tip:"أدوية السمنة والصحة الرقمية — نمو 69%", beta:1.9},
+  {id:"SHOP", name:"Shopify",        sector:"تجارة إلكترونية",cat:"mid",   tip:"منصة التجارة الإلكترونية الأولى",       beta:1.7},
+  {id:"MELI", name:"MercadoLibre",   sector:"تجارة/فينتك",  cat:"large",  tip:"Amazon أمريكا اللاتينية — نمو ضخم",     beta:1.5},
+  {id:"PATH", name:"UiPath",         sector:"AI أتمتة",      cat:"mid",    tip:"رائد أتمتة الأعمال بالذكاء الاصطناعي",  beta:1.6},
+  {id:"BILL", name:"Bill.com",       sector:"فينتك",         cat:"mid",    tip:"مدفوعات الشركات الصغيرة — نمو مستمر",  beta:1.5},
 ];
 
 // إزالة المكررات
@@ -626,6 +635,10 @@ function buildStocks() {
       NIO:4,PLUG:2,AAL:11,BA:178,RTX:128,
       HIMS:28,OPEN:3,DKNG:18,LAZR:4,NOK:5,VOD:10,
       SMCI:40,NVTS:14,PGY:16,HBAN:16,
+      // جديدة يونيو 2026
+      DELL:175,AVGO:235,APP:385,NVO:72,DXCM:72,
+      COF:210,NU:15,OXY:52,VST:175,CEG:310,
+      HIMS:29,SHOP:105,MELI:2100,PATH:14,BILL:55,
     };
     const price = p?.price || state.lastPrices[s.id]?.price || fallback[s.id] || 50;
     const change = p?.change || seededRnd(dailySeed(s.id)+20, -3, 3);
