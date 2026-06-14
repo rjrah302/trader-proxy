@@ -723,12 +723,19 @@ async function fetchMarketTrend() {
 // ===== FETCH NEWS & EARNINGS =====
 async function fetchNewsAndEarnings() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
-  const symbols = uniqueStocks.map(s=>s.id).join(','); // كل الأسهم للأخبار
+  // كل الأسهم للأخبار
+  const symbols = uniqueStocks.map(s=>s.id).join(',');
+
+  async function fetchT(url, ms=6000) {
+    const ctrl = new AbortController();
+    const tid = setTimeout(()=>ctrl.abort(), ms);
+    try { const r = await fetch(url,{signal:ctrl.signal}); clearTimeout(tid); return r; }
+    catch(e) { clearTimeout(tid); throw e; }
+  }
   
   try {
-    // أخبار السوق
     const newsUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbols}&limit=50&apikey=${apiKey}`;
-    const newsRes = await fetch(newsUrl);
+    const newsRes = await fetchT(newsUrl, 6000);
     const newsData = await newsRes.json();
     
     state.news = {};
@@ -758,7 +765,7 @@ async function fetchNewsAndEarnings() {
     const today = new Date().toISOString().split('T')[0];
     const nextWeek = new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0];
     const earnUrl = `https://financialmodelingprep.com/stable/earning-calendar?from=${today}&to=${nextWeek}&apikey=${apiKey}`;
-    const earnRes = await fetch(earnUrl);
+    const earnRes = await fetchT(earnUrl, 6000);
     const earnData = await earnRes.json();
     
     state.earnings = {};
@@ -783,7 +790,10 @@ async function fetchLongTermEarnings() {
     const today = new Date().toISOString().split('T')[0];
     const future = new Date(Date.now() + 120*24*60*60*1000).toISOString().split('T')[0];
     const url = `https://financialmodelingprep.com/stable/earning-calendar?from=${today}&to=${future}&apikey=${apiKey}`;
-    const res = await fetch(url);
+    const ctrl2 = new AbortController();
+    const tid2 = setTimeout(()=>ctrl2.abort(), 6000);
+    const res = await fetch(url, {signal:ctrl2.signal});
+    clearTimeout(tid2);
     const data = await res.json();
     state.ltEarnings = {};
     if(Array.isArray(data)) {
