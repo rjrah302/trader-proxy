@@ -399,7 +399,9 @@ function calcIndicators(s, price) {
   const bb_u = real ? real.bb_upper : price * (1 + seededRnd(seed+8, 0.01, 0.03));
   const bb_l = real ? real.bb_lower : price * (1 - seededRnd(seed+9, 0.01, 0.03));
 
-  const vol     = Math.floor(seededRnd(seed+6, 500000, 15000000));
+  // الحجم الحقيقي من API — مهم لـ volR وGap-Up وExtreme Volume
+  const realPrice = state.prices[s.id];
+  const vol     = realPrice?.volume > 0 ? realPrice.volume : Math.floor(seededRnd(seed+6, 500000, 15000000));
   const avgVol  = realAvgVol > 0 ? realAvgVol : Math.floor(seededRnd(seed+7, 800000, 8000000));
   const volR    = vol / avgVol;
   // نستخدم دعم/مقاومة حقيقية إذا متوفرة
@@ -460,11 +462,6 @@ function calcIndicators(s, price) {
 
   // ===== Cooldown Engine =====
   if(state.cooldownStocks?.includes(s.id)) sell += 4;
-  // إضافة للـ cooldown لو كان شراء قوي وانهار
-  if(changePct < -5) {
-    // سيتم التحقق بعد حساب الإشارة في buildStocks
-    s._needsCooldown = true;
-  }
 
   // ===== Extreme Volume Protection =====
   if(volR > 10)     sell += 2; // حجم غير طبيعي
@@ -785,16 +782,21 @@ function buildStocks() {
     };
   });
 
-  // تحديث cooldownStocks — شراء قوي فقط انهار
+  // تحديث Cooldown — بعد حساب signal ✅
+  // شراء قوي + هبط -5% = يدخل cooldown
+  let cooldownUpdated = false;
   state.stocks.forEach(s => {
     if(s.signal === "شراء قوي" && (s.changePct || 0) < -5) {
       if(!state.cooldownStocks) state.cooldownStocks = [];
       if(!state.cooldownStocks.includes(s.id)) {
         state.cooldownStocks.push(s.id);
-        try { localStorage.setItem('cooldown_stocks', JSON.stringify(state.cooldownStocks)); } catch(e) {}
+        cooldownUpdated = true;
       }
     }
   });
+  if(cooldownUpdated) {
+    try { localStorage.setItem('cooldown_stocks', JSON.stringify(state.cooldownStocks)); } catch(e) {}
+  }
 }
 
 // ===== FETCH NEWS & EARNINGS =====
