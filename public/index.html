@@ -291,15 +291,31 @@ const STOCKS = [
 const uniqueStocks = STOCKS.filter((s,i,a) => a.findIndex(x=>x.id===s.id)===i);
 
 // ===== STATE =====
-// استرجاع آخر توصيات محفوظة عند تشغيل التطبيق
+// ===== استرجاع وتنظيف التوصيات عند تشغيل التطبيق =====
 let _savedRecs = null;
 let _savedTime = null;
 try {
-  const saved = localStorage.getItem('last_market_recs');
   const savedTime = localStorage.getItem('last_market_time');
-  if(saved) _savedRecs = JSON.parse(saved);
-  if(savedTime) _savedTime = new Date(savedTime);
+
+  // نقطة 4: تنظيف توصيات الأمس
+  if(savedTime) {
+    const d = new Date(savedTime);
+    if(d.toDateString() !== new Date().toDateString()) {
+      localStorage.removeItem('last_market_recs');
+      localStorage.removeItem('last_market_time');
+      localStorage.removeItem('historical_fetched_date');
+    } else {
+      // نقطة 1: استرجاع توصيات اليوم فقط
+      const saved = localStorage.getItem('last_market_recs');
+      if(saved) _savedRecs = JSON.parse(saved);
+      _savedTime = new Date(savedTime);
+    }
+  }
 } catch(e) {}
+
+// نقطة 3: تحقق هل تم تحميل المؤشرات اليوم
+const _historicalFetchedToday =
+  localStorage.getItem('historical_fetched_date') === new Date().toDateString();
 
 let state = {
   prices: {},      // أسعار حقيقية من FMP
@@ -327,8 +343,9 @@ let state = {
   marketOpen: false,
   lastMarketRecs: _savedRecs,  // آخر توصيات وقت السوق مفتوح
   lastMarketTime: _savedTime,  // وقت آخر تحديث حقيقي
+  recsGeneratedToday: !!_savedRecs, // هل تم إنشاء توصيات اليوم
   sessionOneRecs: null,  // توصيات الافتتاح
-  historicalFetched: false,
+  historicalFetched: _historicalFetchedToday,
   persistence: {},  // تاريخ ظهور كل سهم
   marketTrend: null,
   loadingIndicators: false,
@@ -895,15 +912,26 @@ async function loadData() {
     // ③ بعد الاكتمال — نحسب التوصية مرة واحدة ✅
     state.historicalFetched = true;
     state.loadingIndicators = false;
-    buildStocks();
-    calcRecs();
-    state.lastMarketRecs = state.recs;
-    state.lastMarketTime = new Date();
-    // حفظ في localStorage عشان ما تضيع عند إغلاق المتصفح
+
+    // نقطة 3: حفظ تاريخ تحميل المؤشرات
     try {
-      localStorage.setItem('last_market_recs', JSON.stringify(state.recs));
-      localStorage.setItem('last_market_time', new Date().toISOString());
+      localStorage.setItem('historical_fetched_date', new Date().toDateString());
     } catch(e) {}
+
+    buildStocks();
+
+    // نقطة 2: منع إعادة إنشاء التوصيات أكثر من مرة
+    if(!state.recsGeneratedToday) {
+      calcRecs();
+      state.lastMarketRecs = state.recs;
+      state.lastMarketTime = new Date();
+      state.recsGeneratedToday = true;
+      // نقطة 1: حفظ في localStorage
+      try {
+        localStorage.setItem('last_market_recs', JSON.stringify(state.recs));
+        localStorage.setItem('last_market_time', new Date().toISOString());
+      } catch(e) {}
+    }
 
   } else if(isOfficialOpen) {
     // السوق مفتوح والمؤشرات محملة — أسعار فقط، التوصيات ثابتة ✅
