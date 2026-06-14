@@ -447,17 +447,28 @@ async function fetchCompanyProfiles() {
 // ===== FETCH HISTORICAL DATA & REAL INDICATORS =====
 async function fetchHistoricalIndicators() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
-  // نجيب كل الأسهم — يتم مرة واحدة فقط عند فتح السوق
   const topSymbols = uniqueStocks.map(s=>s.id);
   
   state.realIndicators = {};
-  
-  // نجيب بشكل متسلسل عشان ما نتجاوز حد الطلبات
+  state.loadingProgress = 0;
+  state.loadingTotal = topSymbols.length;
+
+  // fetch مع timeout 8 ثواني — لو سهم ما رد ما يتعلق الكل
+  async function fetchWithTimeout(url, ms=8000) {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const res = await fetch(url, {signal: ctrl.signal});
+      clearTimeout(id);
+      return res;
+    } catch(e) { clearTimeout(id); throw e; }
+  }
+
   for(const sym of topSymbols) {
     await (async (sym) => {
     try {
       const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=200&apikey=${apiKey}`;
-      const res = await fetch(url);
+      const res = await fetchWithTimeout(url, 8000);
       const data = await res.json();
       const prices = (data.historical || []).map(d => d.close).reverse();
       
@@ -579,7 +590,11 @@ async function fetchHistoricalIndicators() {
 
     } catch(e) {}
     })(sym);
-    // انتظر 200ms بين كل طلب عشان ما نضغط على API
+    // تحديث counter التقدم
+    state.loadingProgress = (state.loadingProgress || 0) + 1;
+    // تحديث الشاشة كل 10 أسهم
+    if(state.loadingProgress % 10 === 0) render();
+    // انتظر 200ms بين كل طلب
     await new Promise(r => setTimeout(r, 200));
   }
 }
@@ -2099,7 +2114,12 @@ function renderModal() {
 
 // ===== LOADING =====
 function renderLoading() {
-  return el('div',{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",gap:"16px"}},[
+  const isLoadingInd = state.loadingIndicators;
+  const progress = state.loadingProgress || 0;
+  const total = state.loadingTotal || 143;
+  const pct = total > 0 ? Math.round((progress/total)*100) : 0;
+
+  return el('div',{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",gap:"16px",padding:"20px"}},[
     el('div',{style:{
       width:"50px",height:"50px",
       border:`3px solid rgba(0,255,136,.2)`,
@@ -2108,8 +2128,15 @@ function renderLoading() {
       animation:"spin 1s linear infinite",
       boxShadow:`0 0 20px ${C.green}44`
     }}),
-    el('div',{style:{fontSize:"14px",color:C.green,textShadow:`0 0 10px ${C.green}`}},"جاري تحميل السوق..."),
-    el('div',{style:{fontSize:"11px",color:"var(--text3)"}},"الاتصال بـ FMP API")
+    el('div',{style:{fontSize:"14px",color:C.green,textShadow:`0 0 10px ${C.green}`,fontWeight:"700"}},
+      isLoadingInd ? `جاري تحميل المؤشرات... ${pct}%` : "جاري تحميل السوق..."
+    ),
+    isLoadingInd && el('div',{style:{width:"200px",height:"6px",background:"#1a2340",borderRadius:"3px",overflow:"hidden"}},[
+      el('div',{style:{height:"100%",width:`${pct}%`,background:C.green,borderRadius:"3px",transition:"width .3s",boxShadow:`0 0 8px ${C.green}`}})
+    ]),
+    el('div',{style:{fontSize:"11px",color:"var(--text3)"}},
+      isLoadingInd ? `${progress} من ${total} سهم — التوصية تظهر بعد الانتهاء` : "الاتصال بـ FMP API"
+    )
   ]);
 }
 
