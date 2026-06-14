@@ -699,9 +699,11 @@ function buildStocks() {
 async function fetchMarketTrend() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
   try {
-    // نجيب SPY (S&P500) و QQQ (ناسداك) — مؤشران للسوق العام
     const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=SPY&limit=5&apikey=${apiKey}`;
-    const res = await fetch(url);
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 5000); // 5 ثواني max
+    const res = await fetch(url, {signal: ctrl.signal});
+    clearTimeout(tid);
     const data = await res.json();
     const prices = (data.historical || []).map(d => d.close).reverse();
     if(prices.length >= 2) {
@@ -829,7 +831,9 @@ async function loadData() {
   const isOfficialOpen = session === "open";
 
   // ① دايماً نجيب الأسعار والأخبار أولاً
-  await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings(), fetchMarketTrend()]);
+  // SPY يشتغل بالخلفية — ما يوقف التحميل لو ما رد
+  fetchMarketTrend().catch(()=>{});
+  await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
   buildStocks();
 
   if(!state.historicalFetched) {
