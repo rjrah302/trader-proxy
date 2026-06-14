@@ -1903,14 +1903,15 @@ function calcExplosionScore(s) {
   const beta = profile?.beta || s.beta || 1;
   const stockNews = (state.news && state.news[s.id]) || [];
 
-  // 1. Beta Engine — تأثير مخفف
+  // 1. Beta Engine — نقطة 1: عقوبة beta > 5
   let betaScore = 0;
-  if(beta > 3)        betaScore = 20;
+  if(beta > 5)        betaScore = 10; // خطر مفرط
+  else if(beta > 3)   betaScore = 20;
   else if(beta > 2)   betaScore = 16;
   else if(beta > 1.5) betaScore = 12;
   else                betaScore = 6;
 
-  // 2. Volume Explosion Engine — الأهم الحين
+  // 2. Volume Explosion Engine
   const volR = s.volR || 1;
   let volumeScore = 0;
   if(volR > 5)        volumeScore = 30;
@@ -1924,20 +1925,24 @@ function calcExplosionScore(s) {
   if(volR < 1.5) return { total: 0, label: "", emoji: "", betaScore, volumeScore: 0,
     momentumScore: 0, catalystScore: 0, priceScore: 0, sectorHeat: 0, riskLevel: "", riskColor: "#888" };
 
-  // 3. Momentum Engine — بدون تعديل
+  // 3. Momentum Engine — نقطة 2: إضافة اتجاه صاعد
   let momentumScore = 0;
   const rsi = real?.rsi || s.rsi || 50;
   const macdH = real?.macdHist || 0;
-  if(rsi > 50 && rsi < 70) momentumScore += 10;
-  if(macdH > 0)             momentumScore += 10;
+  const ma20 = real?.ma20 || s.ma20 || 0;
+  const ma50 = real?.ma50 || s.ma50 || 0;
+  const priceM = s.price || 0;
+  if(rsi > 50 && rsi < 70)              momentumScore += 10; // RSI صاعد
+  if(macdH > 0)                          momentumScore += 10; // MACD إيجابي
+  if(priceM > ma20 && ma20 > ma50)       momentumScore += 10; // اتجاه صاعد حقيقي
 
-  // 4. Catalyst Engine — بدون تعديل
+  // 4. Catalyst Engine
   let catalystScore = 0;
   const posNews = stockNews.filter(n=>n.sentiment==='positive').length;
   const negNews = stockNews.filter(n=>n.sentiment==='negative').length;
   catalystScore = Math.min(15, posNews * 5);
 
-  // 5. Price Engine — بدون تعديل
+  // 5. Price Engine
   let priceScore = 0;
   const price = s.price || 0;
   if(price < 20)       priceScore = 10;
@@ -1945,16 +1950,24 @@ function calcExplosionScore(s) {
   else if(price < 100) priceScore = 5;
   else                 priceScore = 2;
 
-  // Sector Heat Engine — بدون تعديل
+  // Sector Heat Engine
   const sectorHeat = getSectorHeat(s.id);
 
-  let total = betaScore + volumeScore + momentumScore + catalystScore + priceScore + sectorHeat;
+  // Persistence Bonus — نقطة 6
+  const persistBonus = (s.persistDays || 0) * 2;
 
-  // عقوبة التشبع الشرائي
-  if(rsi > 80) total -= 10;
+  let total = betaScore + volumeScore + momentumScore + catalystScore + priceScore + sectorHeat + persistBonus;
 
-  // عقوبة الأخبار السلبية
-  if(negNews > 0) total -= 10;
+  // نقطة 4: عقوبة التشبع الشرائي المشددة
+  if(rsi > 85)      total -= 15;
+  else if(rsi > 80) total -= 10;
+
+  // نقطة 3: عقوبة الأخبار السلبية المشددة
+  if(negNews >= 2)  total -= 20;
+  else if(negNews === 1) total -= 10;
+
+  // نقطة 5: عقوبة جودة الصفقة المنخفضة
+  if((s.tradeQuality || 0) < 40) total -= 10;
 
   // تصنيف الفرصة
   let label = "", emoji = "";
@@ -1971,7 +1984,7 @@ function calcExplosionScore(s) {
   else if(beta > 1.5)                { riskLevel = "متوسطة";        riskColor = "#ffe033"; }
   else                               { riskLevel = "منخفضة";        riskColor = "#00ff88"; }
 
-  return { total, label, emoji, betaScore, volumeScore, momentumScore, catalystScore, priceScore, sectorHeat, riskLevel, riskColor };
+  return { total, label, emoji, betaScore, volumeScore, momentumScore, catalystScore, priceScore, sectorHeat, persistBonus, riskLevel, riskColor };
 }
 
 function renderFutureTab() {
