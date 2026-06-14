@@ -318,6 +318,7 @@ let state = {
   lastMarketRecs: null,  // آخر توصيات وقت السوق مفتوح
   sessionOneRecs: null,  // توصيات الافتتاح
   historicalFetched: false,
+  persistence: {},  // تاريخ ظهور كل سهم
   marketTrend: null,
   loadingIndicators: false,
   news: {},
@@ -470,11 +471,15 @@ function calcIndicators(s, price) {
   tradeQuality = Math.min(100, tradeQuality);
 
   const isConviction = (state.sessionOneRecs||[]).includes(s.id);
+  const persistDays = getPersistenceDays(s.id);
+  const persistLabel = persistDays >= 3 ? "Elite" : persistDays >= 2 ? "Strong" : persistDays >= 1 ? "Normal" : "";
+
   return {rsi,ma20,ma50,macdH,vol,avgVol,volR,bb_u,bb_l,sup,res,pe,
           signal:sig,signalColor:sigC,strength:str,buySignals:buy,sellSignals:sell,
           profitPct:Math.abs(res-price)/price*100,indicatorsReal:isReal,
           confidence, highConviction:isConviction,
-          tradeQuality, riskRewardFinal: parseFloat(riskRewardFinal.toFixed(2))};
+          tradeQuality, riskRewardFinal: parseFloat(riskRewardFinal.toFixed(2)),
+          persistDays, persistLabel};
 }
 
 // ===== FETCH COMPANY PROFILES (Beta + Volume + MarketCap) =====
@@ -893,6 +898,37 @@ async function loadData() {
   render();
 }
 
+// ===== Persistence Engine =====
+function updatePersistence(topStocks) {
+  const today = new Date().toDateString();
+  try {
+    // نجيب التاريخ المحفوظ
+    const saved = JSON.parse(localStorage.getItem('persistence_data') || '{}');
+    
+    // نضيف اليوم
+    topStocks.forEach(s => {
+      if(!saved[s.id]) saved[s.id] = [];
+      // نضيف اليوم لو ما موجود
+      if(!saved[s.id].includes(today)) {
+        saved[s.id].push(today);
+      }
+      // نحتفظ بآخر 10 أيام فقط
+      saved[s.id] = saved[s.id].slice(-10);
+    });
+
+    // نحفظ
+    localStorage.setItem('persistence_data', JSON.stringify(saved));
+    state.persistence = saved;
+  } catch(e) {}
+}
+
+function getPersistenceDays(stockId) {
+  try {
+    const saved = JSON.parse(localStorage.getItem('persistence_data') || '{}');
+    return (saved[stockId] || []).length;
+  } catch(e) { return 0; }
+}
+
 function calcRecs() {
   // الترتيب = القوة (50%) + الثقة (30%) + جودة الصفقة (20%)
   const sessionOne = state.sessionOneRecs || [];
@@ -939,8 +975,13 @@ function calcRecs() {
     }
   }
 
+  const topPicks = buys.slice(0, maxPicks);
+  
+  // تحديث Persistence
+  updatePersistence(topPicks);
+
   state.recs = {
-    top3: buys.slice(0, maxPicks),
+    top3: topPicks,
     avoid: sells.slice(0,5),
     watch: watch.slice(0,2),
     future: future.slice(0,5),
@@ -1264,7 +1305,20 @@ function recCard(s, rank, pct) {
           marginTop:"4px",fontSize:"10px",textAlign:"center",
           color: s.tradeQuality>=70?"#00ff88":s.tradeQuality>=40?"#ffe033":"#ff7a00",
           fontWeight:"700"
-        }},`جودة الصفقة ${s.tradeQuality}% | ع/م ${s.riskRewardFinal}x`)
+        }},`جودة الصفقة ${s.tradeQuality}% | ع/م ${s.riskRewardFinal}x`),
+        // Persistence Badge
+        s.persistLabel && el('div',{style:{
+          marginTop:"4px",
+          background: s.persistLabel==="Elite"?"linear-gradient(135deg,#b44fff,#00c8ff)":
+                      s.persistLabel==="Strong"?"linear-gradient(135deg,#00ff88,#00c8ff)":
+                      "rgba(255,255,255,.1)",
+          borderRadius:"6px",padding:"2px 8px",
+          fontSize:"10px",fontWeight:"900",
+          color: s.persistLabel==="Elite"||s.persistLabel==="Strong"?"#000":"var(--text3)",
+          textAlign:"center"
+        }},s.persistLabel==="Elite"?"🏆 Elite Setup — "+s.persistDays+" أيام":
+           s.persistLabel==="Strong"?"💪 Strong — يومين":
+           "📅 Normal — يوم واحد")
       ])
     ]),
 
