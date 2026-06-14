@@ -207,6 +207,7 @@ const STOCKS = [
   {id:"MARA", name:"Marathon Digital", sector:"تعدين BTC",    cat:"small",  tip:"تعدين البيتكوين — يتبع العملات",      beta:2.9},
   {id:"RIOT", name:"Riot Platforms",   sector:"تعدين BTC",    cat:"small",  tip:"منافس Marathon في تعدين البيتكوين",   beta:2.8},
   {id:"CLSK", name:"CleanSpark",       sector:"تعدين BTC",    cat:"small",  tip:"تعدين بيتكوين بطاقة متجددة",          beta:2.7},
+  {id:"HIMS", name:"Hims & Hers",      sector:"صحة رقمية",    cat:"small",  tip:"منصة الرعاية الصحية الرقمية",         beta:1.8},
   {id:"OPEN", name:"Opendoor",         sector:"عقارات/تقنية", cat:"small",  tip:"شراء وبيع المنازل بالتقنية",          beta:2.1},
   {id:"DKNG", name:"DraftKings",       sector:"مراهنات رياضية",cat:"small", tip:"المراهنات الرياضية القانونية",         beta:1.9},
 
@@ -217,6 +218,8 @@ const STOCKS = [
   {id:"NVTS", name:"Navitas Semi",  sector:"شرائح",        cat:"small",  tip:"شرائح طاقة لمراكز البيانات — نمو 25%", beta:2.1},
   {id:"SMCI", name:"Super Micro",   sector:"خوادم AI",     cat:"mid",    tip:"خوادم الذكاء الاصطناعي — شريك Nvidia", beta:1.9},
   {id:"PGY",  name:"Pagaya Tech",   sector:"فينتك/AI",     cat:"small",  tip:"AI لمعالجة القروض — نمو 67% الأرباح",  beta:2.2},
+  {id:"CXAI", name:"CXApp",         sector:"AI/مؤسسات",    cat:"small",  tip:"تجربة الموظفين بالذكاء الاصطناعي",    beta:2.5},
+  {id:"LAES", name:"SEALSQ",        sector:"أمن رقمي",     cat:"small",  tip:"شرائح أمن كمومية للإنترنت",            beta:2.9},
   // 🏦 مالية رخيصة
   {id:"HBAN", name:"Huntington",    sector:"بنوك",         cat:"small",  tip:"بنك إقليمي أمريكي ينمو في الجنوب",    beta:1.1},
   {id:"NWG",  name:"NatWest",       sector:"بنوك",         cat:"small",  tip:"بنك بريطاني — نمو في إدارة الثروات",   beta:0.9},
@@ -235,9 +238,17 @@ const STOCKS = [
   {id:"LUNG", name:"Pulmatrix",     sector:"دواء تنفسي",   cat:"small",  tip:"علاجات أمراض الرئة والتنفس",           beta:2.3},
   {id:"GRFS", name:"Grifols",       sector:"بلازما دم",    cat:"small",  tip:"علاجات مشتقة من بلازما الدم",          beta:1.4},
   // 🚗 سيارات وتنقل
+  {id:"GOEV", name:"Canoo",         sector:"EV",           cat:"small",  tip:"مركبات كهربائية متعددة الاستخدام",     beta:2.8},
+  {id:"WKHS", name:"Workhorse",     sector:"EV توصيل",     cat:"small",  tip:"شاحنات توصيل كهربائية للبريد",         beta:2.5},
+  {id:"AYRO", name:"AYRO",          sector:"EV صغير",      cat:"small",  tip:"مركبات كهربائية خفيفة للحرم الجامعي",  beta:2.9},
+  {id:"RIDE", name:"Lordstown",     sector:"EV شاحنات",    cat:"small",  tip:"شاحنات كهربائية للأعمال",              beta:3.0},
+  {id:"SOLO", name:"ElectraMeccanica",sector:"EV صغير",    cat:"small",  tip:"سيارة كهربائية أحادية المقعد للمدن",   beta:2.7},
   // 🎮 ترفيه وألعاب رخيصة
   {id:"MVIS", name:"MicroVision",   sector:"LiDAR",        cat:"small",  tip:"ليدار للسيارات ذاتية القيادة",         beta:2.6},
+  {id:"KOSS", name:"Koss Corp",     sector:"إلكترونيات",   cat:"small",  tip:"سماعات رأس — قضية براءات اختراع Apple",beta:2.1},
   {id:"GXII", name:"GreenTree",     sector:"فنادق صين",    cat:"small",  tip:"سلسلة فنادق اقتصادية في الصين",        beta:1.9},
+  {id:"NKLA", name:"Nikola",        sector:"هيدروجين",     cat:"small",  tip:"شاحنات هيدروجين — إعادة هيكلة",        beta:3.0},
+  {id:"MULN", name:"Mullen Auto",   sector:"EV",           cat:"small",  tip:"مركبات كهربائية تجارية",               beta:3.0},
   // 📡 اتصالات وإنترنت
   {id:"VOD",  name:"Vodafone",      sector:"اتصالات",      cat:"small",  tip:"شبكات الجيل الخامس في أوروبا وأفريقيا",beta:0.8},
   {id:"NOK",  name:"Nokia",         sector:"اتصالات/AI",   cat:"small",  tip:"بنية تحتية للـ 5G وشبكات AI",          beta:0.9},
@@ -252,6 +263,7 @@ const STOCKS = [
   {id:"PENN", name:"PENN Entertainment",sector:"كازينو/رياضة",cat:"small",tip:"كازينو + مراهنات رياضية ESPN BET",   beta:1.8},
   {id:"LAZR", name:"Luminar Tech",  sector:"LiDAR",        cat:"small",  tip:"ليدار للسيارات ذاتية القيادة Volvo",   beta:2.5},
   {id:"GROY", name:"Gold Royalty",  sector:"ذهب",          cat:"small",  tip:"شركة حقوق ذهبية — نمو 133% إيرادات",   beta:1.6},
+  {id:"CEI",  name:"Camber Energy", sector:"طاقة",         cat:"small",  tip:"طاقة متجددة وتقليدية مدمجة",           beta:3.0},
   {id:"ARM",  name:"ARM Holdings",  sector:"شرائح/AI",     cat:"large",  tip:"تصميم شرائح AI — كل جهاز تقريباً يستخدم تقنية ARM",  beta:1.6},
   // ===== 10 أسهم جديدة كلياً =====
   {id:"CRWD", name:"CrowdStrike",   sector:"أمن سيبراني",  cat:"large",  tip:"رائد الأمن السيبراني السحابي",          beta:1.4},
@@ -264,11 +276,6 @@ const STOCKS = [
   {id:"HROW", name:"Harrow Health", sector:"دواء عيون",    cat:"small",  tip:"أدوية العيون المتخصصة",                  beta:1.7},
   {id:"DNUT", name:"Krispy Kreme",  sector:"مطاعم",        cat:"small",  tip:"دونات عالمية — شراكة مع McDonald's",     beta:1.2},
   {id:"VNET", name:"21Vianet",      sector:"سحابة صين",    cat:"small",  tip:"مراكز بيانات سحابية في الصين",           beta:1.8},
-  {id:"HIMS", name:"Hims & Hers",   sector:"صحة رقمية",    cat:"small",  tip:"أدوية السمنة والصحة الرقمية — نمو 69%",  beta:1.9},
-  {id:"SHOP", name:"Shopify",       sector:"تجارة إلكترونية",cat:"mid",   tip:"منصة التجارة الإلكترونية الأولى عالمياً", beta:1.7},
-  {id:"MELI", name:"MercadoLibre",  sector:"تجارة/فينتك",   cat:"large",  tip:"Amazon أمريكا اللاتينية — نمو ضخم",      beta:1.5},
-  {id:"PATH", name:"UiPath",        sector:"AI أتمتة",      cat:"mid",    tip:"رائد أتمتة الأعمال بالذكاء الاصطناعي",   beta:1.6},
-  {id:"BILL", name:"Bill.com",      sector:"فينتك",          cat:"mid",    tip:"مدفوعات الشركات الصغيرة — نمو مستمر",    beta:1.5},
 ];
 
 // إزالة المكررات
@@ -301,6 +308,7 @@ let state = {
   marketOpen: false,
   lastMarketRecs: null,  // آخر توصيات وقت السوق مفتوح
   historicalFetched: false,
+  marketTrend: null,
   loadingIndicators: false,
   news: {},
   earnings: {},
@@ -311,8 +319,7 @@ let state = {
   pnlVals: {buy:"", sell:"", qty:""},  // حاسبة الربح
   slVals: {price:"", pct:"3", qty:""},  // حاسبة وقف الخسارة
   realIndicators: {},
-  companyProfiles: {},
-  marketTrend: null  // اتجاه السوق العام من SPY
+  companyProfiles: {}
 };
 
 const CATS = {large:"كبيرة 💎", mid:"متوسطة 📊", small:"صغيرة 💰", future:"المجازفة 🎲"};
@@ -352,16 +359,13 @@ function calcIndicators(s, price) {
   const bb_u = real ? real.bb_upper : price * (1 + seededRnd(seed+8, 0.01, 0.03));
   const bb_l = real ? real.bb_lower : price * (1 - seededRnd(seed+9, 0.01, 0.03));
 
-  // الحجم الحقيقي من API أو من البيانات التاريخية
-  const realPrice = state.prices[s.id];
-  const realVol = realPrice?.volume || 0;
-  const vol     = realVol > 0 ? realVol : Math.floor(seededRnd(seed+6, 500000, 15000000));
+  const vol     = Math.floor(seededRnd(seed+6, 500000, 15000000));
   const avgVol  = realAvgVol > 0 ? realAvgVol : Math.floor(seededRnd(seed+7, 800000, 8000000));
   const volR    = vol / avgVol;
   // نستخدم دعم/مقاومة حقيقية إذا متوفرة
   const sup = real?.support || price * (1 - seededRnd(seed+10, 0.008, 0.025));
   const res = real?.resistance || price * (1 + seededRnd(seed+11, 0.008, 0.025));
-  const pe      = profile?.pe || seededRnd(seed+12, 10, 60); // حقيقي من FMP أو تقريبي
+  const pe      = seededRnd(seed+12, 10, 60);
   const peScore = pe < 20 ? 2 : pe < 35 ? 1 : 0;
   const isReal  = !!real;
 
@@ -426,10 +430,7 @@ async function fetchCompanyProfiles() {
   for(const s of uniqueStocks) {
     try {
       const url = `https://financialmodelingprep.com/stable/profile?symbol=${s.id}&apikey=${apiKey}`;
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 6000);
-      const res = await fetch(url, {signal: ctrl.signal});
-      clearTimeout(tid);
+      const res = await fetch(url);
       const data = await res.json();
       const profile = Array.isArray(data) ? data[0] : null;
       if(profile) {
@@ -439,8 +440,7 @@ async function fetchCompanyProfiles() {
           marketCap: profile.marketCap || 0,
           sector: profile.sector || s.sector,
           employees: profile.fullTimeEmployees || 0,
-          lastDividend: profile.lastDividend || 0,
-          pe: profile.pe || null  // ✅ P/E حقيقي من FMP
+          lastDividend: profile.lastDividend || 0
         };
       }
       await new Promise(r => setTimeout(r, 150));
@@ -451,52 +451,33 @@ async function fetchCompanyProfiles() {
 // ===== FETCH HISTORICAL DATA & REAL INDICATORS =====
 async function fetchHistoricalIndicators() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
+  // نجيب كل الأسهم — يتم مرة واحدة فقط عند فتح السوق
   const topSymbols = uniqueStocks.map(s=>s.id);
   
   state.realIndicators = {};
-  state.loadingProgress = 0;
-  state.loadingTotal = topSymbols.length;
-
-  // fetch مع timeout 8 ثواني
-  async function fetchWithTimeout(url, ms=8000) {
-    const ctrl = new AbortController();
-    const id = setTimeout(() => ctrl.abort(), ms);
-    try {
-      const res = await fetch(url, {signal: ctrl.signal});
-      clearTimeout(id);
-      return res;
-    } catch(e) { clearTimeout(id); throw e; }
-  }
-
-  // دالة تحليل سهم واحد
-  async function processSym(sym) {
+  
+  // نجيب بشكل متسلسل عشان ما نتجاوز حد الطلبات
+  for(const sym of topSymbols) {
+    await (async (sym) => {
     try {
       const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=200&apikey=${apiKey}`;
-      const res = await fetchWithTimeout(url, 8000);
+      const res = await fetch(url);
       const data = await res.json();
       const prices = (data.historical || []).map(d => d.close).reverse();
       
       if(prices.length < 14) return;
 
-      // ===== RSI الحقيقي — Wilder's Smoothing =====
-      const rsiLen = 14;
-      let avgGain = 0, avgLoss = 0;
-      // الحساب الأول: simple average على أول 14 يوم
-      for(let i=1; i<=rsiLen; i++) {
+      // ===== RSI الحقيقي =====
+      const gains = [], losses = [];
+      for(let i=1; i<prices.length; i++) {
         const diff = prices[i] - prices[i-1];
-        avgGain += diff > 0 ? diff : 0;
-        avgLoss += diff < 0 ? Math.abs(diff) : 0;
+        gains.push(diff > 0 ? diff : 0);
+        losses.push(diff < 0 ? Math.abs(diff) : 0);
       }
-      avgGain /= rsiLen;
-      avgLoss /= rsiLen;
-      // Wilder's Smoothing على باقي الأيام
-      for(let i=rsiLen+1; i<prices.length; i++) {
-        const diff = prices[i] - prices[i-1];
-        avgGain = (avgGain * (rsiLen-1) + (diff > 0 ? diff : 0)) / rsiLen;
-        avgLoss = (avgLoss * (rsiLen-1) + (diff < 0 ? Math.abs(diff) : 0)) / rsiLen;
-      }
-      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-      const rsi = 100 - (100 / (1 + rs));
+      const avgGain = gains.slice(-14).reduce((a,b)=>a+b,0)/14;
+      const avgLoss = losses.slice(-14).reduce((a,b)=>a+b,0)/14;
+      const rs = avgLoss === 0 ? 100 : avgGain/avgLoss;
+      const rsi = 100 - (100/(1+rs));
 
       // ===== MA20 و MA50 الحقيقية =====
       const ma20 = prices.slice(-20).reduce((a,b)=>a+b,0)/Math.min(20,prices.length);
@@ -509,16 +490,11 @@ async function fetchHistoricalIndicators() {
         for(let i=1; i<data.length; i++) emaVal = data[i]*k + emaVal*(1-k);
         return emaVal;
       }
-      const macdHistory = [];
-      for(let i = 26; i <= prices.length; i++) {
-        const slice = prices.slice(0, i);
-        const e12 = ema(slice.slice(-26), 12);
-        const e26 = ema(slice.slice(-26), 26);
-        macdHistory.push(e12 - e26);
-      }
-      const macdLine = macdHistory[macdHistory.length - 1];
-      const signalLine = macdHistory.length >= 9 ? ema(macdHistory.slice(-9), 9) : macdLine;
-      const macdHist = macdLine - signalLine;
+      const ema12 = ema(prices.slice(-26), 12);
+      const ema26 = ema(prices.slice(-26), 26);
+      const macdLine = ema12 - ema26;
+      const signal = ema([macdLine], 9);
+      const macdHist = macdLine - signal;
 
       // ===== بولينجر الحقيقي =====
       const last20 = prices.slice(-20);
@@ -530,7 +506,7 @@ async function fetchHistoricalIndicators() {
       // ===== حفظ البيانات التاريخية للشارت =====
       const chartData = prices.slice(-30);
 
-      // ===== Stochastic RSI — مصحح بـ EMA =====
+      // ===== Stochastic RSI =====
       const rsiPeriod = 14;
       const stochPeriod = 14;
       const rsiValues = [];
@@ -541,7 +517,6 @@ async function fetchHistoricalIndicators() {
           const d = slice[j]-slice[j-1];
           g.push(d>0?d:0); l.push(d<0?Math.abs(d):0);
         }
-        // Wilder's smoothing (أدق من simple average)
         const ag = g.reduce((a,b)=>a+b,0)/rsiPeriod;
         const al = l.reduce((a,b)=>a+b,0)/rsiPeriod;
         const rs2 = al===0?100:ag/al;
@@ -550,14 +525,7 @@ async function fetchHistoricalIndicators() {
       const recentRsi = rsiValues.slice(-stochPeriod);
       const minRsi = Math.min(...recentRsi);
       const maxRsi = Math.max(...recentRsi);
-      const rawStoch = maxRsi===minRsi ? 50 : ((rsiValues[rsiValues.length-1]-minRsi)/(maxRsi-minRsi))*100;
-      // %K و %D (EMA3 على Stoch) — أكثر دقة
-      const stochK = rawStoch;
-      const stochD = rsiValues.length >= 3 ? 
-        (rawStoch + (maxRsi===minRsi?50:((rsiValues[rsiValues.length-2]-minRsi)/(maxRsi-minRsi))*100) + 
-                    (maxRsi===minRsi?50:((rsiValues[rsiValues.length-3]-minRsi)/(maxRsi-minRsi))*100)) / 3 
-        : rawStoch;
-      const stochRsi = stochD; // نستخدم %D لأنه أهدأ وأدق
+      const stochRsi = maxRsi===minRsi ? 50 : ((rsiValues[rsiValues.length-1]-minRsi)/(maxRsi-minRsi))*100;
 
       // ===== ATR — وقف خسارة ذكي =====
       const atrPeriod = 14;
@@ -591,18 +559,9 @@ async function fetchHistoricalIndicators() {
       };
 
     } catch(e) {}
-    // تحديث counter
-    state.loadingProgress = (state.loadingProgress || 0) + 1;
-    if(state.loadingProgress % 10 === 0) render();
-  }
-
-  // تشغيل 10 أسهم بنفس الوقت — بدل واحد ورا واحد
-  const BATCH = 10;
-  for(let i = 0; i < topSymbols.length; i += BATCH) {
-    const batch = topSymbols.slice(i, i + BATCH);
-    await Promise.all(batch.map(sym => processSym(sym)));
-    // انتظر 300ms بين كل batch عشان ما نضغط API
-    await new Promise(r => setTimeout(r, 300));
+    })(sym);
+    // انتظر 200ms بين كل طلب عشان ما نضغط على API
+    await new Promise(r => setTimeout(r, 200));
   }
 }
 
@@ -644,39 +603,29 @@ function buildStocks() {
     const p = state.prices[s.id];
     // أسعار احتياطية محدثة - يونيو 2026
     const fallback = {
-      // تكنولوجيا كبيرة - محدثة يونيو 2026
-      AAPL:211,NVDA:205,MSFT:450,GOOGL:175,META:580,AMD:160,PLTR:26,
-      CRM:295,ORCL:145,INTC:23,AMZN:195,TSLA:280,ADBE:385,
+      // تكنولوجيا كبيرة
+      AAPL:291,NVDA:135,MSFT:447,GOOGL:178,META:580,AMD:156,PLTR:24,
+      CRM:290,ORCL:140,INTC:22,AMZN:193,TSLA:280,ADBE:380,
       // استهلاك
-      WMT:92,COST:930,NKE:68,SBUX:85,MCD:308,TGT:110,ABNB:148,
+      WMT:90,COST:920,NKE:65,SBUX:82,MCD:305,TGT:108,ABNB:145,
       // مالية
-      JPM:272,GS:575,BAC:45,V:368,PYPL:68,MS:138,BLK:1060,SCHW:84,AXP:292,SQ:68,
+      JPM:270,GS:570,BAC:44,V:365,PYPL:67,MS:135,BLK:1050,SCHW:82,AXP:290,SQ:67,
       // صحة
-      JNJ:165,LLY:895,PFE:28,MRNA:46,ABBV:226,ISRG:605,REGN:655,VRTX:525,TMO:480,ISRG:605,REGN:655,VRTX:525,
+      JNJ:163,LLY:890,PFE:27,MRNA:45,ABBV:224,ISRG:600,REGN:650,VRTX:520,
       // طاقة
-      XOM:120,CVX:160,ENPH:74,FSLR:188,VLO:158,SLB:43,NEE:76,AMT:212,
+      XOM:118,CVX:158,ENPH:72,FSLR:185,VLO:155,SLB:42,NEE:75,AMT:210,
       // ترفيه/اتصالات
-      NFLX:1060,DIS:102,SPOT:625,
+      NFLX:1050,DIS:100,SPOT:620,
       // سيارات
-      F:11,GM:53,RIVN:14,
-      // أسهم المجازفة - محدثة
+      F:11,GM:52,RIVN:14,
+      // أسهم المجازفة — محدثة
       RKLB:120,IONQ:35,JOBY:8,LUNR:26,QBTS:7,ARRY:12,
-      ASTS:30,ACHR:5,SOUN:13,RXRX:3,BBAI:4,AEVA:3,
+      ASTS:30,ACHR:5,SOUN:13,RXRX:8,BBAI:4,AEVA:3,
       // صغيرة/رخيصة
-      HOOD:36,SOFI:17,UBER:83,LYFT:15,SNAP:8,COIN:248,
-      NIO:4,PLUG:2,AAL:11,BA:180,RTX:130,
-      HIMS:29,SHOP:105,MELI:2100,PATH:14,BILL:55,OPEN:3,DKNG:19,LAZR:4,NOK:5,VOD:10,
-      SMCI:42,NVTS:14,PGY:16,HBAN:17,
-      // تكنولوجيا إضافية
-      TSM:185,ASML:720,QCOM:165,NOW:870,SNOW:145,DDOG:115,NET:110,MDB:240,ZM:72,ADBE:385,
-      // مالية إضافية
-      MS:138,BLK:1060,SCHW:84,AXP:292,SQ:68,
-      // صحة إضافية
-      TMO:480,ISRG:605,REGN:655,VRTX:525,
-      // طاقة إضافية
-      NEE:76,AMT:212,FSLR:188,VLO:158,SLB:43,
-      // ترفيه وألعاب
-      EA:145,TTWO:168,RBLX:52,
+      HOOD:35,SOFI:16,UBER:82,LYFT:15,SNAP:8,COIN:245,
+      NIO:4,PLUG:2,AAL:11,BA:178,RTX:128,
+      HIMS:28,OPEN:3,DKNG:18,LAZR:4,NOK:5,VOD:10,
+      SMCI:40,NVTS:14,PGY:16,HBAN:16,
     };
     const price = p?.price || state.lastPrices[s.id]?.price || fallback[s.id] || 50;
     const change = p?.change || seededRnd(dailySeed(s.id)+20, -3, 3);
@@ -693,47 +642,36 @@ function buildStocks() {
   });
 }
 
-// ===== FETCH MARKET TREND (SPY + QQQ) =====
+// ===== FETCH NEWS & EARNINGS =====
 async function fetchMarketTrend() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
   try {
-    const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=SPY&limit=5&apikey=${apiKey}`;
     const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 5000); // 5 ثواني max
+    setTimeout(() => ctrl.abort(), 5000);
+    const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=SPY&limit=5&apikey=${apiKey}`;
     const res = await fetch(url, {signal: ctrl.signal});
-    clearTimeout(tid);
     const data = await res.json();
     const prices = (data.historical || []).map(d => d.close).reverse();
     if(prices.length >= 2) {
       const change = ((prices[prices.length-1] - prices[prices.length-2]) / prices[prices.length-2]) * 100;
       state.marketTrend = {
-        change: change,
-        status: change > 1 ? "bullish" : change < -1 ? "bearish" : change < -0.5 ? "weak" : "neutral",
-        label: change > 1 ? "🚀 السوق قوي" : change < -1 ? "📉 السوق هابط" : change < -0.5 ? "⚠️ السوق ضعيف" : "⚡ السوق محايد",
-        color: change > 1 ? "#00ff88" : change < -1 ? "#ff2d7a" : change < -0.5 ? "#ff7a00" : "#ffe033"
+        change,
+        status: change > 1 ? "bullish" : change < -1 ? "bearish" : "neutral",
+        label: change > 1 ? "🚀 السوق قوي" : change < -1 ? "📉 السوق هابط" : "⚡ السوق محايد",
+        color: change > 1 ? "#00ff88" : change < -1 ? "#ff2d7a" : "#ffe033"
       };
     }
-  } catch(e) {
-    state.marketTrend = null;
-  }
+  } catch(e) { state.marketTrend = null; }
 }
 
-// ===== FETCH NEWS & EARNINGS =====
 async function fetchNewsAndEarnings() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
-  // كل الأسهم للأخبار
-  const symbols = uniqueStocks.map(s=>s.id).join(',');
-
-  async function fetchT(url, ms=6000) {
-    const ctrl = new AbortController();
-    const tid = setTimeout(()=>ctrl.abort(), ms);
-    try { const r = await fetch(url,{signal:ctrl.signal}); clearTimeout(tid); return r; }
-    catch(e) { clearTimeout(tid); throw e; }
-  }
+  const symbols = uniqueStocks.slice(0,20).map(s=>s.id).join(','); // أهم 20 سهم للأخبار
   
   try {
+    // أخبار السوق
     const newsUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbols}&limit=50&apikey=${apiKey}`;
-    const newsRes = await fetchT(newsUrl, 6000);
+    const newsRes = await fetch(newsUrl);
     const newsData = await newsRes.json();
     
     state.news = {};
@@ -763,7 +701,7 @@ async function fetchNewsAndEarnings() {
     const today = new Date().toISOString().split('T')[0];
     const nextWeek = new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0];
     const earnUrl = `https://financialmodelingprep.com/stable/earning-calendar?from=${today}&to=${nextWeek}&apikey=${apiKey}`;
-    const earnRes = await fetchT(earnUrl, 6000);
+    const earnRes = await fetch(earnUrl);
     const earnData = await earnRes.json();
     
     state.earnings = {};
@@ -788,10 +726,7 @@ async function fetchLongTermEarnings() {
     const today = new Date().toISOString().split('T')[0];
     const future = new Date(Date.now() + 120*24*60*60*1000).toISOString().split('T')[0];
     const url = `https://financialmodelingprep.com/stable/earning-calendar?from=${today}&to=${future}&apikey=${apiKey}`;
-    const ctrl2 = new AbortController();
-    const tid2 = setTimeout(()=>ctrl2.abort(), 6000);
-    const res = await fetch(url, {signal:ctrl2.signal});
-    clearTimeout(tid2);
+    const res = await fetch(url);
     const data = await res.json();
     state.ltEarnings = {};
     if(Array.isArray(data)) {
@@ -832,109 +767,42 @@ function getMarketSession() {
 
 async function loadData() {
   state.loading = true;
-  state.marketOpen = true;
+  state.marketOpen = true; // الأداة شغالة 24/7
   render();
 
   const session = getMarketSession();
-  const isOfficialOpen = session === "open";
+  const isOfficialOpen = session === "open"; // السوق الرسمي 4:30م-11م فقط
 
-  // ① دايماً نجيب الأسعار والأخبار أولاً
-  // الأخبار و SPY بالخلفية — ما يوقفون التحميل
+  // نجيب الأسعار دائماً
   fetchMarketTrend().catch(()=>{});
-  fetchNewsAndEarnings().catch(()=>{});
-  fetchLongTermEarnings().catch(()=>{});
-  await fetchPrices(); // بس الأسعار تنتظر
+  await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
   buildStocks();
 
-  if(!state.historicalFetched) {
-    // ② تحقق من cache — بس لو محفوظ وقت السوق مفتوح
-    try {
-      const today = new Date().toDateString();
-      const cachedDate = localStorage.getItem('indicators_date');
-      const cachedTime = parseInt(localStorage.getItem('indicators_time') || '0');
-      const cachedData = localStorage.getItem('indicators_' + today);
-
-      // السوق يفتح 4:30م سعودي = 13:30 UTC صيف / 14:30 UTC شتاء
-      const nowUTC = new Date().getUTCHours()*60 + new Date().getUTCMinutes();
-      const month = new Date().getUTCMonth()+1;
-      const isSummer = month>=3 && month<=11;
-      const marketOpenUTC = isSummer ? 810 : 870; // 13:30 أو 14:30
-
-      // نستخدم الـ cache بس لو:
-      // 1. محفوظ اليوم
-      // 2. تم حفظه بعد افتتاح السوق
-      // 3. السوق لازال مفتوح أو أغلق اليوم
-      if(cachedDate === today && cachedData && cachedTime >= marketOpenUTC) {
-        state.realIndicators = JSON.parse(cachedData);
-        state.historicalFetched = true;
-        buildStocks();
-        calcRecs();
-        if(isOfficialOpen) state.lastMarketRecs = state.recs;
-        state.loading = false;
-        render();
-        return;
-      }
-    } catch(e) {}
-
-    // ③ ما في cache صالح
-    // لو السوق مغلق — نعرض آخر توصية محفوظة بدون تحميل
-    if(!isOfficialOpen) {
-      // نحاول نجيب cache أي يوم سابق
-      try {
-        const anyCache = localStorage.getItem('indicators_last');
-        if(anyCache) {
-          state.realIndicators = JSON.parse(anyCache);
-          buildStocks();
-          calcRecs();
-        }
-      } catch(e) {}
-      state.loading = false;
-      render();
-      return;
-    }
-
-    state.recs = null;
+  if(isOfficialOpen && !state.historicalFetched) {
+    // ① السوق فتح لأول مرة اليوم — نحمّل المؤشرات
     state.loadingIndicators = true;
-    state.loadingProgress = 0;
     render();
 
-    try {
-      await Promise.race([
-        Promise.all([
-          fetchCompanyProfiles(),
-          fetchHistoricalIndicators()
-        ]),
-        new Promise(r => setTimeout(r, 180000))
-      ]);
-    } catch(e) {}
-
+    // ② ننتظر اكتمال 200 يوم + 11 مؤشر
+    await Promise.all([fetchHistoricalIndicators(), fetchCompanyProfiles()]);
+    
+    // ③ بعد الاكتمال — نحسب التوصية مرة واحدة ✅
     state.historicalFetched = true;
     state.loadingIndicators = false;
-
-    // ④ نحفظ المؤشرات في localStorage عشان ما تعاد عند الرجوع
-    try {
-      const cacheKey = 'indicators_' + new Date().toDateString();
-      localStorage.setItem(cacheKey, JSON.stringify(state.realIndicators));
-      localStorage.setItem('indicators_date', new Date().toDateString());
-      const nowMins = new Date().getUTCHours()*60 + new Date().getUTCMinutes();
-      localStorage.setItem('indicators_time', nowMins.toString());
-      // نحفظ آخر cache دائماً للرجوع السريع
-      localStorage.setItem('indicators_last', JSON.stringify(state.realIndicators));
-    } catch(e) {}
-
-    // ⑤ التوصية تطلع مرة وحدة بعد اكتمال المؤشرات ✅
-    buildStocks();
-    calcRecs();
-    if(isOfficialOpen) state.lastMarketRecs = state.recs;
-
-  } else if(isOfficialOpen) {
     buildStocks();
     calcRecs();
     state.lastMarketRecs = state.recs;
 
+  } else if(isOfficialOpen) {
+    // السوق مفتوح والمؤشرات محملة — أسعار فقط، التوصيات ثابتة ✅
+
   } else {
-    buildStocks();
-    if(!state.recs) calcRecs();
+    // خارج السوق الرسمي — نعرض آخر توصية محفوظة
+    if(!state.recs && state.lastMarketRecs) {
+      state.recs = state.lastMarketRecs;
+    } else if(!state.recs) {
+      calcRecs(); // أول مرة فقط
+    }
   }
 
   state.loading = false;
@@ -944,28 +812,13 @@ async function loadData() {
 }
 
 function calcRecs() {
-  // تأثير السوق العام على التوصيات
-  const trend = state.marketTrend;
-  const mktBonus = trend ? (trend.status==="bullish" ? 2 : trend.status==="bearish" ? -3 : trend.status==="weak" ? -1 : 0) : 0;
-
-  // لو السوق هابط — نرتب بصرامة لكن ما نوقف التوصيات كلها
   const buys = [...state.stocks]
     .filter(s=>s.signal.includes("شراء"))
-    .filter(s=>s.profitPct >= 1.5)
-    .sort((a,b)=>(b.strength + mktBonus*5) - (a.strength + mktBonus*5));
+    .filter(s=>s.profitPct >= 1.5)  // فلتر: ربح أدنى 1.5%
+    .sort((a,b)=>b.strength-a.strength);
   const sells = [...state.stocks].filter(s=>s.signal.includes("بيع")).sort((a,b)=>b.strength-a.strength);
   const watch = [...state.stocks].filter(s=>s.signal==="انتظار").sort((a,b)=>b.volR-a.volR);
-  const future = [...state.stocks]
-    .filter(s => s.cat === "future")
-    .filter(s => s.price < 150)
-    .filter(s => s.signal.includes("شراء"))
-    .sort((a,b) => {
-      const sciA = (FUTURE_SCIENCE[a.id]?.score || 0) * 10;
-      const sciB = (FUTURE_SCIENCE[b.id]?.score || 0) * 10;
-      const scoreA = sciA + a.strength + (a.price < 30 ? 20 : a.price < 50 ? 10 : 0);
-      const scoreB = sciB + b.strength + (b.price < 30 ? 20 : b.price < 50 ? 10 : 0);
-      return scoreB - scoreA;
-    });
+  const future = [...state.stocks].filter(s=>s.cat==="future"&&s.signal.includes("شراء")).sort((a,b)=>b.strength-a.strength);
   const buyCount = state.stocks.filter(s=>s.signal.includes("شراء")).length;
   const sellCount = state.stocks.filter(s=>s.signal.includes("بيع")).length;
   const mktScore = Math.round(buyCount/(buyCount+sellCount+0.1)*100);
@@ -1497,30 +1350,20 @@ function renderRecTab() {
       ])
     ]),
 
-    // S&P 500 اتجاه السوق العام
+    // S&P 500
     state.marketTrend && el('div',{style:{
-      background:`${state.marketTrend.color}08`,
-      border:`1px solid ${state.marketTrend.color}33`,
-      borderRadius:"14px",padding:"10px 14px",marginBottom:"10px",
+      background:`${state.marketTrend.color}11`,
+      border:`1px solid ${state.marketTrend.color}44`,
+      borderRadius:"12px",padding:"10px 14px",marginBottom:"10px",
       display:"flex",justifyContent:"space-between",alignItems:"center"
     }},[
       el('div',{},[
-        el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"2px"}},"📊 S&P 500 — السوق العام"),
-        el('div',{style:{fontSize:"14px",fontWeight:"800",color:state.marketTrend.color}},state.marketTrend.label)
+        el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"2px"}},"📊 S&P 500"),
+        el('div',{style:{fontSize:"13px",fontWeight:"800",color:state.marketTrend.color}},state.marketTrend.label)
       ]),
-      el('div',{style:{
-        fontSize:"16px",fontWeight:"900",
-        color:state.marketTrend.color,
-        textShadow:`0 0 10px ${state.marketTrend.color}`
-      }},`${state.marketTrend.change>=0?"+":""}${state.marketTrend.change.toFixed(2)}%`)
+      el('div',{style:{fontSize:"15px",fontWeight:"900",color:state.marketTrend.color}},
+        `${state.marketTrend.change>=0?"+":""}${state.marketTrend.change.toFixed(2)}%`)
     ]),
-
-    // تحذير لو السوق هابط
-    state.marketTrend?.status === "bearish" && el('div',{style:{
-      background:"rgba(255,45,122,.08)",border:"1px solid rgba(255,45,122,.3)",
-      borderRadius:"12px",padding:"10px 14px",marginBottom:"10px",
-      fontSize:"12px",color:"#ff2d7a",fontWeight:"700",lineHeight:"1.7"
-    }},"🛑 السوق هابط — التوصيات مفلترة بصرامة — كن حذراً جداً"),
 
     // Header badge
     el('div',{style:{
@@ -1746,17 +1589,12 @@ function earningsBadge(symbol) {
 
 function renderFutureTab() {
   const futures = state.stocks
-    .filter(s => s.cat === "future")           // قطاع مستقبلي فقط
-    .filter(s => s.price < 150)                // سعر رخيص = إمكانية تضاعف
-    .filter(s => s.signal.includes("شراء"))    // إشارة شراء
-    .filter(s => s.volR >= 1.0)               // حجم تداول طبيعي أو أعلى
+    .filter(s=>s.cat==="future" || (s.beta||1) >= 1.8)
+    .filter(s=>s.signal.includes("شراء"))
     .sort((a,b)=>{
       const sciA = (FUTURE_SCIENCE[a.id]?.score || 0) * 10;
       const sciB = (FUTURE_SCIENCE[b.id]?.score || 0) * 10;
-      // ترتيب: المعادلة العلمية + قوة الإشارة + السعر الأرخص أفضل
-      const scoreA = sciA + a.strength + (a.price < 30 ? 20 : a.price < 50 ? 10 : 0);
-      const scoreB = sciB + b.strength + (b.price < 30 ? 20 : b.price < 50 ? 10 : 0);
-      return scoreB - scoreA;
+      return (sciB + b.strength) - (sciA + a.strength);
     });
   return el('div',{style:{paddingTop:"8px"}},[
     el('div',{style:{
@@ -2252,12 +2090,7 @@ function renderModal() {
 
 // ===== LOADING =====
 function renderLoading() {
-  const isLoadingInd = state.loadingIndicators;
-  const progress = state.loadingProgress || 0;
-  const total = state.loadingTotal || 143;
-  const pct = total > 0 ? Math.round((progress/total)*100) : 0;
-
-  return el('div',{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",gap:"16px",padding:"20px"}},[
+  return el('div',{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",gap:"16px"}},[
     el('div',{style:{
       width:"50px",height:"50px",
       border:`3px solid rgba(0,255,136,.2)`,
@@ -2266,15 +2099,8 @@ function renderLoading() {
       animation:"spin 1s linear infinite",
       boxShadow:`0 0 20px ${C.green}44`
     }}),
-    el('div',{style:{fontSize:"14px",color:C.green,textShadow:`0 0 10px ${C.green}`,fontWeight:"700"}},
-      isLoadingInd ? `جاري تحميل المؤشرات... ${pct}%` : "جاري تحميل السوق..."
-    ),
-    isLoadingInd && el('div',{style:{width:"200px",height:"6px",background:"#1a2340",borderRadius:"3px",overflow:"hidden"}},[
-      el('div',{style:{height:"100%",width:`${pct}%`,background:C.green,borderRadius:"3px",transition:"width .3s",boxShadow:`0 0 8px ${C.green}`}})
-    ]),
-    el('div',{style:{fontSize:"11px",color:"var(--text3)"}},
-      isLoadingInd ? `${progress} من ${total} سهم — التوصية تظهر بعد الانتهاء` : "الاتصال بـ FMP API"
-    )
+    el('div',{style:{fontSize:"14px",color:C.green,textShadow:`0 0 10px ${C.green}`}},"جاري تحميل السوق..."),
+    el('div',{style:{fontSize:"11px",color:"var(--text3)"}},"الاتصال بـ FMP API")
   ]);
 }
 
@@ -2802,7 +2628,7 @@ function render() {
 
   const wrapper = el('div',{style:{minHeight:"100vh",display:"flex",flexDirection:"column"}});
 
-  if(state.loading && state.stocks.length===0 || state.loadingIndicators) {
+  if(state.loading && state.stocks.length===0) {
     wrapper.appendChild(renderLoading());
   } else {
     wrapper.appendChild(renderHeader());
@@ -2840,11 +2666,6 @@ setInterval(()=>{
     state.historicalFetched = false;
     midDayFetched = false;
     lastDay = today;
-    // مسح cache القديم
-    try {
-      const yesterday = new Date(Date.now()-86400000).toDateString();
-      localStorage.removeItem('indicators_' + yesterday);
-    } catch(e) {}
   }
 
   if(mins>=midDay && mins<=midDay+5 && !midDayFetched && state.historicalFetched) {
