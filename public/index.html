@@ -847,13 +847,31 @@ async function loadData() {
   buildStocks();
 
   if(!state.historicalFetched) {
-    // ② نخفي التوصية ونعرض progress bar
+    // ② تحقق من cache اليوم في localStorage
+    try {
+      const today = new Date().toDateString();
+      const cachedDate = localStorage.getItem('indicators_date');
+      const cachedData = localStorage.getItem('indicators_' + today);
+
+      if(cachedDate === today && cachedData) {
+        // ✅ عندنا cache اليوم — نستخدمه فوراً بدون تحميل
+        state.realIndicators = JSON.parse(cachedData);
+        state.historicalFetched = true;
+        buildStocks();
+        calcRecs();
+        if(isOfficialOpen) state.lastMarketRecs = state.recs;
+        state.loading = false;
+        render();
+        return;
+      }
+    } catch(e) {}
+
+    // ③ ما في cache — نحمّل من API
     state.recs = null;
     state.loadingIndicators = true;
     state.loadingProgress = 0;
     render();
 
-    // ③ نحمّل profiles والمؤشرات مع بعض — بدل ورا ورا
     try {
       await Promise.race([
         Promise.all([
@@ -867,7 +885,14 @@ async function loadData() {
     state.historicalFetched = true;
     state.loadingIndicators = false;
 
-    // ④ التوصية تطلع مرة وحدة بعد اكتمال المؤشرات ✅
+    // ④ نحفظ المؤشرات في localStorage عشان ما تعاد عند الرجوع
+    try {
+      const cacheKey = 'indicators_' + new Date().toDateString();
+      localStorage.setItem(cacheKey, JSON.stringify(state.realIndicators));
+      localStorage.setItem('indicators_date', new Date().toDateString());
+    } catch(e) {}
+
+    // ⑤ التوصية تطلع مرة وحدة بعد اكتمال المؤشرات ✅
     buildStocks();
     calcRecs();
     if(isOfficialOpen) state.lastMarketRecs = state.recs;
@@ -2785,6 +2810,11 @@ setInterval(()=>{
     state.historicalFetched = false;
     midDayFetched = false;
     lastDay = today;
+    // مسح cache القديم
+    try {
+      const yesterday = new Date(Date.now()-86400000).toDateString();
+      localStorage.removeItem('indicators_' + yesterday);
+    } catch(e) {}
   }
 
   if(mins>=midDay && mins<=midDay+5 && !midDayFetched && state.historicalFetched) {
