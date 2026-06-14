@@ -1969,6 +1969,22 @@ function calcExplosionScore(s) {
   // نقطة 5: عقوبة جودة الصفقة المنخفضة
   if((s.tradeQuality || 0) < 40) total -= 10;
 
+  // Earnings Penalty — أرباح قريبة = خطر عالي
+  const earningsData = state.earnings && state.earnings[s.id];
+  if(earningsData) {
+    const daysToEarnings = earningsData.daysUntil || earningsData.days || 999;
+    if(daysToEarnings <= 7)       total -= 25;
+    else if(daysToEarnings <= 14) total -= 10;
+  }
+
+  // Gap-Up Penalty — منع مطاردة الأسهم المتضخمة
+  const changePct = s.changePct || s.change || 0;
+  if(changePct > 15)      total -= 20;
+  else if(changePct > 8)  total -= 10;
+
+  // Extreme Volume Protection — حماية من الضجيج المؤقت
+  if(volR > 10) volumeScore = Math.max(0, volumeScore - 5);
+
   // تصنيف الفرصة
   let label = "", emoji = "";
   if(total >= 95)      { label = "Potential Explosion"; emoji = "🚀"; }
