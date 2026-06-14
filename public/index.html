@@ -876,9 +876,18 @@ async function loadData() {
       }
     } catch(e) {}
 
-    // ③ ما في cache صالح — نحمّل من API
-    // لو السوق مغلق ما نحمّل — ننتظر الافتتاح
+    // ③ ما في cache صالح
+    // لو السوق مغلق — نعرض آخر توصية محفوظة بدون تحميل
     if(!isOfficialOpen) {
+      // نحاول نجيب cache أي يوم سابق
+      try {
+        const anyCache = localStorage.getItem('indicators_last');
+        if(anyCache) {
+          state.realIndicators = JSON.parse(anyCache);
+          buildStocks();
+          calcRecs();
+        }
+      } catch(e) {}
       state.loading = false;
       render();
       return;
@@ -909,6 +918,8 @@ async function loadData() {
       localStorage.setItem('indicators_date', new Date().toDateString());
       const nowMins = new Date().getUTCHours()*60 + new Date().getUTCMinutes();
       localStorage.setItem('indicators_time', nowMins.toString());
+      // نحفظ آخر cache دائماً للرجوع السريع
+      localStorage.setItem('indicators_last', JSON.stringify(state.realIndicators));
     } catch(e) {}
 
     // ⑤ التوصية تطلع مرة وحدة بعد اكتمال المؤشرات ✅
