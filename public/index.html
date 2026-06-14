@@ -423,12 +423,26 @@ function calcIndicators(s, price) {
 
   const sig  = buy>sell+2?"شراء قوي":buy>sell?"شراء":sell>buy+2?"بيع قوي":sell>buy?"بيع":"انتظار";
   const sigC = sig.includes("شراء")?"green":sig.includes("بيع")?"red":"yellow";
-  // قوة السهم = نقاط الشراء - نقاط البيع بدون عشوائية
   const str = Math.min(100, Math.max(0, (buy - sell) * 12 + (real ? 10 : 0)));
+
+  // ===== Confidence Score =====
+  let confidence = 0;
+  if(real) {
+    confidence += 40; // بيانات تاريخية حقيقية
+    if(real.rsi !== undefined)       confidence += 10; // RSI حقيقي
+    if(real.macdHist !== undefined)  confidence += 10; // MACD حقيقي
+    if(real.stochRsi !== undefined)  confidence += 10; // Stoch حقيقي
+    if(real.support && real.resistance) confidence += 10; // دعم/مقاومة
+    if(real.atrPct)                  confidence += 5;  // ATR حقيقي
+  }
+  if(profile)                        confidence += 5;  // Profile متوفر
+  if(stockNews.length > 0)           confidence += 5;  // أخبار متوفرة
+  if(avgVol > 0 && realAvgVol > 0)   confidence += 5;  // حجم حقيقي
+  confidence = Math.min(100, confidence);
 
   return {rsi,ma20,ma50,macdH,vol,avgVol,volR,bb_u,bb_l,sup,res,pe,
           signal:sig,signalColor:sigC,strength:str,buySignals:buy,sellSignals:sell,
-          profitPct:Math.abs(res-price)/price*100,indicatorsReal:isReal};
+          profitPct:Math.abs(res-price)/price*100,indicatorsReal:isReal,confidence};
 }
 
 // ===== FETCH COMPANY PROFILES (Beta + Volume + MarketCap) =====
@@ -848,11 +862,14 @@ async function loadData() {
 }
 
 function calcRecs() {
+  // الترتيب = القوة (60%) + الثقة (40%) — يضمن بيانات موثوقة أولاً
+  const finalScore = s => (s.strength * 0.6) + ((s.confidence||0) * 0.4);
+
   const buys = [...state.stocks]
     .filter(s=>s.signal.includes("شراء"))
-    .filter(s=>s.profitPct >= 1.5)  // فلتر: ربح أدنى 1.5%
-    .sort((a,b)=>b.strength-a.strength);
-  const sells = [...state.stocks].filter(s=>s.signal.includes("بيع")).sort((a,b)=>b.strength-a.strength);
+    .filter(s=>s.profitPct >= 1.5)
+    .sort((a,b)=>finalScore(b)-finalScore(a));
+  const sells = [...state.stocks].filter(s=>s.signal.includes("بيع")).sort((a,b)=>finalScore(b)-finalScore(a));
   const watch = [...state.stocks].filter(s=>s.signal==="انتظار").sort((a,b)=>b.volR-a.volR);
   const future = [...state.stocks]
     .filter(s => s.cat === "future")
@@ -1166,7 +1183,13 @@ function recCard(s, rank, pct) {
         el('div',{style:{fontSize:"10px",color:"var(--text3)",textAlign:"center"}},`قوة ${f(s.strength,0)}%`),
         el('div',{style:{height:"3px",background:"var(--bg3)",borderRadius:"2px",marginTop:"3px",overflow:"hidden"}},[
           el('div',{style:{height:"100%",width:`${s.strength}%`,background:rc,borderRadius:"2px",boxShadow:`0 0 8px ${rc}`}})
-        ])
+        ]),
+        // Confidence Score
+        s.confidence !== undefined && el('div',{style:{
+          marginTop:"4px",fontSize:"10px",textAlign:"center",
+          color: s.confidence>=85?"#00ff88":s.confidence>=70?"#ffe033":"#ff7a00",
+          fontWeight:"700"
+        }},`ثقة ${s.confidence}%`)
       ])
     ]),
 
