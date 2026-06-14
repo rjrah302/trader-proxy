@@ -441,11 +441,40 @@ function calcIndicators(s, price) {
   if(avgVol > 0 && realAvgVol > 0)   confidence += 5;  // حجم حقيقي
   confidence = Math.min(100, confidence);
 
+  // ===== Trade Quality Score =====
+  // يقيس جودة نقطة الدخول
+  let tradeQuality = 0;
+  const distToSupport    = sup > 0 ? Math.abs(price - sup) / price * 100 : 999;
+  const distToResistance = res > 0 ? Math.abs(res - price) / price * 100 : 0;
+  const riskRewardFinal  = distToResistance > 0 ? distToResistance / (atrStop||3) : 0;
+
+  // نسبة عائد/مخاطرة
+  if(riskRewardFinal >= 3)      tradeQuality += 40; // ممتازة
+  else if(riskRewardFinal >= 2) tradeQuality += 30; // جيدة
+  else if(riskRewardFinal >= 1) tradeQuality += 15; // مقبولة
+  else                          tradeQuality += 0;  // سيئة
+
+  // قرب الدعم
+  if(distToSupport <= 1)        tradeQuality += 30; // قريب جداً من الدعم
+  else if(distToSupport <= 3)   tradeQuality += 20;
+  else if(distToSupport <= 5)   tradeQuality += 10;
+
+  // هدف ربح كافي
+  if(distToResistance >= 5)     tradeQuality += 20;
+  else if(distToResistance >= 3) tradeQuality += 10;
+  else if(distToResistance >= 1.5) tradeQuality += 5;
+
+  // ATR معتدل
+  if(real?.atrPct && real.atrPct < 3) tradeQuality += 10;
+
+  tradeQuality = Math.min(100, tradeQuality);
+
   const isConviction = (state.sessionOneRecs||[]).includes(s.id);
   return {rsi,ma20,ma50,macdH,vol,avgVol,volR,bb_u,bb_l,sup,res,pe,
           signal:sig,signalColor:sigC,strength:str,buySignals:buy,sellSignals:sell,
           profitPct:Math.abs(res-price)/price*100,indicatorsReal:isReal,
-          confidence, highConviction:isConviction};
+          confidence, highConviction:isConviction,
+          tradeQuality, riskRewardFinal: parseFloat(riskRewardFinal.toFixed(2))};
 }
 
 // ===== FETCH COMPANY PROFILES (Beta + Volume + MarketCap) =====
@@ -865,17 +894,18 @@ async function loadData() {
 }
 
 function calcRecs() {
-  // الترتيب = القوة (60%) + الثقة (40%)
+  // الترتيب = القوة (50%) + الثقة (30%) + جودة الصفقة (20%)
   const sessionOne = state.sessionOneRecs || [];
   const finalScore = s => {
-    const base = (s.strength * 0.6) + ((s.confidence||0) * 0.4);
-    const conviction = sessionOne.includes(s.id) ? 15 : 0; // High Conviction = +15 نقطة
+    const base = (s.strength * 0.5) + ((s.confidence||0) * 0.3) + ((s.tradeQuality||0) * 0.2);
+    const conviction = sessionOne.includes(s.id) ? 15 : 0;
     return base + conviction;
   };
 
   const buys = [...state.stocks]
     .filter(s=>s.signal.includes("شراء"))
     .filter(s=>s.profitPct >= 1.5)
+    .filter(s=>(s.tradeQuality||0) >= 20) // فلتر: جودة دنيا 20%
     .sort((a,b)=>finalScore(b)-finalScore(a));
   const sells = [...state.stocks].filter(s=>s.signal.includes("بيع")).sort((a,b)=>finalScore(b)-finalScore(a));
   const watch = [...state.stocks].filter(s=>s.signal==="انتظار").sort((a,b)=>b.volR-a.volR);
@@ -1228,7 +1258,13 @@ function recCard(s, rank, pct) {
           marginTop:"4px",background:"linear-gradient(135deg,#ffe033,#ff7a00)",
           borderRadius:"6px",padding:"2px 8px",
           fontSize:"10px",fontWeight:"900",color:"#000",textAlign:"center"
-        }},"⭐ High Conviction")
+        }},"⭐ High Conviction"),
+        // Trade Quality Score
+        s.tradeQuality !== undefined && el('div',{style:{
+          marginTop:"4px",fontSize:"10px",textAlign:"center",
+          color: s.tradeQuality>=70?"#00ff88":s.tradeQuality>=40?"#ffe033":"#ff7a00",
+          fontWeight:"700"
+        }},`جودة الصفقة ${s.tradeQuality}% | ع/م ${s.riskRewardFinal}x`)
       ])
     ]),
 
