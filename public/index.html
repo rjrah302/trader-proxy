@@ -891,7 +891,32 @@ function calcRecs() {
   const buyCount = state.stocks.filter(s=>s.signal.includes("شراء")).length;
   const sellCount = state.stocks.filter(s=>s.signal.includes("بيع")).length;
   const mktScore = Math.round(buyCount/(buyCount+sellCount+0.1)*100);
-  state.recs = {top3:buys.slice(0,5), avoid:sells.slice(0,5), watch:watch.slice(0,2), future:future.slice(0,5), buyCount, sellCount, mktScore};
+
+  // ===== Adaptive Market Engine =====
+  const trend = state.marketTrend;
+  let maxPicks = 5; // افتراضي
+  let marketMode = "normal";
+
+  if(trend) {
+    if(trend.change > 1) {
+      maxPicks = 5; marketMode = "bullish";      // سوق قوي = 5 أسهم
+    } else if(trend.change > 0) {
+      maxPicks = 4; marketMode = "neutral";      // سوق محايد = 4 أسهم
+    } else if(trend.change > -1) {
+      maxPicks = 3; marketMode = "weak";         // سوق ضعيف = 3 أسهم
+    } else {
+      maxPicks = 2; marketMode = "bearish";      // سوق هابط = 2 أسهم فقط
+    }
+  }
+
+  state.recs = {
+    top3: buys.slice(0, maxPicks),
+    avoid: sells.slice(0,5),
+    watch: watch.slice(0,2),
+    future: future.slice(0,5),
+    buyCount, sellCount, mktScore,
+    maxPicks, marketMode
+  };
   state.lastRecUpdate = new Date();
   state.recCountdown = REC_INTERVAL;
 }
@@ -1431,7 +1456,7 @@ function renderRecTab() {
       ])
     ]),
 
-    // S&P 500
+    // S&P 500 + Adaptive Market
     state.marketTrend && el('div',{style:{
       background:`${state.marketTrend.color}11`,
       border:`1px solid ${state.marketTrend.color}44`,
@@ -1440,7 +1465,10 @@ function renderRecTab() {
     }},[
       el('div',{},[
         el('div',{style:{fontSize:"10px",color:"var(--text3)",marginBottom:"2px"}},"📊 S&P 500"),
-        el('div',{style:{fontSize:"13px",fontWeight:"800",color:state.marketTrend.color}},state.marketTrend.label)
+        el('div',{style:{fontSize:"13px",fontWeight:"800",color:state.marketTrend.color}},state.marketTrend.label),
+        state.recs?.marketMode === "bearish" && el('div',{style:{fontSize:"10px",color:"#ff2d7a",fontWeight:"700",marginTop:"2px"}},"🛑 وضع تحفظي — 2 أسهم فقط"),
+        state.recs?.marketMode === "weak" && el('div',{style:{fontSize:"10px",color:"#ff7a00",fontWeight:"700",marginTop:"2px"}},"⚠️ سوق ضعيف — 3 أسهم فقط"),
+        state.recs?.marketMode === "bullish" && el('div',{style:{fontSize:"10px",color:"#00ff88",fontWeight:"700",marginTop:"2px"}},"✅ سوق قوي — 5 أسهم")
       ]),
       el('div',{style:{fontSize:"15px",fontWeight:"900",color:state.marketTrend.color}},
         `${state.marketTrend.change>=0?"+":""}${state.marketTrend.change.toFixed(2)}%`)
