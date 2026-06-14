@@ -426,7 +426,10 @@ async function fetchCompanyProfiles() {
   for(const s of uniqueStocks) {
     try {
       const url = `https://financialmodelingprep.com/stable/profile?symbol=${s.id}&apikey=${apiKey}`;
-      const res = await fetch(url);
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch(url, {signal: ctrl.signal});
+      clearTimeout(tid);
       const data = await res.json();
       const profile = Array.isArray(data) ? data[0] : null;
       if(profile) {
@@ -454,7 +457,7 @@ async function fetchHistoricalIndicators() {
   state.loadingProgress = 0;
   state.loadingTotal = topSymbols.length;
 
-  // fetch مع timeout 8 ثواني — لو سهم ما رد ما يتعلق الكل
+  // fetch مع timeout 8 ثواني
   async function fetchWithTimeout(url, ms=8000) {
     const ctrl = new AbortController();
     const id = setTimeout(() => ctrl.abort(), ms);
@@ -465,8 +468,8 @@ async function fetchHistoricalIndicators() {
     } catch(e) { clearTimeout(id); throw e; }
   }
 
-  for(const sym of topSymbols) {
-    await (async (sym) => {
+  // دالة تحليل سهم واحد
+  async function processSym(sym) {
     try {
       const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=200&apikey=${apiKey}`;
       const res = await fetchWithTimeout(url, 8000);
@@ -590,13 +593,18 @@ async function fetchHistoricalIndicators() {
       };
 
     } catch(e) {}
-    })(sym);
-    // تحديث counter التقدم
+    // تحديث counter
     state.loadingProgress = (state.loadingProgress || 0) + 1;
-    // تحديث الشاشة كل 10 أسهم
     if(state.loadingProgress % 10 === 0) render();
-    // انتظر 200ms بين كل طلب
-    await new Promise(r => setTimeout(r, 200));
+  }
+
+  // تشغيل 10 أسهم بنفس الوقت — بدل واحد ورا واحد
+  const BATCH = 10;
+  for(let i = 0; i < topSymbols.length; i += BATCH) {
+    const batch = topSymbols.slice(i, i + BATCH);
+    await Promise.all(batch.map(sym => processSym(sym)));
+    // انتظر 300ms بين كل batch عشان ما نضغط API
+    await new Promise(r => setTimeout(r, 300));
   }
 }
 
@@ -825,30 +833,37 @@ async function loadData() {
   buildStocks();
 
   if(!state.historicalFetched) {
-    // ② أول تحميل — نحمّل المؤشرات (24/7 مو بس وقت السوق)
+    // ② أول تحميل — نحمّل المؤشرات
     state.loadingIndicators = true;
-    state.recs = null; // ❌ نخفي التوصيات حتى تكتمل المؤشرات
+    state.recs = null;
     render();
 
-    // ③ نحمّل 11 مؤشر + profiles لكل الأسهم
-    await Promise.all([fetchHistoricalIndicators(), fetchCompanyProfiles()]);
+    // ③ نحمّل profiles أولاً (سريع) ثم المؤشرات
+    // timeout كلي 3 دقائق — لو ما خلص نكمل بدونه
+    try {
+      await Promise.race([
+        (async () => {
+          await fetchCompanyProfiles();
+          await fetchHistoricalIndicators();
+        })(),
+        new Promise(r => setTimeout(r, 180000)) // 3 دقائق max
+      ]);
+    } catch(e) {}
 
     state.historicalFetched = true;
     state.loadingIndicators = false;
 
-    // ④ فقط بعد اكتمال المؤشرات نبني التوصية ✅
+    // ④ نبني التوصية بأي بيانات متوفرة
     buildStocks();
     calcRecs();
     if(isOfficialOpen) state.lastMarketRecs = state.recs;
 
   } else if(isOfficialOpen) {
-    // ⑤ السوق مفتوح + مؤشرات محملة — نحدث الأسعار فقط، التوصية ثابتة
     buildStocks();
     calcRecs();
     state.lastMarketRecs = state.recs;
 
   } else {
-    // ⑥ خارج السوق + مؤشرات محملة — نعرض آخر توصية
     buildStocks();
     if(!state.recs) calcRecs();
   }
