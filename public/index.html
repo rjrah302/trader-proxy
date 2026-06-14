@@ -502,14 +502,13 @@ async function fetchHistoricalIndicators() {
       const ma20 = prices.slice(-20).reduce((a,b)=>a+b,0)/Math.min(20,prices.length);
       const ma50 = prices.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,prices.length);
 
-      // ===== MACD الحقيقي — مصحح =====
+      // ===== MACD الحقيقي =====
       function ema(data, period) {
         const k = 2/(period+1);
         let emaVal = data[0];
         for(let i=1; i<data.length; i++) emaVal = data[i]*k + emaVal*(1-k);
         return emaVal;
       }
-      // نحسب MACD Line على نقاط متعددة عشان Signal يكون صحيح
       const macdHistory = [];
       for(let i = 26; i <= prices.length; i++) {
         const slice = prices.slice(0, i);
@@ -518,7 +517,6 @@ async function fetchHistoricalIndicators() {
         macdHistory.push(e12 - e26);
       }
       const macdLine = macdHistory[macdHistory.length - 1];
-      // Signal = EMA9 على آخر 9 قيم من MACD Line
       const signalLine = macdHistory.length >= 9 ? ema(macdHistory.slice(-9), 9) : macdLine;
       const macdHist = macdLine - signalLine;
 
@@ -841,33 +839,35 @@ async function loadData() {
   const isOfficialOpen = session === "open";
 
   // ① دايماً نجيب الأسعار والأخبار أولاً
-  // SPY يشتغل بالخلفية — ما يوقف التحميل لو ما رد
+  // الأخبار و SPY بالخلفية — ما يوقفون التحميل
   fetchMarketTrend().catch(()=>{});
-  await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
+  fetchNewsAndEarnings().catch(()=>{});
+  fetchLongTermEarnings().catch(()=>{});
+  await fetchPrices(); // بس الأسعار تنتظر
   buildStocks();
 
   if(!state.historicalFetched) {
-    // ② أول تحميل — نحمّل المؤشرات
-    state.loadingIndicators = true;
+    // ② نخفي التوصية ونعرض progress bar
     state.recs = null;
+    state.loadingIndicators = true;
+    state.loadingProgress = 0;
     render();
 
-    // ③ نحمّل profiles أولاً (سريع) ثم المؤشرات
-    // timeout كلي 3 دقائق — لو ما خلص نكمل بدونه
+    // ③ نحمّل المؤشرات — timeout 3 دقائق كحد أقصى
     try {
       await Promise.race([
         (async () => {
           await fetchCompanyProfiles();
           await fetchHistoricalIndicators();
         })(),
-        new Promise(r => setTimeout(r, 180000)) // 3 دقائق max
+        new Promise(r => setTimeout(r, 180000))
       ]);
     } catch(e) {}
 
     state.historicalFetched = true;
     state.loadingIndicators = false;
 
-    // ④ نبني التوصية بأي بيانات متوفرة
+    // ④ التوصية تطلع مرة وحدة بعد اكتمال المؤشرات ✅
     buildStocks();
     calcRecs();
     if(isOfficialOpen) state.lastMarketRecs = state.recs;
@@ -2747,7 +2747,7 @@ function render() {
 
   const wrapper = el('div',{style:{minHeight:"100vh",display:"flex",flexDirection:"column"}});
 
-  if(state.loading && state.stocks.length===0) {
+  if(state.loading && state.stocks.length===0 || state.loadingIndicators) {
     wrapper.appendChild(renderLoading());
   } else {
     wrapper.appendChild(renderHeader());
