@@ -841,7 +841,15 @@ function calcRecs() {
     .sort((a,b)=>b.strength-a.strength);
   const sells = [...state.stocks].filter(s=>s.signal.includes("بيع")).sort((a,b)=>b.strength-a.strength);
   const watch = [...state.stocks].filter(s=>s.signal==="انتظار").sort((a,b)=>b.volR-a.volR);
-  const future = [...state.stocks].filter(s=>s.cat==="future"&&s.signal.includes("شراء")).sort((a,b)=>b.strength-a.strength);
+  const future = [...state.stocks]
+    .filter(s => s.cat === "future")
+    .filter(s => s.price < 150)
+    .filter(s => s.signal.includes("شراء"))
+    .sort((a,b) => {
+      const sciA = (FUTURE_SCIENCE[a.id]?.score||0)*10 + a.strength + (a.price<30?20:a.price<50?10:0);
+      const sciB = (FUTURE_SCIENCE[b.id]?.score||0)*10 + b.strength + (b.price<30?20:b.price<50?10:0);
+      return sciB - sciA;
+    });
   const buyCount = state.stocks.filter(s=>s.signal.includes("شراء")).length;
   const sellCount = state.stocks.filter(s=>s.signal.includes("بيع")).length;
   const mktScore = Math.round(buyCount/(buyCount+sellCount+0.1)*100);
@@ -1612,12 +1620,13 @@ function earningsBadge(symbol) {
 
 function renderFutureTab() {
   const futures = state.stocks
-    .filter(s=>s.cat==="future" || (s.beta||1) >= 1.8)
-    .filter(s=>s.signal.includes("شراء"))
-    .sort((a,b)=>{
-      const sciA = (FUTURE_SCIENCE[a.id]?.score || 0) * 10;
-      const sciB = (FUTURE_SCIENCE[b.id]?.score || 0) * 10;
-      return (sciB + b.strength) - (sciA + a.strength);
+    .filter(s => s.cat === "future")
+    .filter(s => s.price < 150)
+    .filter(s => s.signal.includes("شراء"))
+    .sort((a,b) => {
+      const sciA = (FUTURE_SCIENCE[a.id]?.score||0)*10 + a.strength + (a.price<30?20:a.price<50?10:0);
+      const sciB = (FUTURE_SCIENCE[b.id]?.score||0)*10 + b.strength + (b.price<30?20:b.price<50?10:0);
+      return sciB - sciA;
     });
   return el('div',{style:{paddingTop:"8px"}},[
     el('div',{style:{
