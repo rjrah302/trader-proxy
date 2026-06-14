@@ -444,12 +444,22 @@ function calcIndicators(s, price) {
   buy += posNews;
   sell += negNews;
 
-  // ===== تأثير تقارير الأرباح =====
+  // ===== Earnings Penalty المطور =====
   const earning = state.earnings && state.earnings[s.id];
-  if(earning && earning.daysUntil <= 3) {
-    // أرباح خلال 3 أيام = خطر عالي
-    sell += 2;
+  if(earning) {
+    if(earning.daysUntil <= 3)       sell += 3; // خطر شديد
+    else if(earning.daysUntil <= 7)  sell += 2; // خطر عالي
+    else if(earning.daysUntil <= 14) sell += 1; // تحذير
   }
+
+  // ===== Gap-Up Penalty =====
+  const changePct = s.changePct || 0;
+  if(changePct > 15)      sell += 3; // ارتفاع مبالغ فيه
+  else if(changePct > 8)  sell += 2; // Gap Up متوسط
+
+  // ===== Extreme Volume Protection =====
+  if(volR > 10)     sell += 2; // حجم غير طبيعي
+  else if(volR > 5) sell += 1; // حجم مرتفع جداً
 
   const sig  = buy>sell+2?"شراء قوي":buy>sell?"شراء":sell>buy+2?"بيع قوي":sell>buy?"بيع":"انتظار";
   const sigC = sig.includes("شراء")?"green":sig.includes("بيع")?"red":"yellow";
