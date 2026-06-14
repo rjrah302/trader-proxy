@@ -1303,14 +1303,28 @@ function recCard(s, rank, pct) {
   const stopPrice = s.price * 0.97;
   // حساب المدة المتوقعة بناءً على ATR
   const real = state.realIndicators && state.realIndicators[s.id];
-  // ATR بالدولار = atrPct% من السعر
-  const atrDollar = real?.atrPct ? (real.atrPct / 100) * s.price : null;
-  const priceDiff = Math.abs(s.res - s.sup);
-  // لو ما عندنا ATR حقيقي = نستخدم 0.5% من السعر كتقدير محافظ
-  const atrForCalc = atrDollar || (s.price * 0.005);
-  const expectedDays = atrForCalc > 0 ? Math.round(priceDiff / atrForCalc) : 5;
-  const daysMin = Math.max(2, expectedDays - 1);
-  const daysMax = Math.min(30, expectedDays + 3);
+  const profile = state.companyProfiles && state.companyProfiles[s.id];
+
+  // ===== معادلة الاحتفاظ المطورة =====
+  const targetDistance = Math.abs(s.res - s.price);
+  const atrDollar = real?.atrPct
+    ? (real.atrPct / 100) * s.price
+    : s.price * 0.005;
+
+  // trendFactor — يعدّل سرعة الحركة اليومية
+  let trendFactor = 1;
+  if(s.price > s.ma20 && s.ma20 > s.ma50) trendFactor += 0.15; // اتجاه صاعد قوي
+  if(s.macdH > 0)                          trendFactor += 0.10; // زخم إيجابي
+  if(s.volR > 1.3)                         trendFactor += 0.05; // حجم فوق المعتاد
+  if(real?.nearSupport)                    trendFactor += 0.10; // قريب الدعم
+  if(s.highConviction)                     trendFactor += 0.15; // ثقة عالية
+
+  trendFactor = Math.min(1.5, Math.max(0.7, trendFactor));
+
+  let holdingDays = atrDollar > 0 ? targetDistance / (atrDollar * trendFactor) : 5;
+  holdingDays = Math.max(2, Math.min(30, Math.round(holdingDays)));
+  const daysMin = holdingDays;
+  const daysMax = Math.min(30, holdingDays + 2);
 
   const reasons = [];
 
