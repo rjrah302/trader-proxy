@@ -316,6 +316,7 @@ let state = {
   dataSource: "simulated",
   marketOpen: false,
   lastMarketRecs: null,  // آخر توصيات وقت السوق مفتوح
+  sessionOneRecs: null,  // توصيات الافتتاح
   historicalFetched: false,
   marketTrend: null,
   loadingIndicators: false,
@@ -440,9 +441,11 @@ function calcIndicators(s, price) {
   if(avgVol > 0 && realAvgVol > 0)   confidence += 5;  // حجم حقيقي
   confidence = Math.min(100, confidence);
 
+  const isConviction = (state.sessionOneRecs||[]).includes(s.id);
   return {rsi,ma20,ma50,macdH,vol,avgVol,volR,bb_u,bb_l,sup,res,pe,
           signal:sig,signalColor:sigC,strength:str,buySignals:buy,sellSignals:sell,
-          profitPct:Math.abs(res-price)/price*100,indicatorsReal:isReal,confidence};
+          profitPct:Math.abs(res-price)/price*100,indicatorsReal:isReal,
+          confidence, highConviction:isConviction};
 }
 
 // ===== FETCH COMPANY PROFILES (Beta + Volume + MarketCap) =====
@@ -862,8 +865,13 @@ async function loadData() {
 }
 
 function calcRecs() {
-  // الترتيب = القوة (60%) + الثقة (40%) — يضمن بيانات موثوقة أولاً
-  const finalScore = s => (s.strength * 0.6) + ((s.confidence||0) * 0.4);
+  // الترتيب = القوة (60%) + الثقة (40%)
+  const sessionOne = state.sessionOneRecs || [];
+  const finalScore = s => {
+    const base = (s.strength * 0.6) + ((s.confidence||0) * 0.4);
+    const conviction = sessionOne.includes(s.id) ? 15 : 0; // High Conviction = +15 نقطة
+    return base + conviction;
+  };
 
   const buys = [...state.stocks]
     .filter(s=>s.signal.includes("شراء"))
@@ -1189,7 +1197,13 @@ function recCard(s, rank, pct) {
           marginTop:"4px",fontSize:"10px",textAlign:"center",
           color: s.confidence>=85?"#00ff88":s.confidence>=70?"#ffe033":"#ff7a00",
           fontWeight:"700"
-        }},`ثقة ${s.confidence}%`)
+        }},`ثقة ${s.confidence}%`),
+        // High Conviction Badge
+        s.highConviction && el('div',{style:{
+          marginTop:"4px",background:"linear-gradient(135deg,#ffe033,#ff7a00)",
+          borderRadius:"6px",padding:"2px 8px",
+          fontSize:"10px",fontWeight:"900",color:"#000",textAlign:"center"
+        }},"⭐ High Conviction")
       ])
     ]),
 
