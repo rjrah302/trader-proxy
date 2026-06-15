@@ -1080,29 +1080,36 @@ async function loadData() {
 
     buildStocks();
 
-    // حساب التوصيات بعد تحميل المؤشرات — إذا السوق مفتوح أو عندنا توصيات قديمة للتحديث
-    if(!state.recsGeneratedToday || !state.recs) {
+    // حساب التوصيات بعد تحميل المؤشرات — فقط إذا السوق مفتوح
+    if(isOfficialOpen && (!state.recsGeneratedToday || !state.recs)) {
       calcRecs();
       state.lastMarketRecs = state.recs;
       state.lastMarketTime = new Date();
-      if(isOfficialOpen) state.recsGeneratedToday = true;
+      state.recsGeneratedToday = true;
       try {
         localStorage.setItem('last_market_recs', JSON.stringify(state.recs));
         localStorage.setItem('last_market_time', new Date().toISOString());
       } catch(e) {}
+    } else if(!isOfficialOpen && state.lastMarketRecs) {
+      // خارج السوق — نعرض التوصيات المحفوظة فقط
+      state.recs = state.lastMarketRecs;
     }
 
-  } else if(state.historicalFetched && !state.recsGeneratedToday) {
-    // ✅ المؤشرات محملة لكن التوصيات لم تُحسب بعد
+  } else if(state.historicalFetched && !state.recsGeneratedToday && isOfficialOpen) {
+    // ✅ المؤشرات محملة، السوق مفتوح، التوصيات لم تُحسب بعد
     buildStocks();
     calcRecs();
     state.lastMarketRecs = state.recs;
     state.lastMarketTime = new Date();
-    if(isOfficialOpen) state.recsGeneratedToday = true;
+    state.recsGeneratedToday = true;
     try {
       localStorage.setItem('last_market_recs', JSON.stringify(state.recs));
       localStorage.setItem('last_market_time', new Date().toISOString());
     } catch(e) {}
+
+  } else if(state.historicalFetched && !isOfficialOpen && !state.recs && state.lastMarketRecs) {
+    // خارج السوق — المؤشرات محملة لكن نعرض التوصيات القديمة فقط
+    state.recs = state.lastMarketRecs;
 
   } else if(isOfficialOpen) {
     // السوق مفتوح والتوصيات جاهزة — أسعار فقط ✅
@@ -1119,15 +1126,13 @@ async function loadData() {
     }
 
   } else {
-    // خارج السوق الرسمي — التوصيات جاهزة، نعرض الآخر
+    // خارج السوق الرسمي — نعرض فقط آخر توصيات من وقت السوق
     if(!state.recs && state.lastMarketRecs) {
+      // استرجاع التوصيات المحفوظة من آخر جلسة مفتوحة
       state.recs = state.lastMarketRecs;
     }
-    // FIX: إذا ما عندنا توصيات أبداً، نحسبها من المؤشرات المحملة
-    if(!state.recs && state.historicalFetched) {
-      calcRecs();
-    }
-    // ❌ لا نحسب توصيات جديدة خارج السوق إذا كانت موجودة مسبقاً
+    // ❌ لا نحسب توصيات جديدة خارج السوق أبداً
+    // (المؤشرات التاريخية تُحمَّل للحصول على ثقة صحيحة، لكن بدون calcRecs)
   }
 
   state.loading = false;
