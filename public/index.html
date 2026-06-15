@@ -789,6 +789,33 @@ function buildStocks() {
     };
   });
 
+  // ===== Lightweight Intraday Live Score Engine =====
+  const session = getMarketSession();
+  if(session === "open" && state.historicalFetched) {
+    for(let s of state.stocks) {
+      const price = state.prices?.[s.id]?.price || s.price;
+      const atr = state.realIndicators?.[s.id]?.atrPct || 2;
+
+      // Momentum adjustment
+      const momentumBoost = price > s.ma20 ? 5 : price < s.ma20 ? -5 : 0;
+
+      // Volatility adjustment
+      const volatilityPenalty = atr > 3 ? -2 : 0;
+
+      // Volume confirmation
+      const volumeBoost = s.volR > 1.3 ? 3 : s.volR < 0.8 ? -2 : 0;
+
+      // Final live score
+      s.liveScore =
+        (s.strength * 0.5) +
+        ((s.confidence||0) * 0.3) +
+        ((s.tradeQuality||0) * 0.2) +
+        momentumBoost +
+        volatilityPenalty +
+        volumeBoost;
+    }
+  }
+
   // تحديث Cooldown — بعد حساب signal ✅
   // شراء قوي + هبط -5% = يدخل cooldown
   let cooldownUpdated = false;
@@ -1044,7 +1071,11 @@ function calcRecs() {
   // الترتيب = القوة (50%) + الثقة (30%) + جودة الصفقة (20%)
   const sessionOne = state.sessionOneRecs || [];
   const finalScore = s => {
-    const base = (s.strength * 0.5) + ((s.confidence||0) * 0.3) + ((s.tradeQuality||0) * 0.2);
+    // لو liveScore متوفر (السوق مفتوح) = استخدمه
+    // لو لا = احسب من الأساس
+    const base = s.liveScore !== undefined
+      ? s.liveScore
+      : (s.strength * 0.5) + ((s.confidence||0) * 0.3) + ((s.tradeQuality||0) * 0.2);
     const conviction = sessionOne.includes(s.id) ? 15 : 0;
     return base + conviction;
   };
