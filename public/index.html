@@ -1025,7 +1025,13 @@ function checkMarketStatus() {
   return getMarketSession() === "open";
 }
 
+// ===== وضع الاختبار — يحاكي السوق المفتوح بدون انتظار =====
+// شغّله من Console: window.DEBUG_MARKET = true; loadData();
+// أوقفه: window.DEBUG_MARKET = false;
+window.DEBUG_MARKET = false;
+
 function getMarketSession() {
+  if(window.DEBUG_MARKET) return "open"; // 🔧 وضع اختبار
   const now = new Date();
   const utcH = now.getUTCHours();
   const utcM = now.getUTCMinutes();
@@ -1128,11 +1134,18 @@ async function loadData() {
   } else {
     // خارج السوق الرسمي — نعرض فقط آخر توصيات من وقت السوق
     if(!state.recs && state.lastMarketRecs) {
-      // استرجاع التوصيات المحفوظة من آخر جلسة مفتوحة
       state.recs = state.lastMarketRecs;
     }
     // ❌ لا نحسب توصيات جديدة خارج السوق أبداً
-    // (المؤشرات التاريخية تُحمَّل للحصول على ثقة صحيحة، لكن بدون calcRecs)
+    // إذا ما فيه توصيات محفوظة، نضع recs فارغة مع رسالة واضحة
+    if(!state.recs) {
+      state.recs = {
+        top3: [], avoid: [], watch: [], future: [],
+        buyCount: 0, sellCount: 0, mktScore: 0,
+        maxPicks: 0, marketMode: "closed",
+        noDataMsg: "السوق مغلق — ستظهر التوصيات عند فتح السوق 4:30م"
+      };
+    }
   }
 
   state.loading = false;
@@ -1219,6 +1232,9 @@ function calcRecs() {
     .filter(s=>s.signal.includes("شراء"))
     .filter(s=>s.profitPct >= minProfit)
     .filter(s=>(s.tradeQuality||0) >= minQuality)
+    // FIX: لا توصية بثقة 0% أو إشارة ضعيفة
+    .filter(s=>(s.confidence||0) > 0)
+    .filter(s=>!s.blockEntry)
     .sort((a,b)=>finalScore(b)-finalScore(a));
 
   const sells = [...state.stocks].filter(s=>s.signal.includes("بيع")).sort((a,b)=>finalScore(b)-finalScore(a));
@@ -1827,7 +1843,8 @@ function renderHeader() {
 
 // ===== REC TAB =====
 function renderRecTab() {
-  if(!state.recs) return el('div',{style:{textAlign:"center",padding:"40px 20px"}},[
+  const closedMsg = !state.recs || (state.recs.noDataMsg && state.recs.top3.length === 0);
+  if(closedMsg) return el('div',{style:{textAlign:"center",padding:"40px 20px"}},[
     el('div',{style:{fontSize:"40px",marginBottom:"12px"}},"🌙"),
     el('div',{style:{fontSize:"15px",fontWeight:"800",color:"var(--text)",marginBottom:"8px"}},"السوق مغلق الآن"),
     el('div',{style:{fontSize:"12px",color:"var(--text3)",lineHeight:"1.9",marginBottom:"12px"}},[
