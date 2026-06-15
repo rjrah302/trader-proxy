@@ -2579,13 +2579,49 @@ function renderModal() {
           {l:`🛑 وقف الخسارة (${f(state.realIndicators[s.id]?.atrPct?state.realIndicators[s.id].atrPct*1.5:3,1)}% ATR)`,
            v:`$${f(s.price*(1-(state.realIndicators[s.id]?.atrPct?state.realIndicators[s.id].atrPct*1.5/100:0.03)))}`,
            c:C.red},
-          {l:"🎯 الهدف الأول",v:`$${f(s.res)}`,c:C.green},
-          ...(state.realIndicators[s.id]?.support?[
-            {l:"🔵 خط الدعم",v:`$${f(state.realIndicators[s.id].support)}`,c:C.blue},
-            {l:"🔴 خط المقاومة",v:`$${f(state.realIndicators[s.id].resistance)}`,c:C.red}
-          ]:[]),
-          {l:"🚀 الهدف الثاني",v:`$${f(s.res*1.02)}`,c:C.green}
-        ].map((x,i)=>el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<3?"1px solid var(--border)":"none"}},[
+          // ===== مستويات الصفقة المطورة =====
+          // وقف خسارة ذكي من ATR
+          ...(()=>{
+            const atrPct = state.realIndicators[s.id]?.atrPct || 2;
+
+            // ===== Smart Entry Status Engine =====
+            const buyPoint = state.realIndicators[s.id]?.support || s.price;
+            const distPct = buyPoint > 0 ? ((s.price - buyPoint) / buyPoint * 100).toFixed(1) : 0;
+            let entryStatus = { text:"🟢 دخول ممتاز", color:C.green };
+            if(s.price > buyPoint * (1 + atrPct / 100)) {
+              entryStatus = { text:`⚠️ تجاوز الدخول ${distPct}% عن الدعم`, color:C.orange };
+            } else if(s.price > buyPoint * (1 + (atrPct * 0.5) / 100)) {
+              entryStatus = { text:`🟡 متأخر ${distPct}% عن الدعم`, color:C.yellow };
+            }
+            const stopPct = state.realIndicators[s.id]?.atrPct ? Math.max(atrPct*1.5, 2) : 3;
+            const stopLoss = s.price * (1 - stopPct/100);
+
+            // الهدف الأول = المقاومة لو فوق السعر وإلا +2%
+            const target1 = s.res && s.res > s.price ? s.res : s.price * 1.02;
+
+            // المخاطرة الفعلية
+            const risk = s.price - stopLoss;
+            const reward = target1 - s.price;
+
+            // الهدف الثاني = 3R (3 أضعاف المخاطرة) — معيار احترافي
+            const target2 = s.price + (risk * 3);
+
+            // نسبة العائد/المخاطرة
+            const riskReward = risk > 0 ? `${f(reward/risk, 2)} : 1` : "-";
+
+            return [
+              {l:`🛑 وقف الخسارة (${f(stopPct,1)}%)`, v:`$${f(stopLoss)}`, c:C.red},
+              {l:"🎯 الهدف الأول", v:`$${f(target1)}`, c:C.green},
+              ...(state.realIndicators[s.id]?.support && state.realIndicators[s.id]?.resistance ? [
+                {l:"🔵 خط الدعم", v:`$${f(state.realIndicators[s.id].support)}`, c:C.blue},
+                {l:"🔴 خط المقاومة", v:`$${f(state.realIndicators[s.id].resistance)}`, c:C.red}
+              ]:[]),
+              {l:"🚀 الهدف الثاني (3R)", v:`$${f(target2)}`, c:C.green},
+              {l:"⚖️ العائد / المخاطرة", v:riskReward, c:C.yellow},
+              {l:"📍 حالة الدخول", v:entryStatus.text, c:entryStatus.color}
+            ];
+          })()
+        ].map((x,i)=>el('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<5?"1px solid var(--border)":"none"}},[
           txt(x.l,{fontSize:"12px",color:"var(--text3)"}),
           txt(x.v,{fontSize:"13px",fontWeight:"800",color:x.c,textShadow:x.c!=="var(--text)"?`0 0 8px ${x.c}`:"none"})
         ]))
