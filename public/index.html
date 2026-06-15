@@ -3216,9 +3216,11 @@ setInterval(()=>{
   }
 
   if(mins>=midDay && mins<=midDay+5 && !midDayFetched && state.historicalFetched) {
+    // حفظ أسهم الجلسة الأولى قبل إعادة التحميل
+    state.sessionOneRecs = state.recs?.top3?.map(s => s.id) || [];
     midDayFetched = true;
     state.historicalFetched = false;
-    console.log("🔄 تحديث منتصف التداول 7:00م");
+    console.log("🔄 تحديث منتصف التداول 7:00م", state.sessionOneRecs);
   }
 }, 60000);
 
