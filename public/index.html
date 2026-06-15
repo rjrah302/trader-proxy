@@ -343,7 +343,7 @@ let state = {
   marketOpen: false,
   lastMarketRecs: _savedRecs,  // آخر توصيات وقت السوق مفتوح
   lastMarketTime: _savedTime,  // وقت آخر تحديث حقيقي
-  recsGeneratedToday: !!_savedRecs, // هل تم إنشاء توصيات اليوم
+  recsGeneratedToday: false, // دايماً false عند البداية = يعيد حساب التوصيات
   cooldownStocks: JSON.parse(localStorage.getItem('cooldown_stocks') || '[]'), // أسهم في فترة تهدئة
   sessionOneRecs: null,  // توصيات الافتتاح
   historicalFetched: _historicalFetchedToday,
