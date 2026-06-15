@@ -313,9 +313,9 @@ try {
   }
 } catch(e) {}
 
-// نقطة 3: تحقق هل تم تحميل المؤشرات اليوم
-const _historicalFetchedToday =
-  localStorage.getItem('historical_fetched_date') === new Date().toDateString();
+// المؤشرات التاريخية لا تُحفظ في localStorage
+// = لازم تتحمل كل مرة تفتح الأداة
+const _historicalFetchedToday = false;
 
 let state = {
   prices: {},      // أسعار حقيقية من FMP
@@ -2129,8 +2129,8 @@ function calcExplosionScore(s) {
   else if(volR > 1.5) volumeScore = 10;
   else                volumeScore = 0;
 
-  // استبعاد الأسهم ذات الحجم الضعيف
-  if(volR < 1.5) return { total: 0, label: "", emoji: "", betaScore, volumeScore: 0,
+  // استبعاد الأسهم ذات الحجم الضعيف جداً فقط
+  if(volR < 1.0) return { total: 0, label: "", emoji: "", betaScore, volumeScore: 0,
     momentumScore: 0, catalystScore: 0, priceScore: 0, sectorHeat: 0, riskLevel: "", riskColor: "#888" };
 
   // 3. Momentum Engine — نقطة 2: إضافة اتجاه صاعد
