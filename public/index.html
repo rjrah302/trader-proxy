@@ -346,7 +346,7 @@ let state = {
   lastMarketTime: _savedTime,  // وقت آخر تحديث حقيقي
   recsGeneratedToday: false, // دايماً false عند البداية = يعيد حساب التوصيات
   cooldownStocks: JSON.parse(localStorage.getItem('cooldown_stocks') || '[]'), // أسهم في فترة تهدئة
-  sessionOneRecs: null,  // توصيات الافتتاح
+  sessionOneRecs: (() => { try { return JSON.parse(localStorage.getItem('session_one_recs') || 'null'); } catch(e) { return null; } })(),  // توصيات الافتتاح — محفوظة
   historicalFetched: _historicalFetchedToday,
   persistence: {},  // تاريخ ظهور كل سهم
   marketTrend: null,
@@ -413,33 +413,51 @@ function calcIndicators(s, price) {
   const isReal  = !!real;
 
   let buy=0, sell=0;
-  if(rsi < 35) buy++; if(rsi > 65) sell++;
-  if(price > ma20) buy++; else sell++;
-  if(ma20 > ma50) buy++; else sell++;
-  if(macdH > 0) buy++; else sell++;
-  if(volR > 1.3) { if(buy>sell) buy++; else sell++; }
-  if(price <= bb_l) buy++; if(price >= bb_u) sell++;
-  buy += peScore;
 
-  // ===== Stochastic RSI =====
-  if(real?.stochRsi !== undefined) {
-    if(real.stochRsi < 20) { buy++; buy++; } // تشبع بيع قوي
-    else if(real.stochRsi < 30) { buy++; }    // تشبع بيع
-    else if(real.stochRsi > 80) { sell++; sell++; } // تشبع شراء قوي
-    else if(real.stochRsi > 70) { sell++; }   // تشبع شراء
+  // 1. RSI — المعيار الصحيح 30/70
+  if(rsi < 30)       { buy += 2; }  // تشبع بيع قوي
+  else if(rsi < 40)  { buy++; }     // ميل للشراء
+  else if(rsi > 70)  { sell += 2; } // تشبع شراء قوي
+  else if(rsi > 60)  { sell++; }    // ميل للبيع
+
+  // 2. MA Cross
+  if(price > ma20) buy++; else sell++;
+  if(ma20 > ma50)  buy++; else sell++;
+
+  // 3. MACD
+  if(macdH > 0) buy++; else sell++;
+
+  // 4. Volume — يُعزز الاتجاه السائد
+  if(volR > 1.3) { if(buy>sell) buy++; else sell++; }
+
+  // 5. Bollinger Bands
+  if(price <= bb_l) buy++;
+  if(price >= bb_u) sell++;
+
+  // 6. Stochastic RSI — مختلف عن RSI، نطاقاته أضيق (0-100 ويصل للأطراف أكثر)
+  // stochRsi = rsi الآن (تقريب) لكن نستخدم نطاقات أكثر حساسية
+  if(real?.stochRsi !== undefined && real.stochRsi !== null) {
+    const stoch = real.stochRsi;
+    if(stoch < 20)       { buy++; buy++; }  // تشبع بيع قوي جداً
+    else if(stoch < 30)  { buy++; }          // تشبع بيع
+    else if(stoch > 80)  { sell++; sell++; } // تشبع شراء قوي جداً
+    else if(stoch > 70)  { sell++; }         // تشبع شراء
   }
 
-  // ===== دعم ومقاومة =====
-  if(real?.nearSupport) { buy++; buy++; }     // قريب من الدعم = فرصة
-  if(real?.nearResistance) { sell++; sell++; } // قريب من المقاومة = خطر
+  // 7. دعم ومقاومة
+  if(real?.nearSupport)    { buy++; buy++; }
+  if(real?.nearResistance) { sell++; sell++; }
 
-  // ===== ATR — وقف خسارة ذكي =====
-  // نستخدم ATR لتحسين نسبة المخاطرة/المكافأة
-  const atrStop = real?.atrPct ? real.atrPct * 1.5 : 3; // وقف = 1.5x ATR
-  const atrTarget = real?.atrPct ? real.atrPct * 3 : 6;  // هدف = 3x ATR
-  const riskReward = atrTarget / atrStop;
-  if(riskReward >= 2) buy++;   // نسبة مخاطرة/مكافأة ممتازة
-  if(riskReward < 1) sell++;   // نسبة سيئة
+  // 8. ATR Risk/Reward — FIX: كان دائماً = 2 لأن atrTarget/atrStop = ثابت
+  // الصح: نقارن المسافة للمقاومة (هدف حقيقي) بالـ ATR stop
+  if(real?.atrPct && res > price) {
+    const distToRes = (res - price) / price * 100;
+    const atrStop   = real.atrPct * 1.5;
+    const realRR    = atrStop > 0 ? distToRes / atrStop : 0;
+    if(realRR >= 3)       buy += 2; // نسبة ممتازة
+    else if(realRR >= 2)  buy++;    // جيدة
+    else if(realRR < 1)   sell++;   // سيئة
+  }
 
   // ===== تأثير الأخبار =====
   const stockNews = (state.news && state.news[s.id]) || [];
@@ -480,11 +498,10 @@ function calcIndicators(s, price) {
     confidence = -1;
   } else if(real) {
     confidence += 40; // بيانات تاريخية حقيقية
-    if(real.rsi !== undefined)       confidence += 10; // RSI حقيقي
-    if(real.macdHist !== undefined)  confidence += 10; // MACD حقيقي
-    if(real.stochRsi !== undefined)  confidence += 10; // Stoch حقيقي
-    if(real.support && real.resistance) confidence += 10; // دعم/مقاومة
-    if(real.atrPct)                  confidence += 5;  // ATR حقيقي
+    if(real.rsi !== undefined && real.rsi !== null)       confidence += 15; // RSI حقيقي (رفعنا لأن stoch مدمج فيه)
+    if(real.macdHist !== undefined && real.macdHist !== null) confidence += 15; // MACD حقيقي
+    if(real.support && real.resistance) confidence += 15; // دعم/مقاومة
+    if(real.atrPct)                     confidence += 10; // ATR حقيقي
   }
   if(profile && confidence >= 0)                        confidence += 5;  // Profile متوفر
   if(stockNews.length > 0 && confidence >= 0)           confidence += 5;  // أخبار متوفرة
@@ -492,30 +509,37 @@ function calcIndicators(s, price) {
   if(confidence >= 0) confidence = Math.min(100, confidence);
 
   // ===== Trade Quality Score =====
-  // يقيس جودة نقطة الدخول
+  const atrStop = real?.atrPct ? real.atrPct * 1.5 : 3;
   let tradeQuality = 0;
   const distToSupport    = sup > 0 ? Math.abs(price - sup) / price * 100 : 999;
   const distToResistance = res > 0 ? Math.abs(res - price) / price * 100 : 0;
   const riskRewardFinal  = distToResistance > 0 ? distToResistance / (atrStop||3) : 0;
 
-  // نسبة عائد/مخاطرة
-  if(riskRewardFinal >= 3)      tradeQuality += 40; // ممتازة
-  else if(riskRewardFinal >= 2) tradeQuality += 30; // جيدة
-  else if(riskRewardFinal >= 1) tradeQuality += 15; // مقبولة
-  else                          tradeQuality += 0;  // سيئة
+  // نحسب tradeQuality فقط من بيانات حقيقية — البيانات التقريبية تعطي نتائج مضللة
+  if(real) {
+    // نسبة عائد/مخاطرة
+    if(riskRewardFinal >= 3)       tradeQuality += 40;
+    else if(riskRewardFinal >= 2)  tradeQuality += 30;
+    else if(riskRewardFinal >= 1)  tradeQuality += 15;
 
-  // قرب الدعم
-  if(distToSupport <= 1)        tradeQuality += 30; // قريب جداً من الدعم
-  else if(distToSupport <= 3)   tradeQuality += 20;
-  else if(distToSupport <= 5)   tradeQuality += 10;
+    // قرب الدعم الحقيقي
+    if(distToSupport <= 1)         tradeQuality += 30;
+    else if(distToSupport <= 3)    tradeQuality += 20;
+    else if(distToSupport <= 5)    tradeQuality += 10;
 
-  // هدف ربح كافي
-  if(distToResistance >= 5)     tradeQuality += 20;
-  else if(distToResistance >= 3) tradeQuality += 10;
-  else if(distToResistance >= 1.5) tradeQuality += 5;
+    // هدف ربح كافي
+    if(distToResistance >= 5)      tradeQuality += 20;
+    else if(distToResistance >= 3) tradeQuality += 10;
+    else if(distToResistance >= 1.5) tradeQuality += 5;
 
-  // ATR معتدل
-  if(real?.atrPct && real.atrPct < 3) tradeQuality += 10;
+    // ATR معتدل — نسبي للقطاع وليس ثابت 3%
+    // أسهم كبيرة: ATR < 2%، متوسطة: < 3%، صغيرة: < 5%
+    const maxAtr = s.cat==='large' ? 2 : s.cat==='mid' ? 3 : 5;
+    if(real.atrPct && real.atrPct < maxAtr) tradeQuality += 10;
+  } else {
+    // بدون بيانات حقيقية — نضع tradeQuality منخفض جداً يمنع دخول التوصيات
+    tradeQuality = 5;
+  }
 
   tradeQuality = Math.min(100, tradeQuality);
 
@@ -559,145 +583,121 @@ async function fetchCompanyProfiles() {
   }
 }
 
-// ===== FETCH HISTORICAL DATA & REAL INDICATORS =====
+// ===== FETCH TECHNICAL INDICATORS من FMP مباشرة (Premium) =====
+// بدل 153 طلب تاريخي → نجيب RSI+EMA+SMA جاهزة من FMP بدفعات متوازية
 async function fetchHistoricalIndicators() {
   const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
-  // نجيب كل الأسهم — يتم مرة واحدة فقط عند فتح السوق
-  const topSymbols = uniqueStocks.map(s=>s.id);
-  
+  const symbols = uniqueStocks.map(s => s.id);
   state.realIndicators = {};
-  
-  // نجيب بشكل متسلسل عشان ما نتجاوز حد الطلبات
-  for(const sym of topSymbols) {
-    await (async (sym) => {
-    try {
-      const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=200&apikey=${apiKey}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      const prices = (data.historical || []).map(d => d.close).reverse();
-      
-      if(prices.length < 14) return;
 
-      // ===== RSI الحقيقي — Wilder's Smoothing =====
-      const rsiLen = 14;
-      let avgGain = 0, avgLoss = 0;
-      for(let i=1; i<=rsiLen; i++) {
-        const diff = prices[i] - prices[i-1];
-        avgGain += diff > 0 ? diff : 0;
-        avgLoss += diff < 0 ? Math.abs(diff) : 0;
-      }
-      avgGain /= rsiLen;
-      avgLoss /= rsiLen;
-      for(let i=rsiLen+1; i<prices.length; i++) {
-        const diff = prices[i] - prices[i-1];
-        avgGain = (avgGain*(rsiLen-1) + (diff>0?diff:0)) / rsiLen;
-        avgLoss = (avgLoss*(rsiLen-1) + (diff<0?Math.abs(diff):0)) / rsiLen;
-      }
-      const rs = avgLoss === 0 ? 100 : avgGain/avgLoss;
-      const rsi = 100 - (100/(1+rs));
+  // دفعات متوازية — 10 أسهم في آن واحد بدل واحد واحد
+  const BATCH = 10;
+  for(let i = 0; i < symbols.length; i += BATCH) {
+    const batch = symbols.slice(i, i + BATCH);
 
-      // ===== MA20 و MA50 الحقيقية =====
-      const ma20 = prices.slice(-20).reduce((a,b)=>a+b,0)/Math.min(20,prices.length);
-      const ma50 = prices.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,prices.length);
+    await Promise.all(batch.map(async sym => {
+      try {
+        // جيب RSI + EMA20 + SMA50 + SMA20 بطلبات متوازية لكل سهم
+        const [rsiRes, ema20Res, sma20Res, sma50Res, histRes] = await Promise.all([
+          fetch(`https://financialmodelingprep.com/stable/technical-indicators/rsi?symbol=${sym}&periodLength=14&timeframe=1day&apikey=${apiKey}`),
+          fetch(`https://financialmodelingprep.com/stable/technical-indicators/ema?symbol=${sym}&periodLength=20&timeframe=1day&apikey=${apiKey}`),
+          fetch(`https://financialmodelingprep.com/stable/technical-indicators/sma?symbol=${sym}&periodLength=20&timeframe=1day&apikey=${apiKey}`),
+          fetch(`https://financialmodelingprep.com/stable/technical-indicators/sma?symbol=${sym}&periodLength=50&timeframe=1day&apikey=${apiKey}`),
+          fetch(`https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=30&apikey=${apiKey}`)
+        ]);
 
-      // ===== MACD الحقيقي — Signal من 9 قيم =====
-      function ema(data, period) {
-        const k = 2/(period+1);
-        let emaVal = data[0];
-        for(let i=1; i<data.length; i++) emaVal = data[i]*k + emaVal*(1-k);
-        return emaVal;
-      }
-      const macdHistory = [];
-      for(let i=26; i<=prices.length; i++) {
-        const e12 = ema(prices.slice(i-26,i), 12);
-        const e26 = ema(prices.slice(i-26,i), 26);
-        macdHistory.push(e12 - e26);
-      }
-      const macdLine = macdHistory[macdHistory.length-1] || 0;
-      const signalLine = macdHistory.length>=9 ? ema(macdHistory.slice(-9),9) : macdLine;
-      const macdHist = macdLine - signalLine;
+        const [rsiData, ema20Data, sma20Data, sma50Data, histData] = await Promise.all([
+          rsiRes.json(), ema20Res.json(), sma20Res.json(), sma50Res.json(), histRes.json()
+        ]);
 
-      // ===== بولينجر الحقيقي =====
-      const last20 = prices.slice(-20);
-      const mean = last20.reduce((a,b)=>a+b,0)/20;
-      const std = Math.sqrt(last20.reduce((sum,p)=>sum+Math.pow(p-mean,2),0)/20);
-      const bb_upper = mean + 2*std;
-      const bb_lower = mean - 2*std;
+        // ===== RSI =====
+        const rsi = Array.isArray(rsiData) && rsiData[0]?.rsi != null
+          ? parseFloat(rsiData[0].rsi) : null;
 
-      // ===== حفظ البيانات التاريخية للشارت =====
-      const chartData = prices.slice(-30);
+        // ===== MA20 و MA50 =====
+        const ma20 = Array.isArray(sma20Data) && sma20Data[0]?.sma != null
+          ? parseFloat(sma20Data[0].sma) : null;
+        const ma50 = Array.isArray(sma50Data) && sma50Data[0]?.sma != null
+          ? parseFloat(sma50Data[0].sma) : null;
 
-      // ===== Stochastic RSI — Wilder's + %D =====
-      const rsiPeriod = 14;
-      const stochPeriod = 14;
-      const rsiValues = [];
-      // Wilder's Smoothing لكل RSI في التاريخ
-      for(let i=rsiPeriod; i<prices.length; i++) {
-        const slice = prices.slice(i-rsiPeriod, i+1);
-        let ag2 = 0, al2 = 0;
-        for(let j=1; j<=rsiPeriod; j++) {
-          const d = slice[j]-slice[j-1];
-          ag2 += d>0?d:0;
-          al2 += d<0?Math.abs(d):0;
+        // ===== EMA20 و MACD =====
+        const ema20Val = Array.isArray(ema20Data) && ema20Data[0]?.ema != null
+          ? parseFloat(ema20Data[0].ema) : null;
+        // EMA20 - SMA50 = تقريب جيد لـ MACD Histogram
+        const macdHist = (ema20Val != null && ma50 != null) ? ema20Val - ma50 : null;
+
+        // ===== بيانات تاريخية للشارت + دعم/مقاومة + ATR =====
+        const hist = histData?.historical || [];
+        const prices = hist.map(d => d.close).reverse();
+        const highs  = hist.map(d => d.high).reverse();
+        const lows   = hist.map(d => d.low).reverse();
+
+        const chartData = prices.slice(-30);
+
+        // دعم ومقاومة من آخر 20 يوم
+        const last20h = highs.slice(-20);
+        const last20l = lows.slice(-20);
+        const resistance = last20h.length ? Math.max(...last20h) : null;
+        const support    = last20l.length ? Math.min(...last20l) : null;
+        const currentPrice = prices[prices.length - 1];
+        // FIX: nearSupport فقط إذا السعر فوق الدعم وقريب منه (لا تحته = كسر خطر)
+        const nearSupport    = support && currentPrice > support
+          ? currentPrice <= support * 1.03   // قريب فوق الدعم بـ 3%
+          : false;
+        // nearResistance: السعر اقترب من المقاومة (أقل منها بـ 2%)
+        const nearResistance = resistance && currentPrice < resistance
+          ? currentPrice >= resistance * 0.98
+          : false;
+
+        // ATR من آخر 14 يوم
+        let atrPct = null;
+        if(highs.length >= 15 && lows.length >= 15) {
+          const trValues = [];
+          for(let j = 1; j < Math.min(15, highs.length); j++) {
+            const tr = Math.max(
+              highs[j] - lows[j],
+              Math.abs(highs[j] - prices[j-1]),
+              Math.abs(lows[j]  - prices[j-1])
+            );
+            trValues.push(tr);
+          }
+          const atr = trValues.reduce((a,b)=>a+b,0) / trValues.length;
+          atrPct = currentPrice > 0 ? (atr / currentPrice) * 100 : null;
         }
-        ag2 /= rsiPeriod;
-        al2 /= rsiPeriod;
-        const rs2 = al2===0?100:ag2/al2;
-        rsiValues.push(100-(100/(1+rs2)));
+
+        // Bollinger Bands من SMA20
+        let bb_upper = null, bb_lower = null;
+        if(ma20 && prices.length >= 20) {
+          const last20p = prices.slice(-20);
+          const std = Math.sqrt(last20p.reduce((s,p)=>s+Math.pow(p-ma20,2),0)/20);
+          bb_upper = ma20 + 2*std;
+          bb_lower = ma20 - 2*std;
+        }
+
+        // stochRsi — FMP لا يعطيه مباشرة ولا نملك بيانات كافية لحسابه
+        // نضعه null لأن stochRsi=rsi يعطي إشارات خاطئة (نطاقاته مختلفة)
+        const stochRsi = null;
+
+        // حفظ فقط إذا فيه بيانات كافية
+        if(rsi != null || ma20 != null) {
+          state.realIndicators[sym] = {
+            rsi, ma20, ma50, macdHist, bb_upper, bb_lower, chartData,
+            stochRsi, atrPct, support, resistance, nearSupport, nearResistance
+          };
+        }
+      } catch(e) {
+        // فشل هذا السهم — يستخدم البيانات التقريبية
       }
-      // %K
-      const recentRsi = rsiValues.slice(-stochPeriod);
-      const minRsi = Math.min(...recentRsi);
-      const maxRsi = Math.max(...recentRsi);
-      const stochK = maxRsi===minRsi ? 50 : ((rsiValues[rsiValues.length-1]-minRsi)/(maxRsi-minRsi))*100;
-      // %D = متوسط آخر 3 قيم من %K (أهدأ وأدق)
-      const kValues = rsiValues.slice(-stochPeriod-2).map((_,idx,arr) => {
-        if(idx < stochPeriod-1) return null;
-        const recent = arr.slice(idx-stochPeriod+1, idx+1);
-        const mn = Math.min(...recent), mx = Math.max(...recent);
-        return mx===mn ? 50 : ((arr[idx]-mn)/(mx-mn))*100;
-      }).filter(v=>v!==null);
-      const stochRsi = kValues.length >= 3 ?
-        (kValues[kValues.length-1]+kValues[kValues.length-2]+kValues[kValues.length-3])/3
-        : stochK;
+    }));
 
-      // ===== ATR — وقف خسارة ذكي =====
-      const atrPeriod = 14;
-      const highs = (data.historical||[]).map(d=>d.high).reverse().slice(-atrPeriod-1);
-      const lows  = (data.historical||[]).map(d=>d.low).reverse().slice(-atrPeriod-1);
-      const trValues = [];
-      for(let i=1; i<highs.length; i++) {
-        const tr = Math.max(
-          highs[i]-lows[i],
-          Math.abs(highs[i]-prices[prices.length-atrPeriod-1+i-1]),
-          Math.abs(lows[i]-prices[prices.length-atrPeriod-1+i-1])
-        );
-        trValues.push(tr);
-      }
-      const atr = trValues.reduce((a,b)=>a+b,0)/atrPeriod;
-      const atrPct = (atr/prices[prices.length-1])*100; // ATR كنسبة مئوية
-
-      // ===== دعم ومقاومة =====
-      const last200 = prices.slice(-200);
-      const last20h = (data.historical||[]).map(d=>d.high).reverse().slice(-20);
-      const last20l = (data.historical||[]).map(d=>d.low).reverse().slice(-20);
-      const resistance = Math.max(...last20h);
-      const support = Math.min(...last20l);
-      const currentPrice = prices[prices.length-1];
-      const nearSupport = currentPrice <= support * 1.02;    // السعر قريب من الدعم (2%)
-      const nearResistance = currentPrice >= resistance * 0.98; // السعر قريب من المقاومة (2%)
-
-      state.realIndicators[sym] = {
-        rsi, ma20, ma50, macdHist, bb_upper, bb_lower, chartData,
-        stochRsi, atr, atrPct, support, resistance, nearSupport, nearResistance
-      };
-
-    } catch(e) {}
-    })(sym);
-    // انتظر 200ms بين كل طلب عشان ما نضغط على API
-    await new Promise(r => setTimeout(r, 200));
+    // 300ms بين كل دفعة عشان ما نتجاوز 750 طلب/دقيقة
+    // كل دفعة = 10 أسهم × 5 طلبات = 50 طلب — آمن جداً
+    if(i + BATCH < symbols.length) {
+      await new Promise(r => setTimeout(r, 300));
+    }
   }
 }
+
 
 // ===== FETCH PRICES =====
 async function fetchPrices() {
@@ -812,9 +812,9 @@ function buildStocks() {
   // ===== Safety & Data Validation Layer =====
   for(let s of state.stocks) {
     const hasValidMA = typeof s.ma20==="number" && typeof s.ma50==="number" && s.ma20>0 && s.ma50>0;
-    // FIX: confidence=-1 تعني "جاري التحميل" وليس خطأ — لا نحجب الإدخال
     const hasValidIndicators = s.strength!==undefined && s.confidence!==undefined && s.tradeQuality!==undefined;
-    const hasValidPrice = (state.prices?.[s.id]?.price || 0) > 0;
+    // FIX: نقبل السعر من أي مصدر (live/cached/fallback) — مو فقط live
+    const hasValidPrice = (s.price || 0) > 0;
 
     if(!hasValidMA || !hasValidIndicators || !hasValidPrice) {
       s.liveScore = 0;
@@ -1057,8 +1057,11 @@ function getMarketSession() {
 }
 
 async function loadData() {
+  // منع استدعاء متزامن — لو جاري التحميل نتجاهل الطلب الجديد
+  if(state.loadingIndicators) return;
+
   state.loading = true;
-  state.marketOpen = true; // الأداة شغالة 24/7
+  state.marketOpen = true;
   render();
 
   const session = getMarketSession();
@@ -1232,9 +1235,11 @@ function calcRecs() {
     .filter(s=>s.signal.includes("شراء"))
     .filter(s=>s.profitPct >= minProfit)
     .filter(s=>(s.tradeQuality||0) >= minQuality)
-    // FIX: لا توصية بثقة 0% أو إشارة ضعيفة
-    .filter(s=>(s.confidence||0) > 0)
+    // لا توصية بثقة سالبة (جاري التحميل) أو إشارة محجوبة
+    .filter(s=>s.confidence !== -1)
     .filter(s=>!s.blockEntry)
+    // ❌ لا توصية بدون بيانات حقيقية — القرارات المالية تحتاج بيانات موثوقة
+    .filter(s=>s.indicatorsReal === true)
     .sort((a,b)=>finalScore(b)-finalScore(a));
 
   const sells = [...state.stocks].filter(s=>s.signal.includes("بيع")).sort((a,b)=>finalScore(b)-finalScore(a));
@@ -2164,111 +2169,101 @@ function getSectorHeat(stockId) {
   return SECTOR_HEAT[stockId] || 0;
 }
 
-// ===== Explosion Engine V1 =====
+// ===== Explosion Engine V3 — منطق مجازفة حقيقي =====
 function calcExplosionScore(s) {
   const real = state.realIndicators && state.realIndicators[s.id];
   const profile = state.companyProfiles && state.companyProfiles[s.id];
   const beta = profile?.beta || s.beta || 1;
   const stockNews = (state.news && state.news[s.id]) || [];
+  const hasRealData = !!real;
 
-  // 1. Beta Engine — نقطة 1: عقوبة beta > 5
+  // 1. Beta Score (25 نقطة) — البيتا 2-4 هي النطاق المثالي للمجازفة الذكية
   let betaScore = 0;
-  if(beta > 5)        betaScore = 10; // خطر مفرط
-  else if(beta > 3)   betaScore = 20;
-  else if(beta > 2)   betaScore = 16;
-  else if(beta > 1.5) betaScore = 12;
-  else                betaScore = 6;
+  if(beta >= 2 && beta <= 4)   betaScore = 25; // ✅ مجازفة مثالية
+  else if(beta > 4 && beta <=5) betaScore = 15; // ⚠️ عالي جداً
+  else if(beta > 5)             betaScore = 5;  // ❌ خطر مفرط
+  else if(beta >= 1.5)          betaScore = 15; // متوسط
+  else                          betaScore = 5;  // منخفض — مو مجازفة
 
-  // 2. Volume Explosion Engine
-  const volR = s.volR || 1;
-  let volumeScore = 0;
-  if(volR > 5)        volumeScore = 30;
-  else if(volR > 4)   volumeScore = 25;
-  else if(volR > 3)   volumeScore = 20;
-  else if(volR > 2)   volumeScore = 15;
-  else if(volR > 1.5) volumeScore = 10;
-  else                volumeScore = 0;
-
-  // استبعاد الأسهم ذات الحجم الضعيف جداً فقط
-  if(volR < 1.0) return { total: 0, label: "", emoji: "", betaScore, volumeScore: 0,
-    momentumScore: 0, catalystScore: 0, priceScore: 0, sectorHeat: 0, riskLevel: "", riskColor: "#888" };
-
-  // 3. Momentum Engine — نقطة 2: إضافة اتجاه صاعد
+  // 2. Momentum Score (30 نقطة) — فقط من بيانات حقيقية
   let momentumScore = 0;
-  const rsi = real?.rsi || s.rsi || 50;
-  const macdH = real?.macdHist || 0;
-  const ma20 = real?.ma20 || s.ma20 || 0;
-  const ma50 = real?.ma50 || s.ma50 || 0;
-  const priceM = s.price || 0;
-  if(rsi > 50 && rsi < 70)              momentumScore += 10; // RSI صاعد
-  if(macdH > 0)                          momentumScore += 10; // MACD إيجابي
-  if(priceM > ma20 && ma20 > ma50)       momentumScore += 10; // اتجاه صاعد حقيقي
+  if(hasRealData) {
+    const rsi   = real.rsi   ?? 50;
+    const macdH = real.macdHist ?? 0;
+    const ma20  = real.ma20  ?? 0;
+    const ma50  = real.ma50  ?? 0;
+    const price = s.price || 0;
 
-  // 4. Catalyst Engine
-  let catalystScore = 0;
-  const posNews = stockNews.filter(n=>n.sentiment==='positive').length;
-  const negNews = stockNews.filter(n=>n.sentiment==='negative').length;
-  catalystScore = Math.min(15, posNews * 5);
+    if(rsi > 45 && rsi < 65)         momentumScore += 12; // RSI صحي — ليس متشبعاً
+    else if(rsi >= 65 && rsi < 75)   momentumScore += 6;  // قوي لكن قريب تشبع
+    else if(rsi < 35)                momentumScore += 8;  // تشبع بيع = فرصة ارتداد
+    if(macdH > 0)                    momentumScore += 10; // زخم صاعد
+    if(price > ma20 && ma20 > ma50)  momentumScore += 8;  // ترند صاعد
+  }
+  // بدون بيانات حقيقية = 0 نقطة momentum (لا نخمن)
 
-  // 5. Price Engine
+  // 3. Price Score (20 نقطة) — الأسهم الرخيصة أكثر إمكانية للانفجار
   let priceScore = 0;
   const price = s.price || 0;
-  if(price < 20)       priceScore = 10;
-  else if(price < 50)  priceScore = 8;
-  else if(price < 100) priceScore = 5;
-  else                 priceScore = 2;
+  if(price > 0 && price < 5)    priceScore = 20;
+  else if(price < 15)           priceScore = 17;
+  else if(price < 30)           priceScore = 14;
+  else if(price < 50)           priceScore = 10;
+  else if(price < 100)          priceScore = 6;
+  else                          priceScore = 3;
 
-  // Sector Heat Engine
+  // 4. Sector Heat (15 نقطة)
   const sectorHeat = getSectorHeat(s.id);
 
-  // Persistence Bonus — نقطة 6
-  const persistBonus = (s.persistDays || 0) * 2;
+  // 5. Volume Bonus (10 نقطة) — مكافأة فقط
+  const volR = s.volR || 1;
+  let volumeScore = 0;
+  if(volR > 4)        volumeScore = 10;
+  else if(volR > 3)   volumeScore = 7;
+  else if(volR > 2)   volumeScore = 4;
+  else if(volR > 1.5) volumeScore = 2;
 
-  let total = betaScore + volumeScore + momentumScore + catalystScore + priceScore + sectorHeat + persistBonus;
+  // 6. Catalyst (10 نقطة)
+  const posNews = stockNews.filter(n=>n.sentiment==='positive').length;
+  const negNews = stockNews.filter(n=>n.sentiment==='negative').length;
+  const catalystScore = Math.min(10, posNews * 4);
 
-  // نقطة 4: عقوبة التشبع الشرائي المشددة
-  if(rsi > 85)      total -= 15;
-  else if(rsi > 80) total -= 10;
+  // 7. Persistence Bonus (5 نقطة)
+  const persistBonus = Math.min(5, (s.persistDays || 0) * 2);
 
-  // نقطة 3: عقوبة الأخبار السلبية المشددة
-  if(negNews >= 2)  total -= 20;
-  else if(negNews === 1) total -= 10;
+  // المجموع — أقصى نقطة بدون volume = 105
+  let total = betaScore + momentumScore + priceScore + sectorHeat + catalystScore + persistBonus + volumeScore;
 
-  // نقطة 5: عقوبة جودة الصفقة المنخفضة
-  if((s.tradeQuality || 0) < 40) total -= 10;
+  // العقوبات
+  if(hasRealData && (real.rsi ?? 50) > 80) total -= 15; // تشبع شرائي شديد
+  if(negNews >= 2)      total -= 15;
+  else if(negNews === 1) total -= 6;
+  const changePct = s.changePct || 0;
+  if(changePct > 20)    total -= 20; // gap-up مبالغ
+  else if(changePct > 10) total -= 10;
 
-  // Earnings Penalty — أرباح قريبة = خطر عالي
-  const earningsData = state.earnings && state.earnings[s.id];
-  if(earningsData) {
-    const daysToEarnings = earningsData.daysUntil || earningsData.days || 999;
-    if(daysToEarnings <= 7)       total -= 25;
-    else if(daysToEarnings <= 14) total -= 10;
-  }
+  const earningsData = state.earnings?.[s.id];
+  if(earningsData?.daysUntil <= 5) total -= 15;
+  else if(earningsData?.daysUntil <= 14) total -= 6;
 
-  // Gap-Up Penalty — منع مطاردة الأسهم المتضخمة
-  const changePct = s.changePct || s.change || 0;
-  if(changePct > 15)      total -= 20;
-  else if(changePct > 8)  total -= 10;
+  total = Math.max(0, Math.min(120, total));
 
-  // Extreme Volume Protection — حماية من الضجيج المؤقت
-  if(volR > 10) total -= 5;
-
-  // تصنيف الفرصة
+  // تصنيف
   let label = "", emoji = "";
-  if(total >= 95)      { label = "Potential Explosion"; emoji = "🚀"; }
-  else if(total >= 90) { label = "High Momentum";       emoji = "🔥"; }
-  else if(total >= 85) { label = "Aggressive Opportunity"; emoji = "⚡"; }
-  else if(total >= 80) { label = "Speculative";         emoji = "🎲"; }
-  else                 { label = "";                    emoji = ""; }
+  if(total >= 90)      { label = "Potential Explosion"; emoji = "🚀"; }
+  else if(total >= 78) { label = "High Momentum";       emoji = "🔥"; }
+  else if(total >= 65) { label = "Aggressive Opportunity"; emoji = "⚡"; }
+  else if(total >= 50) { label = "Speculative";         emoji = "🎲"; }
+  else                 { label = "Watch Only";           emoji = "👀"; }
 
   // Risk Meter
   let riskLevel = "", riskColor = "";
-  if(beta > 3 || volR > 4)          { riskLevel = "شديدة الخطورة"; riskColor = "#ff2d7a"; }
-  else if(beta > 2 || volR > 2.5)   { riskLevel = "مرتفعة";        riskColor = "#ff7a00"; }
-  else if(beta > 1.5)                { riskLevel = "متوسطة";        riskColor = "#ffe033"; }
-  else                               { riskLevel = "منخفضة";        riskColor = "#00ff88"; }
+  if(beta > 4)                     { riskLevel = "شديدة الخطورة"; riskColor = "#ff2d7a"; }
+  else if(beta > 2.5 || volR > 3)  { riskLevel = "مرتفعة";        riskColor = "#ff7a00"; }
+  else if(beta > 1.8)              { riskLevel = "متوسطة-عالية";   riskColor = "#ffe033"; }
+  else                             { riskLevel = "متوسطة";         riskColor = "#00c8ff"; }
 
-  return { total, label, emoji, betaScore, volumeScore, momentumScore, catalystScore, priceScore, sectorHeat, persistBonus, riskLevel, riskColor };
+  return { total, label, emoji, betaScore, volumeScore, momentumScore, catalystScore, priceScore, sectorHeat, persistBonus, riskLevel, riskColor, hasRealData };
 }
 
 function renderFutureTab() {
@@ -2276,7 +2271,7 @@ function renderFutureTab() {
     .filter(s => s.cat === "future")
     .filter(s => s.price < 150)
     .map(s => ({...s, explosion: calcExplosionScore(s)}))
-    .filter(s => s.explosion.total >= 80) // فقط الأسهم فوق 80
+    .filter(s => s.explosion.total >= 60)
     .sort((a,b) => b.explosion.total - a.explosion.total);
   return el('div',{style:{paddingTop:"8px"}},[
     el('div',{style:{
@@ -2314,11 +2309,13 @@ function renderFutureTab() {
               ]),
               // تفاصيل النقاط
               el('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px",fontSize:"10px",color:"var(--text3)",marginBottom:"6px"}},[
-                el('div',{},`Beta: ${exp.betaScore}/30`),
-                el('div',{},`حجم: ${exp.volumeScore}/25`),
-                el('div',{},`زخم: ${exp.momentumScore}/20`),
-                el('div',{},`محفز: ${exp.catalystScore}/15`),
-                exp.sectorHeat > 0 && el('div',{style:{color:"#b44fff"}},`🔥 قطاع ساخن: +${exp.sectorHeat}`),
+                el('div',{},`Beta: ${exp.betaScore}/25`),
+                el('div',{},`حجم: ${exp.volumeScore}/10`),
+                el('div',{},`زخم: ${exp.momentumScore}/30`),
+                el('div',{},`محفز: ${exp.catalystScore}/10`),
+                el('div',{},`سعر: ${exp.priceScore}/20`),
+                exp.sectorHeat > 0 && el('div',{style:{color:"#b44fff"}},`🔥 قطاع: +${exp.sectorHeat}`),
+                !exp.hasRealData && el('div',{style:{color:"#ffe033",gridColumn:"1/-1"}},`⏳ بيانات تاريخية غير محملة بعد`),
               ].filter(Boolean)),
               // Risk Meter
               el('div',{style:{
@@ -3412,10 +3409,14 @@ setInterval(()=>{
   }
 
   if(mins>=midDay && mins<=midDay+5 && !midDayFetched && state.historicalFetched) {
-    // حفظ أسهم الجلسة الأولى قبل إعادة التحميل
+    // حفظ أسهم الجلسة الأولى (الافتتاح) قبل إعادة الحساب
     state.sessionOneRecs = state.recs?.top3?.map(s => s.id) || [];
+    // FIX: حفظ في localStorage عشان تبقى بعد إعادة التحميل
+    try { localStorage.setItem('session_one_recs', JSON.stringify(state.sessionOneRecs)); } catch(e) {}
     midDayFetched = true;
     state.historicalFetched = false;
+    // FIX: نسمح بإعادة حساب التوصيات عند 7م
+    state.recsGeneratedToday = false;
     console.log("🔄 تحديث منتصف التداول 7:00م", state.sessionOneRecs);
   }
 }, 60000);
