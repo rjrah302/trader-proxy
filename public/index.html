@@ -2689,13 +2689,23 @@ function renderModal() {
             const atrPct = state.realIndicators[s.id]?.atrPct || 2;
 
             // ===== Smart Entry Status Engine =====
-            const buyPoint = state.realIndicators[s.id]?.support || s.price;
-            const distPct = buyPoint > 0 ? ((s.price - buyPoint) / buyPoint * 100).toFixed(1) : 0;
-            let entryStatus = { text:"🟢 دخول ممتاز", color:C.green };
-            if(s.price > buyPoint * (1 + atrPct / 100)) {
-              entryStatus = { text:`⚠️ تجاوز الدخول ${distPct}% عن الدعم`, color:C.orange };
-            } else if(s.price > buyPoint * (1 + (atrPct * 0.5) / 100)) {
-              entryStatus = { text:`🟡 متأخر ${distPct}% عن الدعم`, color:C.yellow };
+            // buyPoint = الدعم الحقيقي فقط — لو ما في دعم = لا نحكم
+            const realSupport = state.realIndicators[s.id]?.support;
+            const buyPoint = realSupport && realSupport > 0 && realSupport < s.price
+              ? realSupport
+              : null;
+
+            let entryStatus = { text:"⚪ لا يوجد دعم كافٍ", color:"var(--text3)" };
+
+            if(buyPoint) {
+              const distPct = ((s.price - buyPoint) / buyPoint * 100).toFixed(1);
+              if(s.price > buyPoint * (1 + atrPct / 100)) {
+                entryStatus = { text:`⚠️ تجاوز الدخول ${distPct}% عن الدعم`, color:C.orange };
+              } else if(s.price > buyPoint * (1 + (atrPct * 0.5) / 100)) {
+                entryStatus = { text:`🟡 متأخر ${distPct}% عن الدعم`, color:C.yellow };
+              } else {
+                entryStatus = { text:"🟢 دخول ممتاز", color:C.green };
+              }
             }
             const stopPct = state.realIndicators[s.id]?.atrPct ? Math.max(atrPct*1.5, 2) : 3;
             const stopLoss = s.price * (1 - stopPct/100);
