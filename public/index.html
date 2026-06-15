@@ -696,46 +696,68 @@ async function fetchHistoricalIndicators() {
 
 // ===== FETCH PRICES =====
 async function fetchPrices() {
-  const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
-  const allSymbols = uniqueStocks.map(s=>s.id);
-  const BATCH = 50; // 50 سهم لكل طلب عشان ما يتجاوز حد URL
-  let totalResults = [];
-
+  const symbols = uniqueStocks.map(s=>s.id).join(',');
   try {
-    // نقسم الأسهم لدفعات 50
-    for(let i=0; i<allSymbols.length; i+=BATCH) {
-      const batch = allSymbols.slice(i, i+BATCH).join(',');
-      const ctrl = new AbortController();
-      setTimeout(() => ctrl.abort(), 10000);
-      const url = `https://financialmodelingprep.com/stable/quote?symbol=${batch}&apikey=${apiKey}`;
-      const res = await fetch(url, {signal: ctrl.signal});
-      if(!res.ok) continue;
-      const data = await res.json();
-      if(Array.isArray(data)) totalResults = totalResults.concat(data);
-    }
+    // Yahoo Proxy — سريع وموثوق للأسعار اللحظية
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 10000);
+    const res = await fetch(`/api/stocks?symbols=${symbols}`, {signal: ctrl.signal});
+    if(!res.ok) throw new Error('failed');
+    const data = await res.json();
+    const results = data?.quoteResponse?.result || [];
+    if(results.length === 0) throw new Error('empty');
 
-    if(totalResults.length === 0) throw new Error('empty');
-
-    totalResults.forEach(q => {
-      if(q.price) {
+    results.forEach(q => {
+      if(q.regularMarketPrice) {
         state.prices[q.symbol] = {
-          price: q.price,
-          change: q.changesPercentage || 0,
-          high: q.dayHigh || q.price * 1.01,
-          low: q.dayLow || q.price * 0.99,
-          volume: q.volume || 0,
+          price: q.regularMarketPrice,
+          change: q.regularMarketChangePercent || 0,
+          high: q.regularMarketDayHigh || q.regularMarketPrice * 1.01,
+          low: q.regularMarketDayLow || q.regularMarketPrice * 0.99,
+          volume: q.regularMarketVolume || 0,
           isReal: true
         };
       }
     });
 
-    state.dataSource = totalResults.length > 5 ? 'real' : 'simulated';
-    if(totalResults.length > 5) {
+    state.dataSource = results.length > 5 ? 'real' : 'simulated';
+    if(results.length > 5) {
       Object.assign(state.lastPrices, state.prices);
       try { localStorage.setItem('lastPrices', JSON.stringify(state.lastPrices)); } catch(e) {}
     }
   } catch(e) {
-    state.dataSource = 'simulated';
+    // Fallback: FMP بدفعات 50
+    const apiKey = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
+    const allSymbols = uniqueStocks.map(s=>s.id);
+    const BATCH = 50;
+    let totalResults = [];
+    try {
+      for(let i=0; i<allSymbols.length; i+=BATCH) {
+        const batch = allSymbols.slice(i, i+BATCH).join(',');
+        const ctrl2 = new AbortController();
+        setTimeout(() => ctrl2.abort(), 10000);
+        const url = `https://financialmodelingprep.com/stable/quote?symbol=${batch}&apikey=${apiKey}`;
+        const res2 = await fetch(url, {signal: ctrl2.signal});
+        if(!res2.ok) continue;
+        const data2 = await res2.json();
+        if(Array.isArray(data2)) totalResults = totalResults.concat(data2);
+      }
+      totalResults.forEach(q => {
+        if(q.price) {
+          state.prices[q.symbol] = {
+            price: q.price,
+            change: q.changesPercentage || 0,
+            high: q.dayHigh || q.price * 1.01,
+            low: q.dayLow || q.price * 0.99,
+            volume: q.volume || 0,
+            isReal: true
+          };
+        }
+      });
+      state.dataSource = totalResults.length > 5 ? 'real' : 'simulated';
+    } catch(e2) {
+      state.dataSource = 'simulated';
+    }
   }
 }
 
