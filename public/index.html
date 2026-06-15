@@ -1070,35 +1070,43 @@ async function loadData() {
     state.loadingIndicators = true;
     render();
 
-    // ② ننتظر اكتمال 200 يوم + 11 مؤشر
     await Promise.all([fetchHistoricalIndicators(), fetchCompanyProfiles()]);
     
-    // ③ بعد الاكتمال — نحسب التوصية مرة واحدة ✅
     state.historicalFetched = true;
     state.loadingIndicators = false;
 
-    // نقطة 3: حفظ تاريخ تحميل المؤشرات
     try {
       localStorage.setItem('historical_fetched_date', new Date().toDateString());
     } catch(e) {}
 
     buildStocks();
 
-    // نقطة 2: منع إعادة إنشاء التوصيات أكثر من مرة
+    // حساب التوصيات بعد تحميل المؤشرات
     if(!state.recsGeneratedToday) {
       calcRecs();
       state.lastMarketRecs = state.recs;
       state.lastMarketTime = new Date();
       state.recsGeneratedToday = true;
-      // نقطة 1: حفظ في localStorage
       try {
         localStorage.setItem('last_market_recs', JSON.stringify(state.recs));
         localStorage.setItem('last_market_time', new Date().toISOString());
       } catch(e) {}
     }
 
+  } else if(isOfficialOpen && state.historicalFetched && !state.recsGeneratedToday) {
+    // ✅ المؤشرات محملة لكن التوصيات لم تُحسب بعد
+    buildStocks();
+    calcRecs();
+    state.lastMarketRecs = state.recs;
+    state.lastMarketTime = new Date();
+    state.recsGeneratedToday = true;
+    try {
+      localStorage.setItem('last_market_recs', JSON.stringify(state.recs));
+      localStorage.setItem('last_market_time', new Date().toISOString());
+    } catch(e) {}
+
   } else if(isOfficialOpen) {
-    // السوق مفتوح والمؤشرات محملة — أسعار فقط، التوصيات ثابتة ✅
+    // السوق مفتوح والتوصيات جاهزة — أسعار فقط ✅
 
   } else {
     // خارج السوق الرسمي
