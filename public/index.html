@@ -789,6 +789,23 @@ function buildStocks() {
     };
   });
 
+  // ===== Safety & Data Validation Layer =====
+  for(let s of state.stocks) {
+    const hasValidMA = typeof s.ma20==="number" && typeof s.ma50==="number" && s.ma20>0 && s.ma50>0;
+    const hasValidIndicators = s.strength!==undefined && s.confidence!==undefined && s.tradeQuality!==undefined;
+    const hasValidPrice = (state.prices?.[s.id]?.price || 0) > 0;
+
+    if(!hasValidMA || !hasValidIndicators || !hasValidPrice) {
+      s.liveScore = 0;
+      s.signalQuality = "LOW";
+      s.entryTiming = "LATE";
+      s.blockEntry = true;
+      s.dataStatus = "INVALID";
+      continue;
+    }
+    s.dataStatus = "VALID";
+  }
+
   // ===== Intraday Stock Engine (Score + Signal + Timing) =====
   const session = getMarketSession();
   if(session === "open" && state.historicalFetched) {
