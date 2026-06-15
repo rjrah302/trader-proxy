@@ -319,7 +319,8 @@ const _historicalFetchedToday = false;
 
 let state = {
   prices: {},      // أسعار حقيقية من FMP
-  lastPrices: {},  // آخر أسعار حقيقية محفوظة
+  // FIX: نحمّل lastPrices من localStorage فوراً — تمنع ظهور fallback عند إعادة التحميل
+  lastPrices: (() => { try { return JSON.parse(localStorage.getItem('lastPrices') || '{}'); } catch(e) { return {}; } })(),
   stocks: [],      // بيانات كاملة
   recs: null,      // التوصيات المحسوبة
   loading: true,
@@ -736,6 +737,8 @@ async function fetchPrices() {
     });
 
     state.dataSource = totalResults.length > 5 ? 'real' : 'simulated';
+    // FIX: احسب عدد الأسهم اللي وصلها سعر حقيقي فعلاً
+    state.realPriceCount = Object.values(state.prices).filter(p=>p.isReal).length;
     if(totalResults.length > 5) {
       Object.assign(state.lastPrices, state.prices);
       try { localStorage.setItem('lastPrices', JSON.stringify(state.lastPrices)); } catch(e) {}
@@ -788,15 +791,19 @@ function buildStocks() {
       HIMS:29,SHOP:105,MELI:2100,PATH:14,BILL:55,
     };
     const price = p?.price || state.lastPrices[s.id]?.price || fallback[s.id] || 50;
-    const change = p?.change || seededRnd(dailySeed(s.id)+20, -3, 3);
-    const changePct = p?.change || 0; // نسبة التغيير الحقيقية من API
+    const change = p?.change ?? (state.lastPrices[s.id]?.change ?? seededRnd(dailySeed(s.id)+20, -3, 3));
+    const changePct = p?.change ?? 0; // نسبة التغيير الحقيقية من API
+    // FIX: isReal = سعر جاء مباشرة من FMP في هذا التحديث
+    const isRealPrice = !!(p?.isReal && p?.price > 0);
     const ind = calcIndicators({...s, changePct}, price);
     return {
       ...s, price, change, changePct,
       high: p?.high || price*1.01,
       low: p?.low || price*0.99,
       volume: p?.volume || ind.vol,
-      isReal: p?.isReal || false,
+      isReal: isRealPrice,
+      // priceSource: من أين جاء السعر — للـ debugging
+      priceSource: p?.price > 0 ? 'live' : state.lastPrices[s.id]?.price ? 'cached' : 'fallback',
       priceInSar: price * USD_RATE,
       ...ind
     };
@@ -1056,8 +1063,9 @@ async function loadData() {
   await Promise.all([fetchPrices(), fetchNewsAndEarnings(), fetchLongTermEarnings()]);
   buildStocks();
 
-  if(isOfficialOpen && !state.historicalFetched) {
-    // ① السوق فتح لأول مرة اليوم — نحمّل المؤشرات
+  // FIX: نجيب المؤشرات التاريخية دائماً (مرة واحدة يومياً) — مو فقط لما السوق مفتوح
+  // هذا يحل مشكلة ثقة 0% في After Hours وPremarket
+  if(!state.historicalFetched) {
     state.loadingIndicators = true;
     render();
 
@@ -1072,25 +1080,25 @@ async function loadData() {
 
     buildStocks();
 
-    // حساب التوصيات بعد تحميل المؤشرات
-    if(!state.recsGeneratedToday) {
+    // حساب التوصيات بعد تحميل المؤشرات — إذا السوق مفتوح أو عندنا توصيات قديمة للتحديث
+    if(!state.recsGeneratedToday || !state.recs) {
       calcRecs();
       state.lastMarketRecs = state.recs;
       state.lastMarketTime = new Date();
-      state.recsGeneratedToday = true;
+      if(isOfficialOpen) state.recsGeneratedToday = true;
       try {
         localStorage.setItem('last_market_recs', JSON.stringify(state.recs));
         localStorage.setItem('last_market_time', new Date().toISOString());
       } catch(e) {}
     }
 
-  } else if(isOfficialOpen && state.historicalFetched && !state.recsGeneratedToday) {
+  } else if(state.historicalFetched && !state.recsGeneratedToday) {
     // ✅ المؤشرات محملة لكن التوصيات لم تُحسب بعد
     buildStocks();
     calcRecs();
     state.lastMarketRecs = state.recs;
     state.lastMarketTime = new Date();
-    state.recsGeneratedToday = true;
+    if(isOfficialOpen) state.recsGeneratedToday = true;
     try {
       localStorage.setItem('last_market_recs', JSON.stringify(state.recs));
       localStorage.setItem('last_market_time', new Date().toISOString());
@@ -1111,11 +1119,15 @@ async function loadData() {
     }
 
   } else {
-    // خارج السوق الرسمي
+    // خارج السوق الرسمي — التوصيات جاهزة، نعرض الآخر
     if(!state.recs && state.lastMarketRecs) {
       state.recs = state.lastMarketRecs;
     }
-    // ❌ لا نحسب توصيات جديدة خارج السوق أبداً
+    // FIX: إذا ما عندنا توصيات أبداً، نحسبها من المؤشرات المحملة
+    if(!state.recs && state.historicalFetched) {
+      calcRecs();
+    }
+    // ❌ لا نحسب توصيات جديدة خارج السوق إذا كانت موجودة مسبقاً
   }
 
   state.loading = false;
@@ -1711,7 +1723,9 @@ function renderHeader() {
             fontSize:"10px",
             color:state.dataSource==="real"?"#00ff88":"#ffe033",
             fontWeight:"700"
-          }},state.loading?"يتحمل...":state.dataSource==="real"?"🟢 حقيقي":"🟡 تقريبي"),
+          }},state.loading?"يتحمل...":state.dataSource==="real"
+            ? `🟢 حقيقي`
+            : `🟡 تقريبي`),
           el('span',{style:{fontSize:"9px",color:"var(--text3)",background:"var(--bg3)",borderRadius:"5px",padding:"1px 5px"}},`${state.priceCountdown}ث`)
         ]),
         el('span',{style:{fontSize:"9px",color:"var(--text3)"}},[
