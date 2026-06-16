@@ -1,4 +1,6 @@
-// stocks.js - FMP Proxy v5
+// stocks.js - FMP Proxy v6
+import fetch from 'node-fetch';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -7,9 +9,8 @@ export default async function handler(req, res) {
   const symbols = req.query.symbols || 'AAPL';
 
   try {
-    // طلب واحد لكل الأسهم معاً
-    const url = `https://financialmodelingprep.com/stable/quote?symbol=${symbols}&apikey=${apiKey}`;
-    const r   = await fetch(url);
+    const url  = `https://financialmodelingprep.com/stable/quote?symbol=${symbols}&apikey=${apiKey}`;
+    const r    = await fetch(url);
 
     if(!r.ok) {
       return res.status(r.status).json({ error: 'FMP error', status: r.status });
@@ -21,7 +22,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ quoteResponse: { result: [] } });
     }
 
-    // تحويل format FMP إلى format الأداة
     const result = data
       .filter(q => q && q.price > 0)
       .map(q => ({
