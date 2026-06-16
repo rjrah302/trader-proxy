@@ -1,20 +1,21 @@
-// stocks.js - FMP Proxy v6
+// stocks.js - FMP Proxy v7
 import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.setHeader('Cache-Control', 'no-store');
 
   const apiKey  = process.env.FMP_API_KEY || '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
   const symbols = req.query.symbols || 'AAPL';
 
   try {
-    const url  = `https://financialmodelingprep.com/stable/quote?symbol=${symbols}&apikey=${apiKey}`;
-    const r    = await fetch(url);
-
-    if(!r.ok) {
-      return res.status(r.status).json({ error: 'FMP error', status: r.status });
-    }
+    // نضيف timestamp لمنع الـ cache
+    const ts  = Date.now();
+    const url = `https://financialmodelingprep.com/stable/quote?symbol=${symbols}&apikey=${apiKey}&_=${ts}`;
+    const r   = await fetch(url, {
+      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+    });
 
     const data = await r.json();
 
