@@ -440,8 +440,7 @@ async function fetchPrices() {
       const timer= setTimeout(()=>ctrl.abort(), 15000);
       const res  = await fetch(`/api/stocks?symbols=${batch}`, {signal:ctrl.signal});
       clearTimeout(timer);
-      // نقبل 200 و304 معاً (304 = cache valid = بيانات صحيحة)
-      if(res.status !== 200 && res.status !== 304) continue;
+      if(!res.ok) continue;
       const json = await res.json();
       const data = json?.quoteResponse?.result || [];
       data.forEach(q => {
@@ -452,7 +451,7 @@ async function fetchPrices() {
           high:      parseFloat(q.regularMarketDayHigh  || q.regularMarketPrice*1.01),
           low:       parseFloat(q.regularMarketDayLow   || q.regularMarketPrice*0.99),
           volume:    parseInt(q.regularMarketVolume  || 0),
-          avgVolume: parseInt(q.regularMarketVolume  || 0),
+          avgVolume: parseInt(q.avgVolume  || q.regularMarketVolume || 0),
           isReal:    true,
         };
         gotData = true;
@@ -563,6 +562,9 @@ async function fetchIndicators() {
         const lows   = hist.map(d=>d.low).reverse();
 
         if(closes.length < 20) return; // بيانات غير كافية
+
+        // ── السعر الحالي (من state.prices أو آخر إغلاق تاريخي)
+        const cur = state.prices[sym]?.price || closes[closes.length-1] || 0;
 
         // ── MA20 (من آخر 20 إغلاق)
         const ma20 = closes.slice(-20).reduce((a,b)=>a+b,0)/20;
