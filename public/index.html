@@ -427,76 +427,103 @@ async function fetchMarketTrend() {
 async function fetchPrices() {
   state.loadingPrices = true;
   state.dataCheck.prices.total = ALL_STOCKS.length;
+  state._priceError = null;
 
   const symbols = ALL_STOCKS.map(s=>s.id);
   const BATCH   = 50;
-  let gotData   = false;
+  let proxyOk   = false;
+  let fmpOk     = false;
 
-  // ── محاولة 1: الـ proxy الموجود /api/stocks
+  function storeProxy(q) {
+    const price = parseFloat(q.regularMarketPrice);
+    if(!q.symbol || !(price > 0)) return false;
+    state.prices[q.symbol] = {
+      price, isReal: true,
+      change:    parseFloat(q.regularMarketChangePercent || 0),
+      high:      parseFloat(q.regularMarketDayHigh  || price*1.01),
+      low:       parseFloat(q.regularMarketDayLow   || price*0.99),
+      volume:    parseInt(q.regularMarketVolume  || 0),
+      avgVolume: parseInt(q.avgVolume || q.regularMarketVolume || 0),
+    };
+    return true;
+  }
+
+  function storeFMP(q) {
+    const price = parseFloat(q.price);
+    if(!q.symbol || !(price > 0)) return false;
+    state.prices[q.symbol] = {
+      price, isReal: true,
+      change:    parseFloat(q.changesPercentage ?? 0),
+      high:      parseFloat(q.dayHigh  || price*1.01),
+      low:       parseFloat(q.dayLow   || price*0.99),
+      volume:    parseInt(q.volume    || 0),
+      avgVolume: parseInt(q.avgVolume || q.volume || 0),
+    };
+    return true;
+  }
+
+  // ── محاولة 1: الـ proxy /api/stocks
+  const proxyErrors = [];
   for(let i=0; i<symbols.length; i+=BATCH) {
     const batch = symbols.slice(i, i+BATCH).join(',');
     try {
-      const ctrl = new AbortController();
-      const timer= setTimeout(()=>ctrl.abort(), 15000);
-      const res  = await fetch(`/api/stocks?symbols=${batch}`, {signal:ctrl.signal});
+      const ctrl  = new AbortController();
+      const timer = setTimeout(()=>ctrl.abort(), 15000);
+      const res   = await fetch('/api/stocks?symbols='+batch, {signal:ctrl.signal});
       clearTimeout(timer);
-      if(!res.ok) continue;
+      if(!res.ok) {
+        const txt = await res.text().catch(()=>'');
+        proxyErrors.push('HTTP '+res.status+': '+txt.slice(0,80));
+        console.warn('[Proxy] HTTP', res.status, txt.slice(0,200));
+        continue;
+      }
       const json = await res.json();
       const data = json?.quoteResponse?.result || [];
-      data.forEach(q => {
-        if(!q || !q.symbol || !q.regularMarketPrice) return;
-        state.prices[q.symbol] = {
-          price:     parseFloat(q.regularMarketPrice),
-          change:    parseFloat(q.regularMarketChangePercent || 0),
-          high:      parseFloat(q.regularMarketDayHigh  || q.regularMarketPrice*1.01),
-          low:       parseFloat(q.regularMarketDayLow   || q.regularMarketPrice*0.99),
-          volume:    parseInt(q.regularMarketVolume  || 0),
-          avgVolume: parseInt(q.avgVolume  || q.regularMarketVolume || 0),
-          isReal:    true,
-        };
-        gotData = true;
-      });
-      if(gotData) {
+      let got = 0;
+      data.forEach(q => { if(storeProxy(q)) { proxyOk = true; got++; } });
+      console.log('[Proxy] batch '+(i/BATCH+1)+': '+got+'/'+data.length);
+      if(proxyOk) {
         state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.isReal).length;
         render();
       }
-    } catch(e) {}
+    } catch(e) { proxyErrors.push(e.message||'network'); console.warn('[Proxy] err:', e.message); }
   }
 
-  // ── محاولة 2: FMP مباشرة (fallback)
-  if(!gotData) {
-    for(let i=0; i<symbols.length; i+=BATCH) {
-      const batch = symbols.slice(i, i+BATCH).join(',');
-      try {
-        const ctrl = new AbortController();
-        const timer= setTimeout(()=>ctrl.abort(), 15000);
-        const res  = await fetch(`${FMP_BASE}/stable/quote?symbol=${batch}&apikey=${API_KEY}`,{signal:ctrl.signal});
-        clearTimeout(timer);
-        if(!res.ok) continue;
-        const data = await res.json();
-        if(Array.isArray(data)) {
-          data.forEach(q => {
-            const price = parseFloat(q.price);
-            if(q.symbol && price > 0) {
-              state.prices[q.symbol] = {
-                price, isReal:true,
-                change:    parseFloat(q.changesPercentage ?? 0),
-                high:      parseFloat(q.dayHigh  || price*1.01),
-                low:       parseFloat(q.dayLow   || price*0.99),
-                volume:    parseInt(q.volume    || 0),
-                avgVolume: parseInt(q.avgVolume || 0),
-              };
-              gotData = true;
-            }
-          });
-          if(gotData) {
-            state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.isReal).length;
-            render();
-          }
-        }
-      } catch(e) {}
-    }
+  // ── محاولة 2: FMP مباشرة — نملأ الفراغات دائماً
+  const missing = symbols.filter(s => !state.prices[s]?.isReal);
+  const toFetch = missing.length > 0 ? missing : (!proxyOk ? symbols : []);
+  const fmpErrors = [];
+
+  for(let i=0; i<toFetch.length; i+=BATCH) {
+    const batch = toFetch.slice(i, i+BATCH).join(',');
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(()=>ctrl.abort(), 15000);
+      const res   = await fetch(FMP_BASE+'/stable/quote?symbol='+batch+'&apikey='+API_KEY, {signal:ctrl.signal});
+      clearTimeout(timer);
+      if(!res.ok) {
+        const txt = await res.text().catch(()=>'');
+        fmpErrors.push('HTTP '+res.status+': '+txt.slice(0,80));
+        console.warn('[FMP] HTTP', res.status, txt.slice(0,200));
+        continue;
+      }
+      const data = await res.json();
+      if(!Array.isArray(data)) {
+        fmpErrors.push('not array: '+JSON.stringify(data).slice(0,80));
+        console.warn('[FMP] رد غير متوقع:', data);
+        continue;
+      }
+      let got = 0;
+      data.forEach(q => { if(storeFMP(q)) { fmpOk = true; got++; } });
+      console.log('[FMP] batch '+(i/BATCH+1)+': '+got+'/'+data.length);
+      if(fmpOk) {
+        state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.isReal).length;
+        render();
+      }
+    } catch(e) { fmpErrors.push(e.message||'network'); console.warn('[FMP] err:', e.message); }
   }
+
+  const gotData = proxyOk || fmpOk;
 
   // ── محاولة 3: cache
   if(!gotData) {
@@ -508,11 +535,15 @@ async function fetchPrices() {
         Object.keys(cd).forEach(sym => {
           if(!state.prices[sym]) state.prices[sym] = {...cd[sym], isReal:false};
         });
+        console.log('[Cache] تم استرجاع الأسعار');
       }
     } catch(e) {}
+    if(proxyErrors.length || fmpErrors.length) {
+      state._priceError = 'proxy: '+proxyErrors[0]+' | fmp: '+fmpErrors[0];
+      console.error('[Prices] فشل كلي:', state._priceError);
+    }
   }
 
-  // حفظ
   if(gotData) {
     try {
       localStorage.setItem('cached_prices', JSON.stringify(state.prices));
@@ -520,8 +551,9 @@ async function fetchPrices() {
     } catch(e) {}
   }
 
-  state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.price>0).length;
+  state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.price>0 && p.isReal).length;
   state.loadingPrices = false;
+  console.log('[Prices] النتيجة: '+state.dataCheck.prices.real+'/'+state.dataCheck.prices.total+' | proxy:'+proxyOk+' fmp:'+fmpOk);
 }
 
 // ── 2. مؤشرات تقنية (3 طلبات/سهم، دفعات 8)
@@ -1266,9 +1298,18 @@ function renderHeader() {
           session.label,
         ]),
         el('div', {style:{fontSize:'10px', color:C.text2}}, [session.sub]),
-        el('div', {style:{fontSize:'10px', color:C.text2, marginTop:'1px'}}, [
-          pricesOk ? `✅ ${dc.prices.real}/${dc.prices.total} سهم` : '⏳ جاري التحميل...'
-        ]),
+        !pricesOk && state._priceError
+          ? el('button', {
+              style:{
+                marginTop:'3px', fontSize:'10px', color:'#ff2d7a',
+                background:'rgba(255,45,122,.1)', border:'1px solid rgba(255,45,122,.3)',
+                borderRadius:'6px', padding:'2px 8px', cursor:'pointer', display:'block',
+              },
+              onClick: () => window.retryPrices && window.retryPrices(),
+            }, ['❌ فشل • اضغط لإعادة المحاولة'])
+          : el('div', {style:{fontSize:'10px', color:C.text2, marginTop:'1px'}}, [
+              pricesOk ? `✅ ${dc.prices.real}/${dc.prices.total} سهم` : '⏳ جاري التحميل...'
+            ]),
       ]),
     ]),
   ]);
@@ -2355,6 +2396,14 @@ window.testMarket = () => {
   state.indicatorsDone = false;
   _recsLockedToday     = false;
   loadData(true);
+};
+
+// ── إعادة تحميل الأسعار يدوياً
+window.retryPrices = async () => {
+  await fetchPrices();
+  await fetchMarketTrend();
+  render();
+  console.log('[Retry] تم تحديث الأسعار:', state.dataCheck.prices.real, 'سهم');
 };
 
 // ── بدء التحميل
