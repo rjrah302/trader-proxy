@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "public/index.html", "use": "@vercel/static" },
+    { "src": "api/stocks.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/stocks", "dest": "/api/stocks.js" },
+    { "src": "/(.*)", "dest": "/public/$1" }
+  ]
+}
