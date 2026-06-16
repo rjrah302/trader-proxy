@@ -50,6 +50,8 @@ button:active{transform:scale(.96);opacity:.8}
 const API_KEY   = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
 const USD_RATE  = 3.75;
 const CAPITAL   = (() => { try { return parseFloat(localStorage.getItem('capital')||'100000'); } catch(e){return 100000;} })();
+// نستخدم الـ proxy الموجود /api/stocks للأسعار
+// وFMP مباشرة للمؤشرات التقنية (تدعم CORS)
 const FMP_BASE  = 'https://financialmodelingprep.com';
 
 // وقت السوق الأمريكي بالدقائق من منتصف الليل UTC
@@ -430,62 +432,87 @@ async function fetchPrices() {
   const BATCH   = 50;
   let gotData   = false;
 
+  // ── محاولة 1: الـ proxy الموجود /api/stocks
   for(let i=0; i<symbols.length; i+=BATCH) {
     const batch = symbols.slice(i, i+BATCH).join(',');
-    const ctrl  = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
     try {
-      const url  = `${FMP_BASE}/stable/quote?symbol=${batch}&apikey=${API_KEY}`;
-      const res  = await fetch(url, {signal: ctrl.signal});
+      const ctrl = new AbortController();
+      const timer= setTimeout(()=>ctrl.abort(), 15000);
+      const res  = await fetch(`/api/stocks?symbols=${batch}`, {signal:ctrl.signal});
       clearTimeout(timer);
       if(!res.ok) continue;
-      const data = await res.json();
-      if(Array.isArray(data) && data.length > 0) {
-        data.forEach(q => {
-          const price = parseFloat(q.price);
-          if(q.symbol && price > 0) {
-            state.prices[q.symbol] = {
-              price,
-              change:    parseFloat(q.changesPercentage ?? q.change ?? 0),
-              high:      parseFloat(q.dayHigh  > 0 ? q.dayHigh  : price * 1.01),
-              low:       parseFloat(q.dayLow   > 0 ? q.dayLow   : price * 0.99),
-              volume:    parseInt(q.volume    || 0),
-              avgVolume: parseInt(q.avgVolume || 0),
-              isReal:    true,
-            };
-            gotData = true;
-          }
-        });
-        // render بعد كل دفعة ناجحة
+      const json = await res.json();
+      const data = json?.quoteResponse?.result || [];
+      data.forEach(q => {
+        if(!q || !q.symbol || !q.regularMarketPrice) return;
+        state.prices[q.symbol] = {
+          price:     parseFloat(q.regularMarketPrice),
+          change:    parseFloat(q.regularMarketChangePercent || 0),
+          high:      parseFloat(q.regularMarketDayHigh  || q.regularMarketPrice*1.01),
+          low:       parseFloat(q.regularMarketDayLow   || q.regularMarketPrice*0.99),
+          volume:    parseInt(q.regularMarketVolume  || 0),
+          avgVolume: parseInt(q.regularMarketVolume  || 0),
+          isReal:    true,
+        };
+        gotData = true;
+      });
+      if(gotData) {
         state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.isReal).length;
         render();
-      }
-    } catch(e) {
-      clearTimeout(timer);
-    }
-  }
-
-  // لو فشل الجلب — نستخدم الـ cache
-  if(!gotData) {
-    try {
-      const cached = localStorage.getItem('cached_prices');
-      const time   = localStorage.getItem('cached_prices_time');
-      if(cached && time) {
-        const ageHours = (Date.now() - new Date(time)) / 36e5;
-        if(ageHours < 48) {
-          const cachedData = JSON.parse(cached);
-          // نعلّم الأسعار المحفوظة كـ cached وليست حية
-          Object.keys(cachedData).forEach(sym => {
-            if(!state.prices[sym]) {
-              state.prices[sym] = {...cachedData[sym], isReal: false};
-            }
-          });
-        }
       }
     } catch(e) {}
   }
 
-  // حفظ الأسعار الجديدة
+  // ── محاولة 2: FMP مباشرة (fallback)
+  if(!gotData) {
+    for(let i=0; i<symbols.length; i+=BATCH) {
+      const batch = symbols.slice(i, i+BATCH).join(',');
+      try {
+        const ctrl = new AbortController();
+        const timer= setTimeout(()=>ctrl.abort(), 15000);
+        const res  = await fetch(`${FMP_BASE}/stable/quote?symbol=${batch}&apikey=${API_KEY}`,{signal:ctrl.signal});
+        clearTimeout(timer);
+        if(!res.ok) continue;
+        const data = await res.json();
+        if(Array.isArray(data)) {
+          data.forEach(q => {
+            const price = parseFloat(q.price);
+            if(q.symbol && price > 0) {
+              state.prices[q.symbol] = {
+                price, isReal:true,
+                change:    parseFloat(q.changesPercentage ?? 0),
+                high:      parseFloat(q.dayHigh  || price*1.01),
+                low:       parseFloat(q.dayLow   || price*0.99),
+                volume:    parseInt(q.volume    || 0),
+                avgVolume: parseInt(q.avgVolume || 0),
+              };
+              gotData = true;
+            }
+          });
+          if(gotData) {
+            state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.isReal).length;
+            render();
+          }
+        }
+      } catch(e) {}
+    }
+  }
+
+  // ── محاولة 3: cache
+  if(!gotData) {
+    try {
+      const cached = localStorage.getItem('cached_prices');
+      const time   = localStorage.getItem('cached_prices_time');
+      if(cached && time && (Date.now()-new Date(time))/36e5 < 48) {
+        const cd = JSON.parse(cached);
+        Object.keys(cd).forEach(sym => {
+          if(!state.prices[sym]) state.prices[sym] = {...cd[sym], isReal:false};
+        });
+      }
+    } catch(e) {}
+  }
+
+  // حفظ
   if(gotData) {
     try {
       localStorage.setItem('cached_prices', JSON.stringify(state.prices));
