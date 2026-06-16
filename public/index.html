@@ -448,6 +448,9 @@ async function fetchPrices() {
             realCount++;
           }
         });
+        // FIX: نُحدّث الواجهة بعد كل دفعة — تظهر الأسهم تدريجياً
+        state.dataCheck.prices.real = realCount;
+        render();
       }
     } catch(e) {}
   }
