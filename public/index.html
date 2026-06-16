@@ -430,7 +430,7 @@ async function fetchPrices() {
   state._priceError = null;
 
   const symbols = ALL_STOCKS.map(s=>s.id);
-  const BATCH   = 50;
+  const BATCH   = 25;
   let proxyOk   = false;
   let fmpOk     = false;
 
@@ -468,7 +468,7 @@ async function fetchPrices() {
     const batch = symbols.slice(i, i+BATCH).join(',');
     try {
       const ctrl  = new AbortController();
-      const timer = setTimeout(()=>ctrl.abort(), 15000);
+      const timer = setTimeout(()=>ctrl.abort(), 60000);
       const res   = await fetch('/api/stocks?symbols='+batch, {signal:ctrl.signal});
       clearTimeout(timer);
       if(!res.ok) {
@@ -2182,6 +2182,19 @@ function renderMarketTab() {
         borderRadius:'6px', padding:'2px 8px',
         border:`1px solid ${isLive?'rgba(0,255,136,.3)':'rgba(255,224,51,.3)'}`,
       }}, [isLive ? '🟢 أسعار حية' : '🟡 آخر تحديث']),
+      el('button', {
+        style:{
+          fontSize:'11px', fontWeight:'700', color:C.blue,
+          background:'rgba(0,200,255,.1)', borderRadius:'6px',
+          padding:'4px 10px', border:'1px solid rgba(0,200,255,.3)',
+          cursor:'pointer',
+        },
+        onClick: async () => {
+          await fetchPrices();
+          await fetchMarketTrend();
+          render();
+        }
+      }, ['🔄 تحديث']),
     ]),
     gainers.length>0 && el('div', {style:{marginBottom:'12px'}}, [
       el('div', {style:{fontSize:'11px', color:C.green, fontWeight:'700', marginBottom:'6px'}}, [
