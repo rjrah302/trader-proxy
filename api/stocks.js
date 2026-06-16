@@ -22,11 +22,11 @@ export default async function handler(req, res) {
           return {
             symbol:                     q.symbol,
             regularMarketPrice:         parseFloat(q.price),
-            regularMarketChangePercent: parseFloat(q.changePercentage ?? q.changesPercentage ?? 0),
-            regularMarketVolume:        parseInt(q.volume    ?? 0),
-            regularMarketDayHigh:       parseFloat(q.dayHigh ?? q.price),
-            regularMarketDayLow:        parseFloat(q.dayLow  ?? q.price),
-            avgVolume:                  parseInt(q.volume    ?? 0),
+            regularMarketChangePercent: parseFloat(q.changePercentage || q.changesPercentage || 0),
+            regularMarketVolume:        parseInt(q.volume    || 0),
+            regularMarketDayHigh:       parseFloat(q.dayHigh || q.price),
+            regularMarketDayLow:        parseFloat(q.dayLow  || q.price),
+            avgVolume:                  parseInt(q.volume    || 0),
           };
         } catch(e) { return null; }
       })
