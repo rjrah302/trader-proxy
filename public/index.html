@@ -428,49 +428,72 @@ async function fetchPrices() {
 
   const symbols = ALL_STOCKS.map(s=>s.id);
   const BATCH   = 50;
-  let totalResults = [];
+  let gotData   = false;
 
-  try {
-    for(let i=0; i<symbols.length; i+=BATCH) {
-      const batch = symbols.slice(i, i+BATCH).join(',');
-      const ctrl  = new AbortController();
-      setTimeout(() => ctrl.abort(), 10000); // timeout 10 ثواني
-      const url = `${FMP_BASE}/stable/quote?symbol=${batch}&apikey=${API_KEY}`;
-      try {
-        const res  = await fetch(url, {signal: ctrl.signal});
-        if(!res.ok) continue;
-        const data = await res.json();
-        if(Array.isArray(data)) totalResults = totalResults.concat(data);
-      } catch(e) {}
-    }
-
-    totalResults.forEach(q => {
-      const price = parseFloat(q.price);
-      if(q.symbol && price > 0) {
-        state.prices[q.symbol] = {
-          price,
-          change:    parseFloat(q.changesPercentage ?? q.change ?? 0),
-          high:      parseFloat(q.dayHigh  > 0 ? q.dayHigh  : price * 1.01),
-          low:       parseFloat(q.dayLow   > 0 ? q.dayLow   : price * 0.99),
-          volume:    parseInt(q.volume    || 0),
-          avgVolume: parseInt(q.avgVolume || 0),
-          isReal:    true,
-        };
+  for(let i=0; i<symbols.length; i+=BATCH) {
+    const batch = symbols.slice(i, i+BATCH).join(',');
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const url  = `${FMP_BASE}/stable/quote?symbol=${batch}&apikey=${API_KEY}`;
+      const res  = await fetch(url, {signal: ctrl.signal});
+      clearTimeout(timer);
+      if(!res.ok) continue;
+      const data = await res.json();
+      if(Array.isArray(data) && data.length > 0) {
+        data.forEach(q => {
+          const price = parseFloat(q.price);
+          if(q.symbol && price > 0) {
+            state.prices[q.symbol] = {
+              price,
+              change:    parseFloat(q.changesPercentage ?? q.change ?? 0),
+              high:      parseFloat(q.dayHigh  > 0 ? q.dayHigh  : price * 1.01),
+              low:       parseFloat(q.dayLow   > 0 ? q.dayLow   : price * 0.99),
+              volume:    parseInt(q.volume    || 0),
+              avgVolume: parseInt(q.avgVolume || 0),
+              isReal:    true,
+            };
+            gotData = true;
+          }
+        });
+        // render بعد كل دفعة ناجحة
+        state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.isReal).length;
+        render();
       }
-    });
-
-    state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.isReal).length;
-
-    // حفظ في localStorage
-    if(state.dataCheck.prices.real > 0) {
-      try {
-        localStorage.setItem('cached_prices', JSON.stringify(state.prices));
-        localStorage.setItem('cached_prices_time', new Date().toISOString());
-      } catch(e) {}
+    } catch(e) {
+      clearTimeout(timer);
     }
+  }
 
-  } catch(e) {}
+  // لو فشل الجلب — نستخدم الـ cache
+  if(!gotData) {
+    try {
+      const cached = localStorage.getItem('cached_prices');
+      const time   = localStorage.getItem('cached_prices_time');
+      if(cached && time) {
+        const ageHours = (Date.now() - new Date(time)) / 36e5;
+        if(ageHours < 48) {
+          const cachedData = JSON.parse(cached);
+          // نعلّم الأسعار المحفوظة كـ cached وليست حية
+          Object.keys(cachedData).forEach(sym => {
+            if(!state.prices[sym]) {
+              state.prices[sym] = {...cachedData[sym], isReal: false};
+            }
+          });
+        }
+      }
+    } catch(e) {}
+  }
 
+  // حفظ الأسعار الجديدة
+  if(gotData) {
+    try {
+      localStorage.setItem('cached_prices', JSON.stringify(state.prices));
+      localStorage.setItem('cached_prices_time', new Date().toISOString());
+    } catch(e) {}
+  }
+
+  state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.price>0).length;
   state.loadingPrices = false;
 }
 
