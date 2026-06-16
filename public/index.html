@@ -258,7 +258,7 @@ const STOCKS = [
   // 🛒 استهلاك إضافي
   {id:"NKE",   name:"Nike",          sector:"ملابس/رياضة",     cat:"large",  beta:1.1},
   {id:"SBUX",  name:"Starbucks",     sector:"مطاعم",           cat:"large",  beta:0.9},
-  {id:"MCD",   name:"McDonald's",    sector:"مطاعم",           cat:"large",  beta:0.7},
+  {id:"MCD",   name:"McDonald's",   sector:"مطاعم",           cat:"large",  beta:0.7},
   {id:"TGT",   name:"Target",        sector:"تجزئة",           cat:"large",  beta:1.0},
   {id:"HD",    name:"Home Depot",    sector:"تجزئة",           cat:"large",  beta:1.0},
   {id:"LOW",   name:"Lowe's",        sector:"تجزئة",           cat:"large",  beta:1.1},
@@ -302,8 +302,19 @@ const ALL_STOCKS = STOCKS.filter((s,i,a) => a.findIndex(x=>x.id===s.id)===i);
 // ═══════════════════ STATE ══════════════════════════════════════
 // ================================================================
 const state = {
-  // بيانات السوق
-  prices:     {},   // أسعار حية من FMP — isReal=true فقط
+  // أسعار — نسترجع من cache فوراً عند البدء
+  prices: (() => {
+    try {
+      const cached = localStorage.getItem('cached_prices');
+      const time   = localStorage.getItem('cached_prices_time');
+      if(cached && time) {
+        // نستخدم الـ cache إذا أقل من 24 ساعة
+        const ageHours = (Date.now() - new Date(time)) / 36e5;
+        if(ageHours < 24) return JSON.parse(cached);
+      }
+    } catch(e) {}
+    return {};
+  })(),
   indicators: {},   // مؤشرات تقنية حقيقية من FMP
   profiles:   {},   // بيانات الشركة (beta, avgVol)
   news:       {},   // أخبار
@@ -443,6 +454,14 @@ async function fetchPrices() {
 
   state.dataCheck.prices.real = realCount;
   state.loadingPrices = false;
+
+  // حفظ الأسعار في localStorage — تظهر فوراً في الزيارة التالية
+  if(realCount > 0) {
+    try {
+      localStorage.setItem('cached_prices', JSON.stringify(state.prices));
+      localStorage.setItem('cached_prices_time', new Date().toISOString());
+    } catch(e) {}
+  }
 }
 
 // ── 2. مؤشرات تقنية (3 طلبات/سهم، دفعات 8)
