@@ -54,18 +54,21 @@ const CAPITAL   = (() => { try { return parseFloat(localStorage.getItem('capital
 // وقت السوق الأمريكي بالدقائق من منتصف الليل UTC
 function getMarketTimes() {
   const now = new Date();
-  // صيف: EDT = UTC-4، شتاء: EST = UTC-5
   const isSummer = (() => {
     const y = now.getUTCFullYear();
-    // DST يبدأ ثاني أحد مارس، ينتهي أول أحد نوفمبر
     const start = new Date(Date.UTC(y,2,8)); start.setUTCDate(8-(start.getUTCDay()||7)+7);
     const end   = new Date(Date.UTC(y,10,1)); end.setUTCDate(1+(7-end.getUTCDay())%7);
     return now >= start && now < end;
   })();
   return {
-    open:   isSummer ? 810  : 870,   // 4:30م / 5:30م سعودي
-    close:  isSummer ? 1200 : 1260,  // 11:00م / 12:00ص سعودي
-    midDay: isSummer ? 960  : 1020,  // 7:00م سعودي
+    // Pre-Market: 4:00ص - 4:30م سعودي (صيف: UTC 01:00-13:30)
+    preOpen:  isSummer ? 60   : 120,   // 4:00ص  / 5:00ص  سعودي
+    open:     isSummer ? 810  : 870,   // 4:30م  / 5:30م  سعودي
+    close:    isSummer ? 1200 : 1260,  // 11:00م / 12:00ص سعودي
+    // After Hours: 11:00م - 1:00ص سعودي (صيف: UTC 20:00-22:00)
+    afterEnd: isSummer ? 1320 : 1380,  // 1:00ص  / 2:00ص  سعودي
+    midDay:   isSummer ? 960  : 1020,  // 7:00م  / 8:00م  سعودي
+    isSummer,
   };
 }
 
@@ -74,10 +77,75 @@ function getNowMins() {
   return now.getUTCHours()*60 + now.getUTCMinutes();
 }
 
+// ── حالة السوق الأربع
+function getMarketSession() {
+  if(window.DEBUG_MARKET) return 'open';
+  const t = getMarketTimes();
+  const m = getNowMins();
+
+  // السوق مفتوح
+  if(m >= t.open && m < t.close) return 'open';
+
+  // Pre-Market (صباحاً قبل الفتح)
+  if(m >= t.preOpen && m < t.open) return 'pre';
+
+  // After Hours — نتعامل مع منتصف الليل
+  // afterEnd قد يتجاوز 1440 (24 ساعة) في الشتاء
+  if(t.afterEnd <= 1440) {
+    // لا يتجاوز منتصف الليل — شيك عادي
+    if(m >= t.close && m < t.afterEnd) return 'after';
+  } else {
+    // يتجاوز منتصف الليل — نشيك على جزئين
+    const afterEndAdj = t.afterEnd - 1440; // الوقت بعد منتصف الليل
+    if(m >= t.close || m < afterEndAdj) return 'after';
+  }
+
+  return 'closed';
+}
+
 function isMarketOpen() {
-  if(window.DEBUG_MARKET) return true;
-  const t = getMarketTimes(), m = getNowMins();
-  return m >= t.open && m < t.close;
+  return getMarketSession() === 'open';
+}
+
+// ── معلومات حالة السوق للعرض
+function getSessionInfo() {
+  const session = getMarketSession();
+  const t = getMarketTimes();
+  const tz = t.isSummer ? 'صيف' : 'شتاء';
+  switch(session) {
+    case 'open':
+      return {
+        label:  'السوق مفتوح',
+        sub:    `4:30م - 11:00م ${tz}`,
+        color:  '#00ff88',
+        dot:    true,
+        canRec: true,   // يمكن التوصية
+      };
+    case 'pre':
+      return {
+        label:  'Pre-Market',
+        sub:    `4:00ص - 4:30م ${tz}`,
+        color:  '#ffe033',
+        dot:    false,
+        canRec: false,  // لا توصيات — أسعار غير رسمية
+      };
+    case 'after':
+      return {
+        label:  'After Hours',
+        sub:    `11:00م - 1:00ص ${tz}`,
+        color:  '#ff7a00',
+        dot:    false,
+        canRec: false,  // لا توصيات — تداول محدود
+      };
+    default:
+      return {
+        label:  'السوق مغلق',
+        sub:    `يفتح ${t.isSummer?'4:30م':'5:30م'} ${tz}`,
+        color:  '#ff7a00',
+        dot:    false,
+        canRec: false,
+      };
+  }
 }
 
 // ================================================================
@@ -1022,6 +1090,9 @@ async function loadData(full=false) {
   // تحميل الأسعار + اتجاه السوق دائماً
   await Promise.all([fetchPrices(), fetchMarketTrend()]);
 
+  // FIX: render مباشرة بعد الأسعار — يحدّث تبويب السوق فوراً
+  render();
+
   // تحميل المؤشرات مرة واحدة يومياً عند فتح السوق
   // أو عند الطلب الصريح (full=true)
   if((isMarketOpen() || full) && !state.indicatorsDone && !_indicatorsLoading) {
@@ -1077,9 +1148,9 @@ function renderApp() {
 
 // ── Header
 function renderHeader() {
-  const open = isMarketOpen();
-  const dc   = state.dataCheck;
-  const pricesOk = dc.prices.real > 0;
+  const session = getSessionInfo();
+  const dc      = state.dataCheck;
+  const pricesOk= dc.prices.real > 0;
 
   return el('div', {style:{
     background:'linear-gradient(135deg,#0a1020,#0d1526)',
@@ -1106,13 +1177,14 @@ function renderHeader() {
       el('div', {style:{textAlign:'left'}}, [
         el('div', {style:{
           fontSize:'11px', fontWeight:'700',
-          color: open ? C.green : C.orange,
+          color: session.color,
           display:'flex', alignItems:'center', gap:'4px',
         }}, [
-          el('span', {class: open?'pulse':''}, [open?'●':'●']),
-          open ? 'السوق مفتوح' : 'السوق مغلق',
+          el('span', {class: session.dot?'pulse':''}, ['●']),
+          session.label,
         ]),
-        el('div', {style:{fontSize:'10px', color:C.text2}}, [
+        el('div', {style:{fontSize:'10px', color:C.text2}}, [session.sub]),
+        el('div', {style:{fontSize:'10px', color:C.text2, marginTop:'1px'}}, [
           pricesOk ? `✅ ${dc.prices.real}/${dc.prices.total} سهم` : '⏳ جاري التحميل...'
         ]),
       ]),
@@ -1228,16 +1300,22 @@ function renderContent() {
 // ================================================================
 
 function renderRecTab() {
-  const open = isMarketOpen();
+  const session = getSessionInfo();
+  const sInfo   = getMarketSession();
 
-  // حالة: لا بيانات بعد
-  if(!state.indicatorsDone && !_indicatorsLoading && !open) {
+  // حالة: Pre-Market أو After Hours أو مغلق — ولا توصيات محفوظة
+  if(!session.canRec && !state.indicatorsDone && !_indicatorsLoading) {
+    const icon  = sInfo==='pre' ? '🌅' : sInfo==='after' ? '🌆' : '🌙';
+    const msg   = sInfo==='pre'
+      ? 'قبل افتتاح السوق — لا توصيات بعد\nستبدأ التوصيات الساعة '+(session.sub.split(' ')[2]||'4:30م')
+      : sInfo==='after'
+      ? 'بعد إغلاق السوق — لا توصيات جديدة\nالتوصيات القادمة عند فتح السوق الغد'
+      : 'السوق مغلق — لا توصيات\nستبدأ التوصيات عند فتح السوق 4:30م';
+
     return el('div', {style:{textAlign:'center', padding:'60px 20px'}}, [
-      el('div', {style:{fontSize:'48px', marginBottom:'12px'}}, ['🌙']),
-      el('div', {style:{fontSize:'16px', fontWeight:'800', color:C.text, marginBottom:'8px'}}, ['السوق مغلق']),
-      el('div', {style:{fontSize:'12px', color:C.text2, lineHeight:'1.8'}}, [
-        'ستبدأ التوصيات عند فتح السوق الساعة 4:30م'
-      ]),
+      el('div', {style:{fontSize:'48px', marginBottom:'12px'}}, [icon]),
+      el('div', {style:{fontSize:'14px', fontWeight:'800', color:C.text, marginBottom:'8px'}}, [session.label]),
+      el('div', {style:{fontSize:'11px', color:C.text2, lineHeight:'1.8', whiteSpace:'pre-line'}}, [msg]),
       el('div', {style:{
         marginTop:'16px', fontSize:'11px', color:C.green,
         background:'rgba(0,255,136,.08)', borderRadius:'8px',
