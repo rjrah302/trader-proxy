@@ -14,7 +14,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https://financialmodelingprep.com"
+          "value": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src *"
         }
       ]
     }
