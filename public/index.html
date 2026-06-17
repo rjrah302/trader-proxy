@@ -2766,15 +2766,15 @@ window.retryPrices = async () => {
     const recs = JSON.parse(savedRecs);
     if(!Array.isArray(recs) || recs.length === 0) return;
 
-    // استرجاع التوصيات
+    // استرجاع التوصيات — نعرضها لكن نعيد تحميل المؤشرات
     state.recs          = recs;
     state.recsTime      = new Date(savedTime);
-    state.indicatorsDone = true;  // مهم: يفعّل الـ timer
-    _recsLockedToday    = true;
+    state.indicatorsDone = false;  // نحمّل المؤشرات من جديد
+    _recsLockedToday    = false;   // نفتح القفل لإعادة الحساب بعد المؤشرات
     _lastRecDate        = today;
-    _midDayDone         = midday; // إذا تحديث 7م تم — لا نعيده
+    _midDayDone         = midday;
 
-    console.log('[Restore] تم استرجاع', recs.length, 'توصية من', savedTime);
+    console.log('[Restore] تم استرجاع', recs.length, 'توصية — سيتم تحديث المؤشرات');
   } catch(e) {}
 })();
 
