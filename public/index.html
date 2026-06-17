@@ -447,11 +447,15 @@ async function fetchMarketTrend() {
 
     if(state.spyChange !== null && state.qqqChange !== null) {
       const avg = (state.spyChange + state.qqqChange) / 2;
+      // هابط حقيقي: متوسط أقل من -1.5% (تصحيح قوي)
+      // صاعد: متوسط أكثر من +0.3%
+      // محايد: بينهما (تذبذب طبيعي)
       state.marketTrend =
         avg >= 0.3  ? 'bullish'  :
-        avg <= -0.3 ? 'bearish'  :
+        avg <= -1.5 ? 'bearish'  :
                       'neutral';
-      console.log('[Market] SPY:'+state.spyChange+'% QQQ:'+state.qqqChange+'% → '+state.marketTrend);
+      console.log('[Market] SPY:'+state.spyChange+'% QQQ:'+state.qqqChange+'% avg:'+avg.toFixed(2)+'% → '+state.marketTrend);
+    }
     }
   } catch(e) { console.warn('[Market] error:', e.message); }
 }
@@ -1208,8 +1212,8 @@ function calcRecs() {
 // ================================================================
 
 function calcSpeculative() {
-  // ══ شرط جوهري: السوق العام يجب أن يكون محايداً أو صاعداً
-  // في السوق الهابط أسهم المجازفة تنهار بسرعة
+  // ══ شرط: السوق الهابط الحقيقي فقط يوقف المجازفة (أقل من -1.5%)
+  // السوق المحايد (-1.5% إلى +0.3%) يسمح بمجازفة محدودة مع تحذير
   if(state.marketTrend === 'bearish') {
     state.speculativeRecs = [];
     return [];
@@ -1985,7 +1989,7 @@ function renderSpecTab() {
     ]);
   }
 
-  // ══ تحذير السوق الهابط
+  // ══ تحذير السوق الهابط الحقيقي (أقل من -1.5%)
   if(state.marketTrend === 'bearish') {
     return el('div', {style:{padding:'20px 16px'}}, [
       el('div', {style:{
