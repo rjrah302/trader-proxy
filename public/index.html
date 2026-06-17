@@ -1393,10 +1393,11 @@ function renderHeader() {
 function renderTicker() {
   const priced = ALL_STOCKS
     .map(s => { const p = state.prices[s.id]; return p?.price > 0 ? {...s, p} : null; })
-    .filter(Boolean).slice(0, 30);
+    .filter(Boolean);
   if(priced.length === 0) return el('div', {}, []);
 
-  const items = [...priced, ...priced].map(s => {
+  // نكرر الأسهم 3 مرات لضمان امتلاء الشريط
+  const items = [...priced, ...priced, ...priced].map(s => {
     const color = (s.p.change||0) >= 0 ? C.green : C.pink;
     return el('span', {style:{
       marginLeft:'24px', fontSize:'11px', whiteSpace:'nowrap', color,
