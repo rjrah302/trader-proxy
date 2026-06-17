@@ -802,8 +802,9 @@ async function fetchIndicators() {
 // ── 3. أخبار
 async function fetchNews() {
   try {
-    const syms = ALL_STOCKS.map(s=>s.id).join(',');
-    const res  = await fetch(`${FMP_BASE}/stable/news/stock?symbols=${syms}&limit=100&apikey=${API_KEY}`);
+    // أهم 30 سهم فقط للأخبار لتقليل طول URL
+    const topSyms = ALL_STOCKS.slice(0,30).map(s=>s.id).join(',');
+    const res  = await fetch(`${FMP_BASE}/stable/news/stock?symbols=${topSyms}&limit=50&apikey=${API_KEY}`);
     const data = await res.json();
     state.news = {};
     if(Array.isArray(data)) {
@@ -1279,17 +1280,24 @@ async function loadData(full=false) {
     _indicatorsLoading = true;
     render();
 
-    // نبدأ الجلب بالتوازي
+    // نبدأ بالمؤشرات أولاً — الأهم
+    await fetchIndicators();
+
+    // احسب التوصيات مباشرة بعد المؤشرات
+    calcRecs();
+    calcSpeculative();
+    render();
+
+    // ثم نكمل الباقي بالتوازي (أخبار + أرباح + profiles)
     await Promise.all([
-      fetchIndicators(),
       fetchNews(),
       fetchEarnings(),
       fetchProfiles(),
-    ]);
+    ]).catch(e => console.warn('[loadData] secondary fetch error:', e.message));
 
     _indicatorsLoading = false;
 
-    // احسب التوصيات بعد اكتمال البيانات
+    // إعادة حساب بعد الأخبار والأرباح
     calcRecs();
     calcSpeculative();
   } else if(state.indicatorsDone) {
