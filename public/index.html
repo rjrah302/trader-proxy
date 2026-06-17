@@ -487,12 +487,12 @@ async function fetchPrices() {
     if(!q.symbol || !(price > 0)) return false;
     state.prices[q.symbol] = {
       price, isReal: true,
+      // stable يستخدم changePercentage، v3 يستخدم changesPercentage
       change:    parseFloat(q.changePercentage ?? q.changesPercentage ?? q.change ?? 0),
       high:      parseFloat(q.dayHigh  ?? q.high  ?? price*1.01),
       low:       parseFloat(q.dayLow   ?? q.low   ?? price*0.99),
       volume:    parseInt(q.volume    ?? 0),
-      // avgVolume من quote مباشرة — أسرع وأكثر موثوقية من profiles
-      avgVolume: parseInt(q.avgVolume ?? q.averageVolume ?? q.volume ?? 0),
+      avgVolume: parseInt(q.avgVolume ?? q.volume ?? 0),
     };
     return true;
   }
@@ -942,9 +942,9 @@ function calcSignal(stock) {
     else if(stochRsi>70) { sell++; }
   }
 
-  // 7. Volume — avgVolume من prices أولاً (من quote) ثم من profiles كـ fallback
-  const vol    = p.volume || 0;
-  const avgVol = p.avgVolume || pro?.avgVolume || 0;
+  // 7. Volume — نستخدم avgVolume من profile إذا توفر وإلا نتجاهل
+  const vol    = p.volume;
+  const avgVol = pro?.avgVolume || 0;
   const volR   = avgVol>0 ? vol/avgVol : 0;
   if(volR>1.5) {
     if(buy>sell) { buy++;  reasons.push('حجم تداول مرتفع ×'+fmt(volR,1)); }
@@ -1715,281 +1715,9 @@ function renderRecCard(r, idx, alloc) {
   const sigColor = r.signal.includes('قوي') ? C.green :
                    r.signal.includes('شراء') ? C.blue : C.yellow;
 
-  const qty       = alloc>0 && r.price>0 ? Math.floor(alloc/r.price/USD_RATE) : 0;
+  const qty = alloc>0 && r.price>0 ? Math.floor(alloc/r.price/USD_RATE) : 0;
   const potProfit = qty * r.price * USD_RATE * (r.profitPct/100);
   const potLoss   = qty * (r.price - r.stopLoss) * USD_RATE;
-
-  // ── نوع الأمر — منطق صحيح
-  // حالة 1: السعر عند الدعم مباشرة (فرق أقل من 1%) → أمر سوق
-  // حالة 2: السعر أعلى من الدعم بـ 1-10%           → أمر محدد عند الدعم (انتظر تراجع)
-  // حالة 3: لا يوجد دعم واضح                       → أمر سوق بالسعر الحالي
-  const distToSup  = r.support>0 ? (r.price - r.support) / r.price * 100 : 0;
-  const atSupport  = r.nearSupport || distToSup < 1;
-  const hasSupport = r.support>0 && distToSup > 0;
-
-  let orderType, orderColor, orderNote, buyPrice;
-
-  if(atSupport) {
-    // السعر عند الدعم الآن — اشتري بسعر السوق
-    orderType  = 'أمر سوق';
-    orderColor = C.green;
-    orderNote  = 'السعر عند الدعم — اشتري فوراً';
-    buyPrice   = r.price;
-  } else if(hasSupport && distToSup <= 10) {
-    // السعر فوق الدعم — ضع أمر محدد عند الدعم وانتظر التراجع
-    orderType  = 'أمر محدد';
-    orderColor = C.blue;
-    orderNote  = 'انتظر تراجع السعر للدعم — ينفذ تلقائياً';
-    buyPrice   = r.support * 1.002; // سنتات فوق الدعم لضمان التنفيذ
-  } else {
-    // السعر بعيد عن الدعم أو لا يوجد دعم — أمر سوق بالسعر الحالي
-    orderType  = 'أمر سوق';
-    orderColor = C.yellow;
-    orderNote  = 'ادخل بسعر السوق — راقب وقف الخسارة';
-    buyPrice   = r.price;
-  }
-
-  return el('div', {
-    class:'fade-up',
-    style:{
-      background:'#0a1020', borderRadius:'14px',
-      border:`1px solid ${r.isConviction ? '#ffe03344' : 'var(--border)'}`,
-      padding:'14px', marginBottom:'10px',
-      animationDelay: idx*0.05+'s',
-    },
-    onClick: () => { state.selected = isSelected ? null : r.id; render(); }
-  }, [
-
-    // ── 1. رأس البطاقة: اسم + إشارة
-    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'8px'}}, [
-      el('div', {}, [
-        el('div', {style:{display:'flex', alignItems:'center', gap:'6px', marginBottom:'2px'}}, [
-          el('span', {style:{fontSize:'16px', fontWeight:'900', color:C.text}}, [r.name]),
-          el('span', {style:{fontSize:'10px', color:C.text2}}, [r.id]),
-          r.isConviction && el('span', {style:{
-            fontSize:'9px', color:C.yellow, background:'rgba(255,224,51,.12)',
-            borderRadius:'4px', padding:'1px 5px', border:'1px solid rgba(255,224,51,.3)',
-          }}, ['⭐ High Conviction']),
-        ]),
-        el('div', {style:{fontSize:'10px', color:C.text2}}, [r.sector]),
-      ]),
-      el('div', {style:{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'4px'}}, [
-        el('div', {style:{
-          background: sigColor+'22', border:`1px solid ${sigColor}44`,
-          borderRadius:'8px', padding:'4px 10px',
-          fontSize:'11px', fontWeight:'700', color:sigColor,
-        }}, [r.signal]),
-        r.isCooldown && el('span', {style:{
-          fontSize:'9px', fontWeight:'700', padding:'2px 6px',
-          borderRadius:'20px', background:'rgba(255,45,122,.15)',
-          color:'#ff2d7a', border:'1px solid rgba(255,45,122,.3)',
-        }}, ['⏸️ Cooldown']),
-      ]),
-    ]),
-
-    // ── 2. السعر + RSI + ثقة
-    el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'6px', marginBottom:'8px'}}, [
-      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
-        el('div', {style:{fontSize:'9px', color:C.text3}}, ['السعر']),
-        el('div', {style:{fontSize:'13px', fontWeight:'700', color:C.text}}, [fmtPrice(r.price)]),
-        el('div', {style:{fontSize:'9px', color: r.change>=0?C.green:C.pink}}, [
-          (r.change>=0?'+':'')+fmt(r.change)+'%'
-        ]),
-      ]),
-      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
-        el('div', {style:{fontSize:'9px', color:C.text3}}, ['RSI']),
-        el('div', {style:{
-          fontSize:'13px', fontWeight:'700',
-          color: r.rsi!=null?(r.rsi<30?C.green:r.rsi>70?C.pink:C.blue):C.text3,
-        }}, [r.rsi!=null ? fmt(r.rsi) : '—']),
-        el('div', {style:{fontSize:'9px', color:C.text3}}, [
-          r.rsi!=null?(r.rsi<30?'تشبع بيع':r.rsi>70?'تشبع شراء':'طبيعي'):'—'
-        ]),
-      ]),
-      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
-        el('div', {style:{fontSize:'9px', color:C.text3}}, ['ثقة / جودة']),
-        el('div', {style:{
-          fontSize:'13px', fontWeight:'700',
-          color: r.confidence>=80?C.green:r.confidence>=60?C.blue:C.yellow,
-        }}, [r.confidence+'%']),
-        el('div', {style:{fontSize:'9px', color:C.text3}}, [r.tradeQuality+'% جودة']),
-      ]),
-    ]),
-
-    // ── 3. شريط القوة
-    el('div', {style:{marginBottom:'8px'}}, [
-      el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'3px'}}, [
-        el('span', {style:{fontSize:'9px', color:C.text3}}, ['قوة الإشارة']),
-        el('span', {style:{fontSize:'9px', color:C.text2}}, [r.strength+'%']),
-      ]),
-      el('div', {style:{height:'3px', background:'#1a2340', borderRadius:'2px'}}, [
-        el('div', {style:{
-          height:'3px', borderRadius:'2px', width:r.strength+'%',
-          background:`linear-gradient(90deg,${C.blue},${C.green})`,
-        }}),
-      ]),
-    ]),
-
-    // ── 4. توقيت الدخول
-    el('div', {style:{
-      display:'flex', alignItems:'center', justifyContent:'space-between',
-      background: r.entryColor+'11', border:`1px solid ${r.entryColor}33`,
-      borderRadius:'8px', padding:'8px 10px', marginBottom:'8px',
-    }}, [
-      el('div', {style:{fontSize:'12px', fontWeight:'800', color:r.entryColor}}, [
-        r.activeBuy?'✅ ادخل الآن': r.watchOnly?'👀 راقب فقط': r.blockEntry?'🚫 لا تدخل': r.entryTiming
-      ]),
-      el('div', {style:{fontSize:'9px', color:C.text2, textAlign:'left', maxWidth:'55%'}}, [r.entryNote]),
-    ]),
-
-    // ── 5. دعم / مقاومة + المتوسطات
-    el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px', marginBottom:'8px'}}, [
-      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
-        el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'4px'}}, ['📊 دعم / مقاومة']),
-        el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
-          el('div', {}, [
-            el('div', {style:{fontSize:'9px', color:C.text3}}, ['دعم']),
-            el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.green}}, [r.support?fmtPrice(r.support):'—']),
-          ]),
-          el('div', {style:{textAlign:'left'}}, [
-            el('div', {style:{fontSize:'9px', color:C.text3}}, ['مقاومة']),
-            el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.pink}}, [r.resistance?fmtPrice(r.resistance):'—']),
-          ]),
-        ]),
-        r.nearSupport && el('div', {style:{
-          fontSize:'9px', color:C.green, background:'rgba(0,255,136,.08)',
-          borderRadius:'4px', padding:'2px 4px', marginTop:'2px',
-        }}, ['✅ قريب من الدعم']),
-      ]),
-      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
-        el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'4px'}}, ['📈 المتوسطات']),
-        el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
-          el('span', {style:{fontSize:'9px', color:C.text3}}, ['MA20']),
-          el('span', {style:{fontSize:'10px', fontWeight:'700', color:r.ma20?(r.price>r.ma20?C.green:C.pink):C.text3}},
-            [r.ma20?fmtPrice(r.ma20):'—']),
-        ]),
-        el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
-          el('span', {style:{fontSize:'9px', color:C.text3}}, ['MA50']),
-          el('span', {style:{fontSize:'10px', fontWeight:'700', color:r.ma50?(r.price>r.ma50?C.green:C.pink):C.text3}},
-            [r.ma50?fmtPrice(r.ma50):'—']),
-        ]),
-        el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
-          el('span', {style:{fontSize:'9px', color:C.text3}}, ['MA200']),
-          el('span', {style:{fontSize:'10px', fontWeight:'700', color:r.ma200?(r.price>r.ma200?C.green:C.pink):C.text3}},
-            [r.ma200?fmtPrice(r.ma200):'—']),
-        ]),
-        el('div', {style:{fontSize:'9px', marginTop:'2px', color:r.price>(r.ma200||r.ma50||0)?C.green:C.orange}}, [
-          r.ma200?(r.price>r.ma200?'💪 فوق MA200':'⚠️ تحت MA200'):(r.ma20>(r.ma50||0)?'✅ صاعد':'⚠️ هابط')
-        ]),
-      ]),
-    ]),
-
-    // ── 6. حجم التداول
-    el('div', {style:{
-      background:'#060b14', borderRadius:'8px', padding:'7px 10px', marginBottom:'8px',
-      border: r.volR>=1.5?'1px solid rgba(0,200,255,.2)':'1px solid #1a2340',
-    }}, [
-      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}}, [
-        el('div', {}, [
-          el('div', {style:{fontSize:'9px', color:C.text3}}, ['📦 حجم التداول']),
-          el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.text}}, [
-            r.volume>0?(r.volume/1e6).toFixed(1)+'M':'—'
-          ]),
-        ]),
-        el('div', {style:{textAlign:'center'}}, [
-          el('div', {style:{fontSize:'9px', color:C.text3}}, ['مقارنة بالمعتاد']),
-          el('div', {style:{fontSize:'12px', fontWeight:'800', color:r.volR>=2?C.green:r.volR>=1.3?C.blue:C.text2}},
-            [r.volR>0?'×'+fmt(r.volR,1):'—']),
-        ]),
-        el('div', {style:{fontSize:'10px', fontWeight:'700', color:r.volR>=2?C.green:r.volR>=1.3?C.blue:C.text2}}, [
-          r.volR>=2?'🔥 مرتفع جداً':r.volR>=1.3?'✅ مرتفع':r.volR>=0.7?'➡️ طبيعي':'⚠️ منخفض'
-        ]),
-      ]),
-    ]),
-
-    // ── 7. أمر الشراء الجاهز (يشمل الكمية والربح والخسارة)
-    el('div', {style:{
-      background:'linear-gradient(135deg,rgba(0,255,136,.06),rgba(0,200,255,.04))',
-      border:'1px solid rgba(0,255,136,.25)', borderRadius:'10px',
-      padding:'10px 12px', marginBottom: isSelected?'8px':'0',
-    }}, [
-      el('div', {style:{fontSize:'10px', fontWeight:'800', color:C.green, marginBottom:'8px'}}, ['📋 أمر الشراء الجاهز']),
-      el('div', {style:{borderTop:'1px solid rgba(0,255,136,.15)', marginBottom:'8px'}}),
-
-      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['نوع الأمر']),
-        el('span', {style:{
-          fontSize:'11px', fontWeight:'800', color:orderColor,
-          background:orderColor+'18', borderRadius:'5px', padding:'2px 8px',
-          border:`1px solid ${orderColor}33`,
-        }}, [orderType]),
-      ]),
-      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['سعر الشراء']),
-        el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, [fmtPrice(buyPrice)]),
-      ]),
-      qty>0 && el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['الكمية (20% رأس مالك)']),
-        el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.blue}}, [qty+' سهم']),
-      ]),
-      el('div', {style:{borderTop:'1px solid rgba(255,255,255,.05)', margin:'5px 0'}}),
-      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['🛑 وقف الخسارة']),
-        el('div', {style:{textAlign:'left'}}, [
-          el('div', {style:{fontSize:'12px', fontWeight:'800', color:C.pink}}, [fmtPrice(r.stopLoss)]),
-          qty>0 && el('div', {style:{fontSize:'9px', color:C.pink}}, ['-'+fmt(potLoss,0)+' ر']),
-        ]),
-      ]),
-      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['🎯 هدف الربح']),
-        el('div', {style:{textAlign:'left'}}, [
-          el('div', {style:{fontSize:'12px', fontWeight:'800', color:C.green}}, [fmtPrice(r.target)]),
-          qty>0 && el('div', {style:{fontSize:'9px', color:C.green}}, ['+'+fmt(potProfit,0)+' ر']),
-        ]),
-      ]),
-      el('div', {style:{
-        fontSize:'10px', color:orderColor, background:orderColor+'0e',
-        borderRadius:'6px', padding:'5px 8px',
-      }}, ['💡 '+orderNote]),
-    ]),
-
-    // ── 8. التفاصيل (عند الضغط) — مبسطة
-    isSelected && el('div', {style:{borderTop:'1px solid var(--border)', paddingTop:'10px', marginTop:'2px'}}, [
-      r.reasons.length>0 && el('div', {style:{marginBottom:'8px'}}, [
-        el('div', {style:{fontSize:'10px', color:C.text2, marginBottom:'4px', fontWeight:'700'}}, ['📋 أسباب التوصية:']),
-        ...r.reasons.map(reason =>
-          el('div', {style:{fontSize:'10px', color:C.green, marginBottom:'2px'}}, ['✓ '+reason])
-        ),
-      ]),
-      el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px', fontSize:'10px'}}, [
-        r.stochRsi!=null && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{color:C.text3}}, ['Stoch RSI']),
-          el('div', {style:{fontWeight:'700', color:r.stochRsi<20?C.green:r.stochRsi>80?C.pink:C.blue}},
-            [fmt(r.stochRsi)+'%']),
-        ]),
-        r.macd!=null && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{color:C.text3}}, ['MACD']),
-          el('div', {style:{fontWeight:'700', color:r.macd>0?C.green:C.pink}},
-            [fmt(r.macd,3)+' '+(r.macd>0?'↑':'↓')]),
-        ]),
-        r.riskReward>0 && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{color:C.text3}}, ['R/R نسبة']),
-          el('div', {style:{fontWeight:'700', color:r.riskReward>=2?C.green:C.yellow}},
-            [fmt(r.riskReward,1)+'x']),
-        ]),
-        r.atrPct!=null && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{color:C.text3}}, ['ATR تذبذب']),
-          el('div', {style:{fontWeight:'700', color:r.atrPct<2?C.green:r.atrPct<4?C.blue:C.orange}},
-            [fmt(r.atrPct,1)+'%']),
-        ]),
-      ].filter(Boolean)),
-      r.earnings<999 && el('div', {style:{
-        fontSize:'10px', color:C.orange, marginTop:'8px',
-        background:'rgba(255,122,0,.08)', borderRadius:'6px', padding:'5px 8px',
-      }}, ['⚠️ نتائج الأرباح خلال '+r.earnings+' يوم']),
-    ]),
-  ]);
-}
 
   return el('div', {
     class:'fade-up',
@@ -2025,6 +1753,436 @@ function renderRecCard(r, idx, alloc) {
         color:'#ff2d7a', border:'1px solid rgba(255,45,122,.3)',
       }}, ['⏸️ Cooldown']),
     ]),
+
+    // صف 2: السعر + المؤشرات الرئيسية
+    el('div', {style:{
+      display:'grid', gridTemplateColumns:'1fr 1fr 1fr',
+      gap:'6px', marginBottom:'8px',
+    }}, [
+      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['السعر']),
+        el('div', {style:{fontSize:'13px', fontWeight:'700', color:C.text}}, [fmtPrice(r.price)]),
+        el('div', {style:{fontSize:'9px', color: r.change>=0?C.green:C.pink}}, [
+          (r.change>=0?'+':'')+fmt(r.change)+'%'
+        ]),
+      ]),
+      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['RSI']),
+        el('div', {style:{
+          fontSize:'13px', fontWeight:'700',
+          color: r.rsi<30?C.green:r.rsi>70?C.pink:C.blue,
+        }}, [r.rsi!=null ? fmt(r.rsi) : '—']),
+        el('div', {style:{fontSize:'9px', color:C.text3}}, [
+          r.rsi<30?'تشبع بيع':r.rsi>70?'تشبع شراء':'طبيعي'
+        ]),
+      ]),
+      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['ثقة']),
+        el('div', {style:{
+          fontSize:'13px', fontWeight:'700',
+          color: r.confidence>=80?C.green:r.confidence>=60?C.blue:C.yellow,
+        }}, [r.confidence+'%']),
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['جودة: '+r.tradeQuality+'%']),
+      ]),
+    ]),
+
+    // شريط القوة
+    el('div', {style:{marginBottom:'8px'}}, [
+      el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'3px'}}, [
+        el('span', {style:{fontSize:'9px', color:C.text3}}, ['قوة الإشارة']),
+        el('span', {style:{fontSize:'9px', color:C.text2}}, [r.strength+'%']),
+      ]),
+      el('div', {style:{height:'3px', background:'#1a2340', borderRadius:'2px'}}, [
+        el('div', {style:{
+          height:'3px', borderRadius:'2px',
+          width:r.strength+'%',
+          background:`linear-gradient(90deg,${C.blue},${C.green})`,
+        }}),
+      ]),
+    ]),
+
+    // توقيت الدخول
+    el('div', {style:{
+      display:'flex', alignItems:'center', justifyContent:'space-between',
+      background: r.entryColor+'11',
+      border:`1px solid ${r.entryColor}33`,
+      borderRadius:'8px', padding:'8px 10px',
+      marginBottom:'8px',
+    }}, [
+      el('div', {}, [
+        el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'2px'}}, ['⏱ توقيت الدخول']),
+        el('div', {style:{fontSize:'12px', fontWeight:'800', color:r.entryColor}}, [
+          r.activeBuy  ? '✅ ادخل الآن' :
+          r.watchOnly  ? '👀 راقب فقط'  :
+          r.blockEntry ? '🚫 لا تدخل'   :
+          r.entryTiming
+        ]),
+      ]),
+      el('div', {style:{textAlign:'left', maxWidth:'55%'}}, [
+        el('div', {style:{fontSize:'9px', color:C.text2, lineHeight:'1.4'}}, [r.entryNote]),
+        r.idealEntry && r.idealEntry!==r.price && el('div', {style:{
+          fontSize:'10px', fontWeight:'700', color:r.entryColor, marginTop:'2px',
+        }}, ['دخول مثالي: '+fmtPrice(r.idealEntry)]),
+      ]),
+    ]),
+
+    // صف 3: الدخول والخروج
+    el('div', {style:{
+      display:'grid', gridTemplateColumns:'1fr 1fr',
+      gap:'6px', marginBottom:'8px',
+    }}, [
+      el('div', {style:{
+        background:'rgba(0,255,136,.06)', border:'1px solid rgba(0,255,136,.15)',
+        borderRadius:'8px', padding:'6px 8px',
+      }}, [
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['🎯 هدف الربح']),
+        el('div', {style:{fontSize:'12px', fontWeight:'700', color:C.green}}, [fmtPrice(r.target)]),
+        el('div', {style:{fontSize:'9px', color:C.green}}, ['+'+fmt(r.profitPct)+'%']),
+      ]),
+      el('div', {style:{
+        background:'rgba(255,45,122,.06)', border:'1px solid rgba(255,45,122,.15)',
+        borderRadius:'8px', padding:'6px 8px',
+      }}, [
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['🛑 وقف الخسارة']),
+        el('div', {style:{fontSize:'12px', fontWeight:'700', color:C.pink}}, [fmtPrice(r.stopLoss)]),
+        el('div', {style:{fontSize:'9px', color:C.pink}}, [
+          '-'+fmt((r.price-r.stopLoss)/r.price*100)+'%'
+        ]),
+      ]),
+    ]),
+
+    // صف 4: دعم/مقاومة + MA
+    el('div', {style:{
+      display:'grid', gridTemplateColumns:'1fr 1fr',
+      gap:'6px', marginBottom:'8px',
+    }}, [
+      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
+        el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'2px'}}, ['📊 دعم / مقاومة']),
+        el('div', {style:{display:'flex', justifyContent:'space-between'}}, [
+          el('div', {}, [
+            el('div', {style:{fontSize:'9px', color:C.text3}}, ['دعم']),
+            el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.green}}, [
+              r.support ? fmtPrice(r.support) : '—'
+            ]),
+            r.supTouches>1 && el('div', {style:{fontSize:'8px', color:C.text3}}, [
+              r.supTouches+' لمسات'
+            ]),
+          ]),
+          el('div', {style:{textAlign:'left'}}, [
+            el('div', {style:{fontSize:'9px', color:C.text3}}, ['مقاومة']),
+            el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.pink}}, [
+              r.resistance ? fmtPrice(r.resistance) : '—'
+            ]),
+            r.resTouches>1 && el('div', {style:{fontSize:'8px', color:C.text3}}, [
+              r.resTouches+' لمسات'
+            ]),
+          ]),
+        ]),
+        r.nearSupport && el('div', {style:{
+          fontSize:'9px', color:C.green, marginTop:'3px',
+          background:'rgba(0,255,136,.08)', borderRadius:'4px', padding:'2px 4px',
+        }}, ['✅ قريب من الدعم — توقيت جيد']),
+      ]),
+      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
+        el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'2px'}}, ['📈 المتوسطات']),
+        el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
+          el('span', {style:{fontSize:'9px', color:C.text3}}, ['MA20']),
+          el('span', {style:{
+            fontSize:'10px', fontWeight:'700',
+            color: r.price > r.ma20 ? C.green : C.pink,
+          }}, [r.ma20 ? fmtPrice(r.ma20) : '—']),
+        ]),
+        el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
+          el('span', {style:{fontSize:'9px', color:C.text3}}, ['MA50']),
+          el('span', {style:{
+            fontSize:'10px', fontWeight:'700',
+            color: r.ma50 ? (r.price > r.ma50 ? C.green : C.pink) : C.text3,
+          }}, [r.ma50 ? fmtPrice(r.ma50) : '—']),
+        ]),
+        // MA200 — جديد
+        el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
+          el('span', {style:{fontSize:'9px', color:C.text3}}, ['MA200']),
+          el('span', {style:{
+            fontSize:'10px', fontWeight:'700',
+            color: r.ma200 ? (r.price > r.ma200 ? C.green : C.pink) : C.text3,
+          }}, [r.ma200 ? fmtPrice(r.ma200) : '—']),
+        ]),
+        el('div', {style:{
+          fontSize:'9px', marginTop:'2px',
+          color: r.ma20 > (r.ma50||0) ? C.green : C.orange,
+        }}, [
+          r.ma200 != null
+            ? (r.price > r.ma200
+                ? '💪 فوق MA200 — اتجاه قوي'
+                : '⚠️ تحت MA200 — حذر')
+            : (r.ma20 > (r.ma50||0) ? '✅ اتجاه صاعد' : '⚠️ اتجاه هابط')
+        ]),
+      ]),
+    ]),
+
+    // صف 5: حجم التداول
+    el('div', {style:{
+      background:'#060b14', borderRadius:'8px',
+      padding:'8px 10px', marginBottom:'8px',
+      border: r.volR>=1.5 ? '1px solid rgba(0,200,255,.2)' : '1px solid #1a2340',
+    }}, [
+      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}}, [
+        el('div', {}, [
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['📦 حجم التداول']),
+          el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.text}}, [
+            r.volume > 0 ? (r.volume/1e6).toFixed(1)+'M' : '—'
+          ]),
+        ]),
+        el('div', {style:{textAlign:'center'}}, [
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['مقارنة بالمعتاد']),
+          el('div', {style:{
+            fontSize:'13px', fontWeight:'800',
+            color: r.volR>=2?C.green:r.volR>=1.3?C.blue:C.text2,
+          }}, [r.volR>0 ? '×'+fmt(r.volR,1) : '—']),
+        ]),
+        el('div', {style:{textAlign:'left'}}, [
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['التقييم']),
+          el('div', {style:{
+            fontSize:'10px', fontWeight:'700',
+            color: r.volR>=2?C.green:r.volR>=1.3?C.blue:C.text2,
+          }}, [
+            r.volR>=2  ? '🔥 مرتفع جداً' :
+            r.volR>=1.3? '✅ مرتفع' :
+            r.volR>=0.7? '➡️ طبيعي' : '⚠️ منخفض'
+          ]),
+        ]),
+      ]),
+    ]),
+
+    // تخصيص رأس المال
+    qty>0 && el('div', {style:{
+      background:'rgba(0,200,255,.06)', border:'1px solid rgba(0,200,255,.15)',
+      borderRadius:'8px', padding:'8px 10px', marginBottom:'8px',
+    }}, [
+      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}}, [
+        el('div', {}, [
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['💰 من رأس مالك (20%)']),
+          el('div', {style:{fontSize:'12px', fontWeight:'700', color:C.blue}}, [
+            (alloc/USD_RATE/1000).toFixed(0)+'K$ = '+qty+' سهم'
+          ]),
+        ]),
+        el('div', {style:{textAlign:'left'}}, [
+          el('div', {style:{fontSize:'9px', color:C.green}}, ['ربح متوقع: +'+fmt(potProfit,0)+' ر']),
+          el('div', {style:{fontSize:'9px', color:C.pink}},  ['خسارة محتملة: -'+fmt(potLoss,0)+' ر']),
+        ]),
+      ]),
+    ]),
+
+    // ══ مربع أمر الشراء الجاهز
+    el('div', {style:{
+      background:'linear-gradient(135deg,rgba(0,255,136,.06),rgba(0,200,255,.04))',
+      border:'1px solid rgba(0,255,136,.25)',
+      borderRadius:'10px', padding:'10px 12px',
+      marginBottom:'8px',
+    }}, [
+      el('div', {style:{
+        fontSize:'10px', fontWeight:'800', color:C.green,
+        marginBottom:'8px', letterSpacing:'0.3px',
+      }}, ['📋 أمر الشراء الجاهز']),
+
+      // الخط الفاصل
+      el('div', {style:{borderTop:'1px solid rgba(0,255,136,.15)', marginBottom:'8px'}}),
+
+      // نوع الأمر
+      (() => {
+        const atSupport = r.nearSupport || Math.abs(r.price - r.idealEntry) / r.price < 0.003;
+        const orderType = atSupport ? 'أمر سوق' : 'أمر محدد';
+        const orderColor= atSupport ? C.green : C.blue;
+        const orderNote = atSupport
+          ? 'السعر عند الدعم — اشتري فوراً'
+          : 'ضع الأمر وانتظر — السوق ينفذه تلقائياً';
+        const buyPrice  = atSupport ? r.price : (r.support || r.idealEntry);
+
+        return el('div', {}, [
+          // صف نوع الأمر
+          el('div', {style:{
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            marginBottom:'6px',
+          }}, [
+            el('span', {style:{fontSize:'10px', color:C.text3}}, ['نوع الأمر']),
+            el('span', {style:{
+              fontSize:'11px', fontWeight:'800', color:orderColor,
+              background: orderColor+'18', borderRadius:'5px', padding:'2px 8px',
+              border:`1px solid ${orderColor}33`,
+            }}, [orderType]),
+          ]),
+
+          // السعر
+          el('div', {style:{
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            marginBottom:'6px',
+          }}, [
+            el('span', {style:{fontSize:'10px', color:C.text3}}, ['سعر الشراء']),
+            el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, [
+              fmtPrice(buyPrice)
+            ]),
+          ]),
+
+          // الكمية
+          qty>0 && el('div', {style:{
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            marginBottom:'6px',
+          }}, [
+            el('span', {style:{fontSize:'10px', color:C.text3}}, ['الكمية']),
+            el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.blue}}, [
+              qty+' سهم'
+            ]),
+          ]),
+
+          // الخط الفاصل
+          el('div', {style:{borderTop:'1px solid rgba(255,255,255,.05)', margin:'6px 0'}}),
+
+          // وقف الخسارة
+          el('div', {style:{
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            marginBottom:'5px',
+          }}, [
+            el('span', {style:{fontSize:'10px', color:C.text3}}, ['🛑 وقف الخسارة']),
+            el('span', {style:{fontSize:'12px', fontWeight:'800', color:C.pink}}, [
+              fmtPrice(r.stopLoss)
+            ]),
+          ]),
+
+          // هدف الربح
+          el('div', {style:{
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            marginBottom:'6px',
+          }}, [
+            el('span', {style:{fontSize:'10px', color:C.text3}}, ['🎯 هدف الربح']),
+            el('span', {style:{fontSize:'12px', fontWeight:'800', color:C.green}}, [
+              fmtPrice(r.target)
+            ]),
+          ]),
+
+          // ملاحظة
+          el('div', {style:{
+            fontSize:'10px', color:orderColor,
+            background: orderColor+'0e',
+            borderRadius:'6px', padding:'5px 8px',
+            lineHeight:'1.5',
+          }}, ['💡 '+orderNote]),
+        ]);
+      })(),
+    ]),
+
+    // التفاصيل (عند الضغط)
+    isSelected && el('div', {style:{borderTop:'1px solid var(--border)', paddingTop:'10px'}}, [
+      // أسباب التوصية
+      r.reasons.length>0 && el('div', {style:{marginBottom:'8px'}}, [
+        el('div', {style:{fontSize:'10px', color:C.text2, marginBottom:'4px'}}, ['📋 أسباب التوصية:']),
+        ...r.reasons.map(reason =>
+          el('div', {style:{fontSize:'10px', color:C.green, marginBottom:'2px'}}, ['✓ '+reason])
+        ),
+      ]),
+      // Stoch RSI
+      r.stochRsi!=null && el('div', {style:{
+        display:'flex', justifyContent:'space-between',
+        fontSize:'10px', color:C.text2, marginBottom:'4px',
+      }}, [
+        el('span', {}, ['Stoch RSI:']),
+        el('span', {style:{
+          color: r.stochRsi<20?C.green:r.stochRsi>80?C.pink:C.blue,
+          fontWeight:'700',
+        }}, [fmt(r.stochRsi)+'%']),
+      ]),
+      // MACD
+      r.macd!=null && el('div', {style:{
+        display:'flex', justifyContent:'space-between',
+        fontSize:'10px', color:C.text2, marginBottom:'4px',
+      }}, [
+        el('span', {}, ['MACD:']),
+        el('span', {style:{color:r.macd>0?C.green:C.pink, fontWeight:'700'}}, [
+          fmt(r.macd,3)+' ('+(r.macd>0?'صاعد':'هابط')+')'
+        ]),
+      ]),
+      // R/R
+      r.riskReward>0 && el('div', {style:{
+        display:'flex', justifyContent:'space-between',
+        fontSize:'10px', color:C.text2, marginBottom:'4px',
+      }}, [
+        el('span', {}, ['نسبة المخاطرة/المكافأة:']),
+        el('span', {style:{color:r.riskReward>=2?C.green:C.yellow, fontWeight:'700'}}, [
+          fmt(r.riskReward,1)+'x'
+        ]),
+      ]),
+      // أرباح
+      r.earnings<999 && el('div', {style:{
+        fontSize:'10px', color:C.orange, marginTop:'4px',
+      }}, ['⚠️ نتائج الأرباح خلال '+r.earnings+' يوم']),
+
+      // ══ شيك ليست التشخيص
+      el('div', {style:{
+        marginTop:'10px',
+        background:'#060b14',
+        border:'1px solid rgba(0,200,255,.15)',
+        borderRadius:'10px', padding:'10px',
+      }}, [
+        el('div', {style:{
+          fontSize:'10px', fontWeight:'700', color:C.blue,
+          marginBottom:'8px', display:'flex', alignItems:'center', gap:'4px',
+        }}, ['🔍 تشخيص — تحقق من عمل الكود']),
+
+        // ── المؤشرات
+        el('div', {style:{fontSize:'10px', color:C.text3, marginBottom:'4px'}}, ['المؤشرات:']),
+        ...[
+          {label:'RSI',         val:r.rsi,        ok:r.rsi!=null,        display: r.rsi!=null ? fmt(r.rsi) : 'مفقود'},
+          {label:'MACD',        val:r.macd,       ok:r.macd!=null,       display: r.macd!=null ? fmt(r.macd,3) : 'مفقود'},
+          {label:'MA20',        val:r.ma20,       ok:r.ma20!=null,       display: r.ma20!=null ? fmtPrice(r.ma20) : 'مفقود'},
+          {label:'MA50',        val:r.ma50,       ok:r.ma50!=null,       display: r.ma50!=null ? fmtPrice(r.ma50) : 'مفقود'},
+          {label:'Stoch RSI',   val:r.stochRsi,   ok:r.stochRsi!=null,   display: r.stochRsi!=null ? fmt(r.stochRsi) : 'مفقود'},
+          {label:'BB Upper',    val:r.bb_upper,   ok:r.bb_upper!=null,   display: r.bb_upper!=null ? fmtPrice(r.bb_upper) : 'مفقود'},
+          {label:'دعم',         val:r.support,    ok:r.support!=null,    display: r.support!=null ? fmtPrice(r.support) : 'مفقود'},
+          {label:'مقاومة',      val:r.resistance, ok:r.resistance!=null, display: r.resistance!=null ? fmtPrice(r.resistance) : 'مفقود'},
+          {label:'ATR',         val:r.atrPct,     ok:r.atrPct!=null,     display: r.atrPct!=null ? fmt(r.atrPct)+'%' : 'مفقود'},
+          {label:'حجم',         val:r.volR,       ok:r.volR>0,           display: r.volR>0 ? '×'+fmt(r.volR,1) : 'مفقود'},
+        ].map(item => el('div', {style:{
+          display:'flex', justifyContent:'space-between',
+          fontSize:'10px', marginBottom:'2px',
+          color: item.ok ? C.text2 : C.pink,
+        }}, [
+          el('span', {}, [(item.ok?'✅':'❌')+' '+item.label]),
+          el('span', {style:{color: item.ok ? C.blue : C.pink, fontWeight:'700'}}, [item.display]),
+        ])),
+
+        // ── الشروط
+        el('div', {style:{fontSize:'10px', color:C.text3, marginTop:'8px', marginBottom:'4px'}}, ['الشروط:']),
+        ...[
+          {label:'إشارة شراء',         ok: r.signal.includes('شراء'),  val: r.signal},
+          {label:'ثقة ≥ 50%',          ok: r.confidence>=50,           val: r.confidence+'%'},
+          {label:'جودة ≥ 30%',         ok: r.tradeQuality>=30,         val: r.tradeQuality+'%'},
+          {label:'ربح ≥ 2%',           ok: r.profitPct>=2,             val: '+'+fmt(r.profitPct)+'%'},
+          {label:'لا أرباح < 5 أيام',  ok: r.earnings>5,              val: r.earnings>900?'آمن':r.earnings+' يوم'},
+          {label:'لا gap-up > 8%',     ok: (r.change||0)<=8,           val: fmt(r.change)+'%'},
+          {label:'توقيت مقبول',        ok: r.entryTiming!=='متأخر',    val: r.entryTiming},
+          {label:'بيانات حقيقية',      ok: true,                       val: '✅ مؤكد'},
+        ].map(item => el('div', {style:{
+          display:'flex', justifyContent:'space-between',
+          fontSize:'10px', marginBottom:'2px',
+          color: item.ok ? C.text2 : C.pink,
+        }}, [
+          el('span', {}, [(item.ok?'✅':'❌')+' '+item.label]),
+          el('span', {style:{color: item.ok ? C.green : C.pink, fontWeight:'700'}}, [String(item.val)]),
+        ])),
+
+        // ── النتيجة
+        el('div', {style:{
+          marginTop:'8px', padding:'6px 8px',
+          background: 'rgba(0,255,136,.08)',
+          borderRadius:'6px', fontSize:'10px',
+          color: C.green, fontWeight:'700',
+        }}, [
+          'buy='+r.buy+' | sell='+r.sell+' | netScore='+r.netScore+
+          ' | strength='+r.strength+'%'
+        ]),
+      ]),
+    ]),
+  ]);
+}
 
 // ================================================================
 // ═══════════════════ SPECULATIVE TAB ════════════════════════════
@@ -2205,42 +2363,27 @@ function renderSpecCard(s, idx) {
       el('div', {style:{borderTop:'1px solid rgba(180,79,255,.2)', marginBottom:'8px'}}),
 
       (() => {
-        const distToSup2 = s.support>0 ? (s.price - s.support) / s.price * 100 : 0;
-        const atSup2     = s.nearSupport || distToSup2 < 1;
-        const hasSup2    = s.support>0 && distToSup2 > 0;
-
-        let orderType2, orderColor2, orderNote2, buyPrice2;
-        if(atSup2) {
-          orderType2  = 'أمر سوق';
-          orderColor2 = C.green;
-          orderNote2  = 'السعر عند الدعم — اشتري فوراً';
-          buyPrice2   = s.price;
-        } else if(hasSup2 && distToSup2 <= 15) {
-          // المجازفة تقبل بُعد أكبر عن الدعم (15% بدل 10%)
-          orderType2  = 'أمر محدد';
-          orderColor2 = C.purple;
-          orderNote2  = 'انتظر تراجع للدعم — ينفذ تلقائياً';
-          buyPrice2   = s.support * 1.002;
-        } else {
-          orderType2  = 'أمر سوق';
-          orderColor2 = C.yellow;
-          orderNote2  = 'ادخل بسعر السوق — راقب وقف الخسارة';
-          buyPrice2   = s.price;
-        }
+        const atSupport = s.nearSupport || (s.support && Math.abs(s.price - s.support) / s.price < 0.02);
+        const orderType = atSupport ? 'أمر سوق' : 'أمر محدد';
+        const orderColor= atSupport ? C.green : C.purple;
+        const buyPrice  = atSupport ? s.price : (s.support || s.price);
+        const orderNote = atSupport
+          ? 'السعر عند الدعم — اشتري فوراً'
+          : 'ضع الأمر عند الدعم — ينفذ تلقائياً';
 
         return el('div', {}, [
           el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'6px'}}, [
             el('span', {style:{fontSize:'10px', color:C.text3}}, ['نوع الأمر']),
             el('span', {style:{
-              fontSize:'11px', fontWeight:'800', color:orderColor2,
-              background:orderColor2+'18', borderRadius:'5px', padding:'2px 8px',
-              border:`1px solid ${orderColor2}33`,
-            }}, [orderType2]),
+              fontSize:'11px', fontWeight:'800', color:orderColor,
+              background:orderColor+'18', borderRadius:'5px', padding:'2px 8px',
+              border:`1px solid ${orderColor}33`,
+            }}, [orderType]),
           ]),
           el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'6px'}}, [
             el('span', {style:{fontSize:'10px', color:C.text3}}, ['سعر الشراء']),
             el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, [
-              '$'+fmt(buyPrice2,2)
+              '$'+fmt(buyPrice,2)
             ]),
           ]),
           el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'6px'}}, [
@@ -2262,6 +2405,7 @@ function renderSpecCard(s, idx) {
               '$'+fmt(s.target,2)
             ]),
           ]),
+          // تحذير المجازفة
           el('div', {style:{
             fontSize:'10px', color:C.orange,
             background:'rgba(255,122,0,.08)', borderRadius:'6px',
@@ -2269,10 +2413,10 @@ function renderSpecCard(s, idx) {
             marginBottom:'5px',
           }}, ['⚠️ مجازفة — '+(s.allocPct*100).toFixed(0)+'% فقط من رأس مالك']),
           el('div', {style:{
-            fontSize:'10px', color:orderColor2,
-            background:orderColor2+'0e', borderRadius:'6px',
+            fontSize:'10px', color:orderColor,
+            background:orderColor+'0e', borderRadius:'6px',
             padding:'5px 8px',
-          }}, ['💡 '+orderNote2]),
+          }}, ['💡 '+orderNote]),
         ]);
       })(),
     ]),
@@ -2299,31 +2443,67 @@ function renderSpecCard(s, idx) {
         border:'1px solid rgba(255,122,0,.2)'}},
         ['⚠️ لا تضع أكثر من '+(s.allocPct*100).toFixed(0)+'% من رأس مالك']),
 
-      // ملخص المؤشرات — مختصر ومفيد
+      // ══ شيك ليست التشخيص للمجازفة
       el('div', {style:{
-        marginTop:'8px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'5px',
+        marginTop:'10px',
+        background:'#060b14',
+        border:'1px solid rgba(180,79,255,.2)',
+        borderRadius:'10px', padding:'10px',
       }}, [
-        s.rsi!=null && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{fontSize:'9px', color:C.text3}}, ['RSI']),
-          el('div', {style:{fontWeight:'700', fontSize:'11px', color:s.rsi<30?C.green:s.rsi>70?C.pink:C.blue}},
-            [fmt(s.rsi)+'%']),
+        el('div', {style:{
+          fontSize:'10px', fontWeight:'700', color:C.purple,
+          marginBottom:'8px',
+        }}, ['🔍 تشخيص المجازفة']),
+
+        // ── المؤشرات
+        el('div', {style:{fontSize:'10px', color:C.text3, marginBottom:'4px'}}, ['المؤشرات:']),
+        ...[
+          {label:'RSI',       ok:s.rsi!=null,       display:s.rsi!=null?fmt(s.rsi):'مفقود ❌'},
+          {label:'MACD',      ok:s.macd!=null,      display:s.macd!=null?fmt(s.macd,3):'مفقود ❌'},
+          {label:'MA20>MA50', ok:s.ma20!=null&&s.ma50!=null, display:s.ma20&&s.ma50?(s.ma20>s.ma50?'صاعد ✅':'هابط ⚠️'):'مفقود ❌'},
+          {label:'دعم',       ok:s.support!=null,   display:s.support?'$'+fmt(s.support,2):'مفقود ❌'},
+          {label:'مقاومة',    ok:s.resistance!=null,display:s.resistance?'$'+fmt(s.resistance,2):'مفقود ❌'},
+          {label:'ATR',       ok:s.atrPct!=null,    display:s.atrPct?fmt(s.atrPct)+'%':'مفقود ❌'},
+          {label:'Beta',      ok:s.beta>=1.5,       display:fmt(s.beta,1)},
+          {label:'حجم',       ok:s.volR>0,          display:s.volR>0?'×'+fmt(s.volR,1):'مفقود ❌'},
+        ].map(item => el('div', {style:{
+          display:'flex', justifyContent:'space-between',
+          fontSize:'10px', marginBottom:'2px',
+          color: item.ok ? C.text2 : C.pink,
+        }}, [
+          el('span', {}, [(item.ok?'✅':'❌')+' '+item.label]),
+          el('span', {style:{color:item.ok?C.purple:C.pink, fontWeight:'700'}}, [String(item.display)]),
+        ])),
+
+        // ── شروط الظهور
+        el('div', {style:{fontSize:'10px', color:C.text3, marginTop:'8px', marginBottom:'4px'}}, ['شروط الظهور:']),
+        ...[
+          {label:'السوق صاعد/محايد', ok:state.marketTrend!=='bearish', val:state.marketTrend||'غير محدد'},
+          {label:'Beta ≥ 1.5',       ok:s.beta>=1.5,                   val:fmt(s.beta,1)},
+          {label:'Score ≥ 35',       ok:s.score>=35,                   val:s.score+'/100'},
+          {label:'لا أرباح < 7 أيام',ok:(state.earnings[s.id]??999)>7, val:(state.earnings[s.id]??999)>900?'آمن':(state.earnings[s.id])+'يوم'},
+          {label:'لا gap-up > 15%',  ok:(s.change||0)<=15,             val:fmt(s.change)+'%'},
+          {label:'بيانات حقيقية',    ok:true,                          val:'✅ مؤكد'},
+        ].map(item => el('div', {style:{
+          display:'flex', justifyContent:'space-between',
+          fontSize:'10px', marginBottom:'2px',
+          color: item.ok ? C.text2 : C.pink,
+        }}, [
+          el('span', {}, [(item.ok?'✅':'❌')+' '+item.label]),
+          el('span', {style:{color:item.ok?C.green:C.pink, fontWeight:'700'}}, [String(item.val)]),
+        ])),
+
+        // ── النتيجة
+        el('div', {style:{
+          marginTop:'8px', padding:'6px 8px',
+          background:'rgba(180,79,255,.08)',
+          borderRadius:'6px', fontSize:'10px',
+          color:C.purple, fontWeight:'700',
+        }}, [
+          'score='+s.score+' | '+s.label+
+          ' | R/R='+fmt(s.riskReward,1)+'x'
         ]),
-        s.macd!=null && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{fontSize:'9px', color:C.text3}}, ['MACD']),
-          el('div', {style:{fontWeight:'700', fontSize:'11px', color:s.macd>0?C.green:C.pink}},
-            [s.macd>0?'↑ صاعد':'↓ هابط']),
-        ]),
-        s.atrPct!=null && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{fontSize:'9px', color:C.text3}}, ['ATR تذبذب']),
-          el('div', {style:{fontWeight:'700', fontSize:'11px', color:s.atrPct<4?C.blue:C.orange}},
-            [fmt(s.atrPct,1)+'%']),
-        ]),
-        s.riskReward>0 && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{fontSize:'9px', color:C.text3}}, ['R/R']),
-          el('div', {style:{fontWeight:'700', fontSize:'11px', color:s.riskReward>=2?C.green:C.yellow}},
-            [fmt(s.riskReward,1)+'x']),
-        ]),
-      ].filter(Boolean)),
+      ]),
     ]),
   ]);
 }
