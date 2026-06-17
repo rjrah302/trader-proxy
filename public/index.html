@@ -126,25 +126,25 @@ function getSessionInfo() {
       };
     case 'pre':
       return {
-        label:  'Pre-Market',
-        sub:    `4:00ص - 4:30م ${tz}`,
+        label:  'ما قبل الافتتاح',
+        sub:    `يفتح ${t.isSummer?'4:30م':'5:30م'} ${tz}`,
         color:  '#ffe033',
         dot:    false,
-        canRec: false,  // لا توصيات — أسعار غير رسمية
+        canRec: false,
       };
     case 'after':
       return {
-        label:  'After Hours',
-        sub:    `11:00م - 1:00ص ${tz}`,
+        label:  'بعد الإغلاق',
+        sub:    `ينتهي ${t.isSummer?'1:00ص':'2:00ص'} ${tz}`,
         color:  '#ff7a00',
         dot:    false,
-        canRec: false,  // لا توصيات — تداول محدود
+        canRec: false,
       };
     default:
       return {
         label:  'السوق مغلق',
         sub:    `يفتح ${t.isSummer?'4:30م':'5:30م'} ${tz}`,
-        color:  '#ff7a00',
+        color:  '#7888aa',
         dot:    false,
         canRec: false,
       };
@@ -298,8 +298,14 @@ const STOCKS = [
   {id:"VNET",  name:"21Vianet",      sector:"سحابة صين",       cat:"small",  beta:1.8},
 ];
 
+// إضافة SPY و QQQ كمؤشرات
+const INDEX_STOCKS = [
+  {id:'SPY', name:'S&P 500 ETF', sector:'مؤشر', cat:'large', beta:1.0},
+  {id:'QQQ', name:'Nasdaq ETF',  sector:'مؤشر', cat:'large', beta:1.1},
+];
+
 // إزالة مكررات
-const ALL_STOCKS = STOCKS.filter((s,i,a) => a.findIndex(x=>x.id===s.id)===i);
+const ALL_STOCKS = [...INDEX_STOCKS, ...STOCKS].filter((s,i,a) => a.findIndex(x=>x.id===s.id)===i);
 
 // ================================================================
 // ═══════════════════ STATE ══════════════════════════════════════
@@ -342,6 +348,7 @@ const state = {
   // واجهة
   tab:       'rec',
   search:    '',
+  sector:    'الكل',
   capital:   CAPITAL,
   selected:  null,
   _loadStart: Date.now(), // وقت بدء التحميل
@@ -456,7 +463,7 @@ async function fetchPrices() {
     if(!q.symbol || !(price > 0)) return false;
     state.prices[q.symbol] = {
       price, isReal: true,
-      change:    parseFloat(q.changesPercentage ?? 0),
+      change:    parseFloat(q.changePercentage || q.changesPercentage || 0),
       high:      parseFloat(q.dayHigh  || price*1.01),
       low:       parseFloat(q.dayLow   || price*0.99),
       volume:    parseInt(q.volume    || 0),
@@ -1083,10 +1090,19 @@ function calcRecs() {
   state.recs = recs;
   state.recsTime = new Date();
 
-  // حفظ للـ High Conviction
+  // إشعار بالتوصيات الجديدة
+  if(recs.length > 0) {
+    const names = recs.slice(0,3).map(r=>r.id).join('، ');
+    sendNotification('🎯 توصيات تريدر برو X', recs.length+' توصيات جديدة: '+names);
+  }
+
+  // حفظ التوصيات كاملة + الوقت + اليوم
   try {
-    localStorage.setItem('s1_recs', JSON.stringify(recs.map(r=>r.id)));
-    localStorage.setItem('recs_time', new Date().toISOString());
+    localStorage.setItem('s1_recs',      JSON.stringify(recs.map(r=>r.id)));
+    localStorage.setItem('recs_time',    new Date().toISOString());
+    localStorage.setItem('recs_date',    new Date().toDateString());
+    localStorage.setItem('recs_full',    JSON.stringify(recs));
+    localStorage.setItem('recs_midday',  'false');
   } catch(e) {}
 
   return recs;
@@ -1313,6 +1329,17 @@ function renderHeader() {
           session.label,
         ]),
         el('div', {style:{fontSize:'10px', color:C.text2}}, [session.sub]),
+        state.spyChange !== null && el('div', {style:{
+          fontSize:'10px', color:C.text2, marginTop:'2px',
+          display:'flex', gap:'6px',
+        }}, [
+          el('span', {style:{color: state.spyChange>=0 ? C.green : C.pink}}, [
+            'SPY '+(state.spyChange>=0?'+':'')+state.spyChange.toFixed(2)+'%'
+          ]),
+          el('span', {style:{color: state.qqqChange>=0 ? C.green : C.pink}}, [
+            'QQQ '+(state.qqqChange>=0?'+':'')+state.qqqChange.toFixed(2)+'%'
+          ]),
+        ]),
         !pricesOk && state._priceError
           ? el('button', {
               style:{
@@ -2154,9 +2181,10 @@ function renderMarketTab() {
 
   const isLive  = priced.some(s=>s.p.isReal);
   const q = (state.search||'').toLowerCase().trim();
-  const filtered = q
-    ? priced.filter(s => s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
-    : priced;
+  const sec = state.sector || 'الكل';
+  const filtered = priced
+    .filter(s => sec === 'الكل' || s.sector === sec || s.sector?.includes(sec))
+    .filter(s => !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
   const gainers = filtered.filter(s=>(s.p.change||0)>0);
   const losers  = filtered.filter(s=>(s.p.change||0)<0);
   const flat    = filtered.filter(s=>(s.p.change||0)===0);
@@ -2214,6 +2242,20 @@ function renderMarketTab() {
           render();
         }
       }, ['🔄 تحديث الأسعار']),
+      el('div', {style:{
+        display:'flex', gap:'6px', flexWrap:'wrap', marginTop:'8px',
+      }}, ['الكل','تكنولوجيا','مالية','صحة','طاقة','مؤشر'].map(sec =>
+        el('button', {
+          style:{
+            fontSize:'11px', fontWeight:'700',
+            padding:'4px 10px', borderRadius:'6px', cursor:'pointer',
+            color: state.sector===sec ? '#050810' : C.text2,
+            background: state.sector===sec ? C.blue : 'rgba(255,255,255,.05)',
+            border: state.sector===sec ? 'none' : '1px solid #1a2340',
+          },
+          onClick: () => { state.sector = sec; render(); }
+        }, [sec])
+      )),
       el('input', {
         type:'text',
         placeholder:'🔍 بحث عن سهم...',
@@ -2249,6 +2291,10 @@ function renderMarketTab() {
 
 function renderMiniStock(s, isGainer) {
   const color = isGainer ? C.green : C.pink;
+  const spyChg = state.spyChange || 0;
+  const diff = (s.p.change||0) - spyChg;
+  const vsColor = diff >= 0 ? C.green : C.pink;
+  const vsText = (diff>=0?'+':'')+diff.toFixed(2)+'% vs SPY';
   return el('div', {style:{
     display:'flex', justifyContent:'space-between', alignItems:'center',
     padding:'6px 10px', background:'#060b14', borderRadius:'8px',
@@ -2261,6 +2307,7 @@ function renderMiniStock(s, isGainer) {
     el('div', {style:{textAlign:'left'}}, [
       el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.text}}, [fmtPrice(s.p.price)]),
       el('div', {style:{fontSize:'10px', color}}, [(isGainer?'+':'')+fmt(s.p.change)+'%']),
+      state.spyChange!==null && el('div', {style:{fontSize:'9px', color:vsColor}}, [vsText]),
     ]),
   ]);
 }
@@ -2431,9 +2478,29 @@ setInterval(async () => {
     calcRecs();
     calcSpeculative();
     _recsLockedToday = true; // قفل حتى الغد
+    // تحديد أن تحديث منتصف اليوم تم
+    try { localStorage.setItem('recs_midday', 'true'); } catch(e) {}
     render();
   }
 }, 60000);
+
+// ── إشعارات المتصفح
+async function requestNotification() {
+  if(!('Notification' in window)) return;
+  if(Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+}
+
+function sendNotification(title, body) {
+  if(Notification.permission !== 'granted') return;
+  try {
+    new Notification(title, { body, icon: '📊' });
+  } catch(e) {}
+}
+
+// طلب إذن الإشعارات عند البداية
+requestNotification();
 
 // ── Debug helper
 window.testMarket = () => {
@@ -2450,6 +2517,34 @@ window.retryPrices = async () => {
   render();
   console.log('[Retry] تم تحديث الأسعار:', state.dataCheck.prices.real, 'سهم');
 };
+
+// ── استرجاع التوصيات المحفوظة من نفس اليوم
+(function restoreSavedRecs() {
+  try {
+    const savedDate  = localStorage.getItem('recs_date');
+    const today      = new Date().toDateString();
+    if(savedDate !== today) return; // يوم مختلف — لا استرجاع
+
+    const savedRecs  = localStorage.getItem('recs_full');
+    const savedTime  = localStorage.getItem('recs_time');
+    const midday     = localStorage.getItem('recs_midday') === 'true';
+
+    if(!savedRecs || !savedTime) return;
+
+    const recs = JSON.parse(savedRecs);
+    if(!Array.isArray(recs) || recs.length === 0) return;
+
+    // استرجاع التوصيات
+    state.recs          = recs;
+    state.recsTime      = new Date(savedTime);
+    state.indicatorsDone = true;  // مهم: يفعّل الـ timer
+    _recsLockedToday    = true;
+    _lastRecDate        = today;
+    _midDayDone         = midday; // إذا تحديث 7م تم — لا نعيده
+
+    console.log('[Restore] تم استرجاع', recs.length, 'توصية من', savedTime);
+  } catch(e) {}
+})();
 
 // ── بدء التحميل
 (async () => {
