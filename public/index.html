@@ -29,7 +29,8 @@ body::before{content:'';position:fixed;inset:0;
   background:linear-gradient(rgba(0,200,255,.025) 1px,transparent 1px),
   linear-gradient(90deg,rgba(0,200,255,.025) 1px,transparent 1px);
   background-size:40px 40px;pointer-events:none;z-index:0}
-#app{position:relative;z-index:1}
+#app{min-height:100vh;position:relative;z-index:1;display:block}
+html{height:100%;-webkit-text-size-adjust:100%}
 button{cursor:pointer;font-family:inherit;border:none;outline:none;transition:all .15s}
 button:active{transform:scale(.96);opacity:.8}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
@@ -1380,13 +1381,37 @@ const C = {
   text:'#e8eeff',  text2:'#7888aa', text3:'#3a4560',
 };
 
+// ── معالج الأخطاء العالمي — يمنع الشاشة السوداء
+window.onerror = function(msg, src, line, col, err) {
+  console.error('[Global Error]', msg, 'line:', line);
+  const appEl = document.getElementById('app');
+  if(appEl && appEl.innerHTML === '') {
+    appEl.innerHTML = `
+      <div style="padding:30px;text-align:center;color:#fff;font-family:sans-serif">
+        <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+        <div style="font-size:14px;color:#ff7a00;margin-bottom:8px">خطأ في التطبيق</div>
+        <div style="font-size:11px;color:#888;margin-bottom:16px">${msg}</div>
+        <button onclick="location.reload()" style="background:#0a1020;border:1px solid #3a4560;color:#00c8ff;padding:10px 20px;border-radius:8px;font-size:12px">🔄 إعادة التحميل</button>
+      </div>`;
+  }
+  return false;
+};
+
+window.onunhandledrejection = function(e) {
+  console.error('[Unhandled Promise]', e.reason);
+};
+
 function render() {
-  const root = app();
-  root.innerHTML = '';
-  root.appendChild(renderApp());
-  // تتبع البطاقات التي ظهرت — لمنع animation عند إعادة الرسم
-  if(!state.animatedRecs) state.animatedRecs = new Set();
-  if(state.recs) state.recs.forEach(r => state.animatedRecs.add(r.id));
+  try {
+    const root = app();
+    if(!root) { console.error('[render] لا يوجد div#app'); return; }
+    root.innerHTML = '';
+    root.appendChild(renderApp());
+    if(!state.animatedRecs) state.animatedRecs = new Set();
+    if(state.recs) state.recs.forEach(r => state.animatedRecs.add(r.id));
+  } catch(e) {
+    console.error('[render] خطأ:', e.message, e.stack);
+  }
 }
 
 function renderApp() {
@@ -2782,14 +2807,18 @@ window.retryPrices = async () => {
 
 // ── بدء التحميل
 (async () => {
-  render();
-  await loadData(false);
-  // بعد التحميل — قفل التوصيات لليوم
-  if(state.recs?.length > 0) {
-    _recsLockedToday = true;
-    _lastRecDate     = new Date().toDateString();
+  try {
+    render();
+    await loadData(false);
+    if(state.recs?.length > 0) {
+      _recsLockedToday = true;
+      _lastRecDate     = new Date().toDateString();
+    }
+    render();
+  } catch(e) {
+    console.error('[Init] خطأ في التحميل الأول:', e.message);
+    render(); // حاول العرض حتى مع الخطأ
   }
-  render();
 })();
 
 </script>
