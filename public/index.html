@@ -341,7 +341,15 @@ const state = {
   recs:           null,   // 5 توصيات اليوم
   speculativeRecs:null,   // توصيات المجازفة
   recsTime:       null,
-  sessionOneIds:  (() => { try { return JSON.parse(localStorage.getItem('s1_recs')||'null'); } catch(e){return null;} })(),
+  sessionOneIds:  (() => {
+    try {
+      const s1Date = localStorage.getItem('s1_recs_date');
+      const today  = new Date().toDateString();
+      // فقط إذا نفس اليوم — وإلا null
+      if(s1Date !== today) return null;
+      return JSON.parse(localStorage.getItem('s1_recs')||'null');
+    } catch(e){return null;}
+  })(),
   cooldownStocks: (() => { try { return JSON.parse(localStorage.getItem('cooldown_stocks')||'[]'); } catch(e){return [];} })(),
 
   // اتجاه السوق العام (SPY + QQQ)
@@ -1056,7 +1064,13 @@ function calcSignal(stock) {
     entryTiming, entryColor, entryNote, idealEntry, distToSupport,
     earnings: earn,
     news: news,
-    isConviction: (state.sessionOneIds||[]).includes(stock.id),
+    // ⭐ High Conviction: ظهر في الجلسة الأولى وعاد في منتصف اليوم
+    // نتحقق من _midDayDone أو من localStorage مباشرة (للحالة بعد إعادة التحميل)
+    isConviction: (() => {
+      const middayDone = _midDayDone || localStorage.getItem('recs_midday') === 'true';
+      const s1ids      = state.sessionOneIds || [];
+      return middayDone && s1ids.includes(stock.id);
+    })(),
     beta: pro?.beta || stock.beta,
     activeBuy, watchOnly, blockEntry, isCooldown,
   };
@@ -1433,75 +1447,8 @@ function renderHeader() {
 
 // ── Ticker شريط أسعار متحرك (محسّن)
 function renderTicker() {
-  const priced = ALL_STOCKS
-    .map(s => { const p = state.prices[s.id]; return p?.price > 0 ? {...s, p} : null; })
-    .filter(Boolean);
-  if(priced.length === 0) return el('div', {}, []);
-
-  // نكرر مرتين فقط — كافي مع السرعة الجديدة
-  const items = [...priced, ...priced].map(s => {
-    const chg   = s.p.change || 0;
-    const up    = chg >= 0;
-    const color = up ? C.green : C.pink;
-    const arrow = up ? '▲' : '▼';
-    const bgClr = up ? 'rgba(0,255,136,0.07)' : 'rgba(255,45,122,0.07)';
-    const brClr = up ? 'rgba(0,255,136,0.18)' : 'rgba(255,45,122,0.18)';
-
-    return el('span', {style:{
-      display:'inline-flex', alignItems:'center', gap:'5px',
-      margin:'0 6px',
-      background: bgClr,
-      border: `1px solid ${brClr}`,
-      borderRadius:'6px',
-      padding:'2px 8px',
-      whiteSpace:'nowrap',
-      flexShrink:'0',
-    }}, [
-      // اسم السهم
-      el('span', {style:{
-        fontSize:'11px', fontWeight:'800', color:C.text, letterSpacing:'0.3px',
-      }}, [s.id]),
-      // فاصل
-      el('span', {style:{fontSize:'10px', color:C.text3}}, ['|']),
-      // السعر
-      el('span', {style:{
-        fontSize:'11px', fontWeight:'700', color:C.text,
-      }}, ['$'+Number(s.p.price).toFixed(2)]),
-      // التغيير مع سهم
-      el('span', {style:{
-        fontSize:'10px', fontWeight:'700', color,
-      }}, [arrow+' '+(up?'+':'')+Number(chg).toFixed(2)+'%']),
-    ]);
-  });
-
-  // سرعة مبنية على عدد الأسهم (أبطأ = أوضح)
-  const duration = Math.max(60, priced.length * 1.2);
-
-  return el('div', {style:{
-    overflow:'hidden',
-    background:'linear-gradient(90deg, #060b14 0%, #080d18 50%, #060b14 100%)',
-    borderBottom:'1px solid var(--border)',
-    borderTop:'1px solid var(--border)',
-    padding:'5px 0',
-    position:'relative',
-  }}, [
-    // تأثير fade على الجانبين
-    el('div', {style:{
-      position:'absolute', top:0, right:0, bottom:0, width:'40px',
-      background:'linear-gradient(to left, #060b14, transparent)',
-      zIndex:2, pointerEvents:'none',
-    }}),
-    el('div', {style:{
-      position:'absolute', top:0, left:0, bottom:0, width:'40px',
-      background:'linear-gradient(to right, #060b14, transparent)',
-      zIndex:2, pointerEvents:'none',
-    }}),
-    el('div', {style:{
-      display:'flex', alignItems:'center',
-      animation:`ticker ${duration}s linear infinite`,
-      width:'max-content',
-    }}, items),
-  ]);
+  // مخفي مؤقتاً — سيعود في تطوير قادم
+  return el('div', {}, []);
 }
 
 // ── Data Check Bar
