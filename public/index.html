@@ -951,14 +951,19 @@ function calcSignal(stock) {
     else         { sell++; }
   }
 
-  // 8. ATR Risk/Reward
+  // 8. ATR Risk/Reward — محسّن
   let riskReward = 0;
-  if(atrPct!=null && resistance!=null && resistance>price) {
-    const distToRes  = (resistance-price)/price*100;
-    const atrStop    = atrPct*1.5;
-    riskReward       = atrStop>0 ? distToRes/atrStop : 0;
-    if(riskReward>=2.5) { buy+=2; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة'); }
-    else if(riskReward>=1.5) { buy++; }
+  if(atrPct!=null) {
+    const atrStop   = atrPct * 1.5;
+    // استخدم المقاومة إذا بعيدة بما يكفي، وإلا استخدم هدف 3x ATR
+    const targetPrice = (resistance!=null && resistance>price && (resistance-price)/price*100 > atrPct)
+      ? resistance
+      : price * (1 + atrPct*3/100);
+    const distToTarget = (targetPrice - price) / price * 100;
+    riskReward = atrStop > 0 ? distToTarget / atrStop : 0;
+    if(riskReward>=3.0) { buy+=3; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة جداً'); }
+    else if(riskReward>=2.0) { buy+=2; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة'); }
+    else if(riskReward>=1.5) { buy++; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x جيدة'); }
     else if(riskReward<1)    { sell++; }
   }
 
@@ -1003,14 +1008,22 @@ function calcSignal(stock) {
   const target   = resistance ?? price*(1+atrStop*2/100);
   const profitPct= (target-price)/price*100;
 
-  // ══ جودة الصفقة
+  // ══ جودة الصفقة — معادلة محسّنة
   let tradeQuality = 0;
-  if(riskReward>=2.5)  tradeQuality+=35;
-  else if(riskReward>=1.5) tradeQuality+=20;
-  if(nearSupport)      tradeQuality+=30;
-  if(profitPct>=3)     tradeQuality+=20;
-  else if(profitPct>=2)tradeQuality+=10;
-  if(atrPct!=null && atrPct<3) tradeQuality+=15;
+  // نسبة المخاطرة/المكافأة — الأهم
+  if(riskReward>=3.0)       tradeQuality+=40;
+  else if(riskReward>=2.0)  tradeQuality+=30;
+  else if(riskReward>=1.5)  tradeQuality+=20;
+  else if(riskReward>=1.0)  tradeQuality+=10;
+  // قرب الدعم
+  if(nearSupport)           tradeQuality+=25;
+  // هدف الربح
+  if(profitPct>=5)          tradeQuality+=20;
+  else if(profitPct>=3)     tradeQuality+=15;
+  else if(profitPct>=2)     tradeQuality+=8;
+  // ATR منخفض = سهم مستقر
+  if(atrPct!=null && atrPct<2)  tradeQuality+=15;
+  else if(atrPct!=null && atrPct<3) tradeQuality+=8;
   tradeQuality = Math.min(100, tradeQuality);
 
   // ══ توقيت الدخول
@@ -1087,18 +1100,22 @@ function calcRecs() {
     .filter(Boolean)
     // شرط 1: إشارة شراء
     .filter(s => s.signal==='شراء قوي' || s.signal==='شراء')
-    // شرط 2: ثقة كافية (50%+)
-    .filter(s => s.confidence >= 50)
-    // شرط 3: جودة صفقة مقبولة
-    .filter(s => s.tradeQuality >= 30)
-    // شرط 4: هدف ربح 2%+ (مناسب لـ 1-3 أيام)
+    // شرط 2: ثقة كافية (60%+) — رفعنا من 50
+    .filter(s => s.confidence >= 60)
+    // شرط 3: جودة صفقة مقبولة (40%+) — رفعنا من 30
+    .filter(s => s.tradeQuality >= 40)
+    // شرط 4: هدف ربح 2%+
     .filter(s => s.profitPct >= 2)
-    // شرط 5: لا أرباح قريبة
+    // شرط 5: نسبة مخاطرة/مكافأة 1:1 على الأقل — جديد
+    .filter(s => s.riskReward >= 1.0)
+    // شرط 6: لا أرباح قريبة
     .filter(s => s.earnings > 5)
-    // شرط 6: لا gap-up مبالغ
+    // شرط 7: لا gap-up مبالغ
     .filter(s => (s.change||0) <= 8)
-    // شرط 7: لا توصية إذا التوقيت متأخر — تناقض مع إشارة الشراء
-    .filter(s => s.entryTiming !== 'متأخر');
+    // شرط 8: لا توصية إذا التوقيت متأخر
+    .filter(s => s.entryTiming !== 'متأخر')
+    // شرط 9: السعر فوق MA50 على الأقل — يمنع الأسهم الهابطة — جديد
+    .filter(s => s.ma50==null || s.price >= s.ma50*0.97); // هامش 3%
 
   // ترتيب: قوة × 0.4 + ثقة × 0.3 + جودة × 0.2 + توقيت × 0.1
   // FIX: conviction = 10 بدل 20 — لا يطغى على قوة السهم الحقيقية
