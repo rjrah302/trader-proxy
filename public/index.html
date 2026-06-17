@@ -1329,6 +1329,35 @@ async function loadData(full=false) {
   await Promise.all([fetchPrices(), fetchMarketTrend()]);
   render();
 
+  // إذا التوصيات مقفلة (محفوظة من اليوم) — فقط حدّث الأسعار بدون إعادة حساب
+  if(_recsLockedToday && state.recs?.length > 0) {
+    if(state.indicatorsDone) {
+      // المؤشرات موجودة — حدّث الأسعار في البطاقات فقط
+      state.recs = state.recs.map(r => {
+        const p = state.prices[r.id];
+        if(!p?.price) return r;
+        return { ...r, price:p.price, change:p.change, high:p.high, low:p.low, volume:p.volume };
+      });
+    } else {
+      // المؤشرات غير محمّلة — حمّلها لكن لا تُعيد الحساب
+      const neverLoaded = !state.indicatorsDone && !_indicatorsLoading;
+      if(neverLoaded && !_indicatorsLoading) {
+        _indicatorsLoading = true;
+        render();
+        await fetchIndicators();
+        _indicatorsLoading = false;
+        // حدّث الأسعار فقط — لا calcRecs
+        state.recs = state.recs.map(r => {
+          const p = state.prices[r.id];
+          if(!p?.price) return r;
+          return { ...r, price:p.price, change:p.change, high:p.high, low:p.low, volume:p.volume };
+        });
+      }
+    }
+    render();
+    return;
+  }
+
   // تحميل المؤشرات: عند فتح السوق، أو الطلب الصريح، أو أول مرة دائماً
   const neverLoaded = !state.indicatorsDone && !_indicatorsLoading;
   if((isMarketOpen() || full || neverLoaded) && !state.indicatorsDone && !_indicatorsLoading) {
@@ -1337,7 +1366,7 @@ async function loadData(full=false) {
 
     await fetchIndicators();
 
-    // ── الحساب الأول: بعد المؤشرات مباشرة (بدون أخبار/أرباح بعد)
+    // ── الحساب الأول: بعد المؤشرات مباشرة
     calcRecs();
     calcSpeculative();
     render();
@@ -1352,13 +1381,12 @@ async function loadData(full=false) {
     _indicatorsLoading = false;
 
     // ── الحساب الثاني (والأخير): بعد اكتمال الأخبار والأرباح
-    // هذا هو الحساب الدقيق الكامل — يُقفل بعده حتى منتصف اليوم
     calcRecs();
     calcSpeculative();
     console.log('[loadData] اكتمل — توصيات:', state.recs?.length, '| مجازفة:', state.speculativeRecs?.length);
 
   } else if(state.indicatorsDone) {
-    // المؤشرات جاهزة — فقط حدّث الأسعار في التوصيات الموجودة بدون إعادة حساب كاملة
+    // المؤشرات جاهزة — فقط حدّث الأسعار
     if(state.recs) {
       state.recs = state.recs.map(r => {
         const p = state.prices[r.id];
@@ -2796,8 +2824,10 @@ window.retryPrices = async () => {
 
     state.recs           = recs;
     state.recsTime       = new Date(savedTime);
-    state.indicatorsDone = false;
-    _recsLockedToday     = false;
+    // ✅ إذا توصيات محفوظة من نفس اليوم → قفلها فوراً
+    // المؤشرات ستُحمّل لتحديث الأسعار فقط، لكن لا إعادة حساب
+    state.indicatorsDone = false;  // يحمّل المؤشرات لتحديث الأسعار
+    _recsLockedToday     = true;   // ✅ مقفلة — لا إعادة حساب
     _lastRecDate         = today;
     _midDayDone          = midday;
 
