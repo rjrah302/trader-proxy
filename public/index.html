@@ -1336,59 +1336,55 @@ function renderHeader() {
   return el('div', {style:{
     background:'linear-gradient(135deg,#0a1020,#0d1526)',
     borderBottom:'1px solid var(--border)',
-    padding:'12px 16px 8px',
+    padding:'10px 16px 8px',
     position:'sticky', top:0, zIndex:100,
   }}, [
-    el('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'6px'}}, [
-      el('div', {style:{display:'flex',alignItems:'center',gap:'8px'}}, [
+    // ── صف 1: لوجو + حالة السوق
+    el('div', {style:{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'6px'}}, [
+      el('div', {style:{display:'flex', alignItems:'center', gap:'8px'}}, [
         el('div', {style:{
-          width:'36px', height:'36px', borderRadius:'10px',
+          width:'34px', height:'34px', borderRadius:'10px',
           background:'linear-gradient(135deg,#00c8ff22,#b44fff22)',
           border:'1px solid #b44fff44',
-          display:'flex', alignItems:'center', justifyContent:'center',
-          fontSize:'18px',
+          display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px',
         }}, ['📊']),
         el('div', {}, [
-          el('div', {style:{fontWeight:'800', fontSize:'15px', color:C.text}}, ['تريدر برو X']),
-          el('div', {style:{fontSize:'10px', color:C.text2}}, [
-            ALL_STOCKS.length+' سهم • تحليل احترافي'
-          ]),
+          el('div', {style:{fontWeight:'800', fontSize:'14px', color:C.text}}, ['تريدر برو X']),
+          el('div', {style:{fontSize:'10px', color:C.text2}}, [ALL_STOCKS.length+' سهم • تحليل احترافي']),
         ]),
       ]),
       el('div', {style:{textAlign:'left'}}, [
         el('div', {style:{
-          fontSize:'11px', fontWeight:'700',
-          color: session.color,
+          fontSize:'11px', fontWeight:'700', color:session.color,
           display:'flex', alignItems:'center', gap:'4px',
         }}, [
           el('span', {class: session.dot?'pulse':''}, ['●']),
           session.label,
         ]),
         el('div', {style:{fontSize:'10px', color:C.text2}}, [session.sub]),
-        state.spyChange !== null && el('div', {style:{
-          fontSize:'10px', color:C.text2, marginTop:'2px',
-          display:'flex', gap:'6px',
-        }}, [
-          el('span', {style:{color: state.spyChange>=0 ? C.green : C.pink}}, [
-            'SPY '+(state.spyChange>=0?'+':'')+state.spyChange.toFixed(2)+'%'
-          ]),
-          el('span', {style:{color: state.qqqChange>=0 ? C.green : C.pink}}, [
-            'QQQ '+(state.qqqChange>=0?'+':'')+state.qqqChange.toFixed(2)+'%'
-          ]),
-        ]),
-        !pricesOk && state._priceError
-          ? el('button', {
-              style:{
-                marginTop:'3px', fontSize:'10px', color:'#ff2d7a',
-                background:'rgba(255,45,122,.1)', border:'1px solid rgba(255,45,122,.3)',
-                borderRadius:'6px', padding:'2px 8px', cursor:'pointer', display:'block',
-              },
-              onClick: () => window.retryPrices && window.retryPrices(),
-            }, ['❌ فشل • اضغط لإعادة المحاولة'])
-          : el('div', {style:{fontSize:'10px', color:C.text2, marginTop:'1px'}}, [
-              pricesOk ? `✅ ${dc.prices.real}/${dc.prices.total} سهم` : '⏳ جاري التحميل...'
-            ]),
       ]),
+    ]),
+    // ── صف 2: SPY/QQQ + عداد الأسهم
+    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}}, [
+      state.spyChange !== null
+        ? el('div', {style:{display:'flex', gap:'10px'}}, [
+            el('span', {style:{fontSize:'11px', fontWeight:'700', color:state.spyChange>=0?C.green:C.pink}}, [
+              'SPY '+(state.spyChange>=0?'+':'')+state.spyChange.toFixed(2)+'%'
+            ]),
+            el('span', {style:{fontSize:'11px', fontWeight:'700', color:state.qqqChange>=0?C.green:C.pink}}, [
+              'QQQ '+(state.qqqChange>=0?'+':'')+state.qqqChange.toFixed(2)+'%'
+            ]),
+          ])
+        : el('div', {},[]),
+      !pricesOk && state._priceError
+        ? el('button', {
+            style:{fontSize:'10px', color:'#ff2d7a', background:'rgba(255,45,122,.1)',
+              border:'1px solid rgba(255,45,122,.3)', borderRadius:'6px', padding:'2px 8px', cursor:'pointer'},
+            onClick: () => window.retryPrices && window.retryPrices(),
+          }, ['❌ فشل • أعد المحاولة'])
+        : el('div', {style:{fontSize:'10px', color:C.text2}}, [
+            pricesOk ? `✅ ${dc.prices.real}/${dc.prices.total} سهم` : '⏳ جاري التحميل...'
+          ]),
     ]),
   ]);
 }
@@ -2294,7 +2290,8 @@ function renderMarketTab() {
   }
 
   return el('div', {style:{padding:'12px 16px'}}, [
-    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px'}}, [
+    // ── صف 1: العنوان + حالة الأسعار
+    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}, [
       el('div', {style:{fontSize:'13px', fontWeight:'700', color:C.text}}, [
         '📊 نظرة السوق — '+priced.length+' سهم'
       ]),
@@ -2302,51 +2299,46 @@ function renderMarketTab() {
         fontSize:'10px', fontWeight:'700',
         color: isLive ? C.green : C.yellow,
         background: isLive ? 'rgba(0,255,136,.1)' : 'rgba(255,224,51,.1)',
-        borderRadius:'6px', padding:'2px 8px',
+        borderRadius:'6px', padding:'3px 10px',
         border:`1px solid ${isLive?'rgba(0,255,136,.3)':'rgba(255,224,51,.3)'}`,
       }}, [isLive ? '🟢 أسعار حية' : '🟡 آخر تحديث']),
+    ]),
+    // ── صف 2: أزرار القطاعات
+    el('div', {style:{
+      display:'flex', gap:'6px', flexWrap:'nowrap',
+      overflowX:'auto', marginBottom:'8px', paddingBottom:'2px',
+    }}, ['الكل','تكنولوجيا','مالية','صحة','طاقة'].map(sec =>
       el('button', {
         style:{
-          fontSize:'12px', fontWeight:'700', color:'#00c8ff',
-          background:'rgba(0,200,255,.1)', borderRadius:'8px',
-          padding:'6px 14px', border:'1px solid rgba(0,200,255,.3)',
-          cursor:'pointer', marginTop:'8px', width:'100%',
+          fontSize:'11px', fontWeight:'700', whiteSpace:'nowrap',
+          padding:'5px 12px', borderRadius:'20px', cursor:'pointer', flexShrink:'0',
+          color: state.sector===sec ? '#050810' : C.text2,
+          background: state.sector===sec ? C.blue : 'rgba(255,255,255,.05)',
+          border: state.sector===sec ? 'none' : '1px solid #1a2340',
         },
-        onClick: async () => {
-          await fetchPrices();
-          await fetchMarketTrend();
-          render();
-        }
-      }, ['🔄 تحديث الأسعار']),
-      el('div', {style:{
-        display:'flex', gap:'6px', flexWrap:'nowrap',
-        overflowX:'auto', marginTop:'8px', paddingBottom:'4px',
-      }}, ['الكل','تكنولوجيا','مالية','صحة','طاقة'].map(sec =>
-        el('button', {
-          style:{
-            fontSize:'11px', fontWeight:'700', whiteSpace:'nowrap',
-            padding:'5px 12px', borderRadius:'20px', cursor:'pointer',
-            flexShrink:'0',
-            color: state.sector===sec ? '#050810' : C.text2,
-            background: state.sector===sec ? C.blue : 'rgba(255,255,255,.05)',
-            border: state.sector===sec ? 'none' : '1px solid #1a2340',
-          },
-          onClick: () => { state.sector = sec; render(); }
-        }, [sec])
-      )),
+        onClick: () => { state.sector = sec; render(); }
+      }, [sec])
+    )),
+    // ── صف 3: بحث + زر تحديث
+    el('div', {style:{display:'flex', gap:'8px', marginBottom:'12px'}}, [
       el('input', {
-        type:'text',
-        placeholder:'🔍 بحث عن سهم...',
-        value: state.search,
+        type:'text', placeholder:'🔍 بحث عن سهم...', value: state.search,
         style:{
-          width:'100%', marginTop:'8px',
-          background:'#0a1020', border:'1px solid #1a2340',
-          borderRadius:'8px', padding:'8px 12px',
-          color:'#e8eeff', fontSize:'13px',
-          outline:'none', textAlign:'right',
+          flex:'1', background:'#0a1020', border:'1px solid #1a2340',
+          borderRadius:'8px', padding:'8px 12px', color:'#e8eeff',
+          fontSize:'12px', outline:'none', textAlign:'right',
         },
         onInput: e => { state.search = e.target.value; render(); }
       }),
+      el('button', {
+        style:{
+          fontSize:'11px', fontWeight:'700', color:'#00c8ff',
+          background:'rgba(0,200,255,.1)', borderRadius:'8px',
+          padding:'8px 12px', border:'1px solid rgba(0,200,255,.3)',
+          cursor:'pointer', whiteSpace:'nowrap', flexShrink:'0',
+        },
+        onClick: async () => { await fetchPrices(); await fetchMarketTrend(); render(); }
+      }, ['🔄 تحديث']),
     ]),
     gainers.length>0 && el('div', {style:{marginBottom:'12px'}}, [
       el('div', {style:{fontSize:'11px', color:C.green, fontWeight:'700', marginBottom:'6px'}}, [
