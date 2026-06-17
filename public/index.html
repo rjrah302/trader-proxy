@@ -403,24 +403,26 @@ function fmtPrice(n) {
 // ── 0. اتجاه السوق العام (SPY + QQQ)
 async function fetchMarketTrend() {
   try {
-    const res  = await fetch(`${FMP_BASE}/stable/quote?symbol=SPY,QQQ&apikey=${API_KEY}`);
-    const data = await res.json();
-    if(!Array.isArray(data)) return;
+    const fetchOne = async (sym) => {
+      const res = await fetch(`${FMP_BASE}/stable/quote?symbol=${sym}&apikey=${API_KEY}`);
+      const data = await res.json();
+      return Array.isArray(data) && data[0] ? parseFloat(data[0].changePercentage || data[0].changesPercentage || 0) : null;
+    };
 
-    data.forEach(q => {
-      if(q.symbol==='SPY') state.spyChange = parseFloat(q.changesPercentage||0);
-      if(q.symbol==='QQQ') state.qqqChange = parseFloat(q.changesPercentage||0);
-    });
+    const [spy, qqq] = await Promise.all([fetchOne('SPY'), fetchOne('QQQ')]);
 
-    // اتجاه السوق = متوسط SPY + QQQ
-    if(state.spyChange!==null && state.qqqChange!==null) {
+    if(spy !== null) state.spyChange = spy;
+    if(qqq !== null) state.qqqChange = qqq;
+
+    if(state.spyChange !== null && state.qqqChange !== null) {
       const avg = (state.spyChange + state.qqqChange) / 2;
       state.marketTrend =
-        avg >= 0.3  ? 'bullish'  :  // صاعد واضح
-        avg <= -0.3 ? 'bearish'  :  // هابط واضح
-                      'neutral';    // محايد
+        avg >= 0.3  ? 'bullish'  :
+        avg <= -0.3 ? 'bearish'  :
+                      'neutral';
+      console.log('[Market] SPY:'+state.spyChange+'% QQQ:'+state.qqqChange+'% → '+state.marketTrend);
     }
-  } catch(e) {}
+  } catch(e) { console.warn('[Market] error:', e.message); }
 }
 
 
@@ -561,7 +563,18 @@ async function fetchIndicators() {
   state.loadingIndicators = true;
   state.indicators = {};
 
-  const symbols = ALL_STOCKS.map(s=>s.id);
+  // 70 سهم مختار للمؤشرات التقنية فقط
+  const INDICATOR_STOCKS = [
+    'AAPL','NVDA','MSFT','GOOGL','META','AMZN','TSLA','AVGO','ORCL','CRM',
+    'ADBE','NOW','CRWD','PANW','AMD','QCOM','TSM','ASML','ARM','APP',
+    'JPM','GS','V','AXP','MS','BLK','BAC','LLY','JNJ','UNH',
+    'XOM','CVX','NEE','NFLX','COST',
+    'PLTR','SNOW','DDOG','NET','MDB','ALAB','NBIS','DELL','VST','CEG',
+    'SHOP','MELI','COIN','PYPL','SQ','HOOD','SOFI','UBER','ABNB','DASH',
+    'RBLX','SPOT','RIVN','RKLB','MSTR',
+    'IONQ','QBTS','JOBY','LUNR','HIMS','CELH','ARRY','PLUG','NIO','SNAP',
+  ];
+  const symbols = INDICATOR_STOCKS;
   const BATCH = 8;
   let dc = state.dataCheck;
   dc.rsi.total = dc.macd.total = dc.ma.total =
@@ -816,23 +829,24 @@ async function fetchEarnings() {
 // ── 5. Profiles
 async function fetchProfiles() {
   const symbols = ALL_STOCKS.map(s=>s.id);
-  const BATCH   = 20;
+  const BATCH   = 10;
   for(let i=0; i<symbols.length; i+=BATCH) {
-    const batch = symbols.slice(i,i+BATCH).join(',');
-    try {
-      const res  = await fetch(`${FMP_BASE}/stable/profile?symbol=${batch}&apikey=${API_KEY}`);
-      const data = await res.json();
-      if(Array.isArray(data)) {
-        data.forEach(p => {
-          if(p.symbol) state.profiles[p.symbol] = {
+    const batch = symbols.slice(i, i+BATCH);
+    await Promise.all(batch.map(async sym => {
+      try {
+        const res  = await fetch(`${FMP_BASE}/stable/profile?symbol=${sym}&apikey=${API_KEY}`);
+        const data = await res.json();
+        const p = Array.isArray(data) && data[0];
+        if(p && p.symbol) {
+          state.profiles[p.symbol] = {
             beta:      parseFloat(p.beta||0)||null,
             avgVolume: parseInt(p.avgVolume||0)||null,
             mktCap:    p.mktCap||null,
           };
-        });
-      }
-    } catch(e) {}
-    if(i+BATCH < symbols.length) await new Promise(r=>setTimeout(r,500));
+        }
+      } catch(e) {}
+    }));
+    if(i+BATCH < symbols.length) await new Promise(r=>setTimeout(r,300));
   }
 }
 
@@ -894,9 +908,9 @@ function calcSignal(stock) {
     else if(stochRsi>70) { sell++; }
   }
 
-  // 7. Volume
+  // 7. Volume — نستخدم avgVolume من profile إذا توفر وإلا نتجاهل
   const vol    = p.volume;
-  const avgVol = p.avgVolume || pro?.avgVolume || 0;
+  const avgVol = pro?.avgVolume || 0;
   const volR   = avgVol>0 ? vol/avgVol : 0;
   if(volR>1.5) {
     if(buy>sell) { buy++;  reasons.push('حجم تداول مرتفع ×'+fmt(volR,1)); }
@@ -2138,9 +2152,9 @@ function renderMarketTab() {
     .sort((a,b) => Math.abs(b.p.change||0) - Math.abs(a.p.change||0));
 
   const isLive  = priced.some(s=>s.p.isReal);
-  const gainers = priced.filter(s=>(s.p.change||0)>0);
-  const losers  = priced.filter(s=>(s.p.change||0)<0);
-  const flat    = priced.filter(s=>(s.p.change||0)===0);
+  const gainers = priced.filter(s=>(s.p.change||0)>0).slice(0,10);
+  const losers  = priced.filter(s=>(s.p.change||0)<0).slice(0,10);
+  const flat    = priced.filter(s=>(s.p.change||0)===0).slice(0,5);
 
   // فارغ — رسالة تحميل مع timeout
   if(priced.length === 0) {
@@ -2182,6 +2196,19 @@ function renderMarketTab() {
         borderRadius:'6px', padding:'2px 8px',
         border:`1px solid ${isLive?'rgba(0,255,136,.3)':'rgba(255,224,51,.3)'}`,
       }}, [isLive ? '🟢 أسعار حية' : '🟡 آخر تحديث']),
+      el('button', {
+        style:{
+          fontSize:'12px', fontWeight:'700', color:'#00c8ff',
+          background:'rgba(0,200,255,.1)', borderRadius:'8px',
+          padding:'6px 14px', border:'1px solid rgba(0,200,255,.3)',
+          cursor:'pointer', marginTop:'8px', width:'100%',
+        },
+        onClick: async () => {
+          await fetchPrices();
+          await fetchMarketTrend();
+          render();
+        }
+      }, ['🔄 تحديث الأسعار']),
     ]),
     gainers.length>0 && el('div', {style:{marginBottom:'12px'}}, [
       el('div', {style:{fontSize:'11px', color:C.green, fontWeight:'700', marginBottom:'6px'}}, [
