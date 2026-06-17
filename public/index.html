@@ -586,7 +586,7 @@ async function fetchIndicators() {
     'IONQ','QBTS','JOBY','LUNR','HIMS','CELH','ARRY','PLUG','NIO','SNAP',
   ];
   const symbols = INDICATOR_STOCKS;
-  const BATCH = 8;
+  const BATCH = 5;
   let dc = state.dataCheck;
   dc.rsi.total = dc.macd.total = dc.ma.total =
   dc.support.total = dc.atr.total = dc.bb.total = symbols.length;
@@ -784,10 +784,10 @@ async function fetchIndicators() {
       } catch(e) {}
     }));
 
-    // 3 ثواني بين الدفعات = 8×3=24 طلب/دفعة × (n-1)×3ث
-    // = آمن تحت 750 طلب/دقيقة
+    // 5 أسهم × 3 طلبات = 15 طلب/دفعة + 5 ثواني تأخير
+    // = 180 طلب/دقيقة — آمن جداً تحت 700
     if(i+BATCH < symbols.length) {
-      await new Promise(r=>setTimeout(r,3000));
+      await new Promise(r=>setTimeout(r,5000));
     }
   }
 
