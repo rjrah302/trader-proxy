@@ -41,10 +41,11 @@ button:active{transform:scale(.96);opacity:.8}
 .neon-blue{border-color:#00c8ff!important;box-shadow:0 0 10px rgba(0,200,255,.2)}
 .neon-pink{border-color:#ff2d7a!important;box-shadow:0 0 10px rgba(255,45,122,.2)}
 .price-flash{animation:priceFlash .6s ease}
-@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.fade-up-done{animation:none}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes spin{to{transform:rotate(360deg)}}
 .pulse{animation:pulse 1.5s ease-in-out infinite}
-.fade-up{animation:fadeUp .35s ease both}
+.fade-up{animation:fadeUp .2s ease both}
 </style>
 </head>
 <body>
@@ -56,7 +57,6 @@ button:active{transform:scale(.96);opacity:.8}
 // ================================================================
 const API_KEY   = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
 const USD_RATE  = 3.75;
-const CAPITAL   = (() => { try { return parseFloat(localStorage.getItem('capital')||'100000'); } catch(e){return 100000;} })();
 // نستخدم الـ proxy الموجود /api/stocks للأسعار
 // وFMP مباشرة للمؤشرات التقنية (تدعم CORS)
 const FMP_BASE  = 'https://financialmodelingprep.com';
@@ -360,7 +360,7 @@ const state = {
   tab:       'rec',
   search:    '',
   sector:    'الكل',
-  capital:   CAPITAL,
+
   selected:  null,
   _loadStart: Date.now(), // وقت بدء التحميل
 
@@ -799,7 +799,8 @@ async function fetchIndicators() {
       } catch(e) { console.warn('[Ind]', sym, e.message); }
     }));
 
-    render(); // تحديث شاشة Data Check بعد كل دفعة
+    // render كل 5 دفعات فقط بدل كل دفعة — يمنع الرمش
+    if(i % (BATCH*5) === 0) render();
     if(i+BATCH < INDICATOR_STOCKS.length) {
       await new Promise(r=>setTimeout(r,1200));
     }
@@ -971,8 +972,9 @@ function calcSignal(stock) {
     else if(riskReward<1)    { sell++; }
   }
 
-  // ══ Cooldown — سهم هبط بعد إشارة شراء
-  if((state.cooldownStocks||[]).includes(stock.id)) { sell+=4; }
+  // ══ Cooldown — سهم هبط بعد إشارة شراء → يُحجب مباشرة
+  const isCooldown = (state.cooldownStocks||[]).includes(stock.id);
+  if(isCooldown) sell+=4;
 
   // ══ عقوبات
   if(earn<=5)       { sell+=3; }
@@ -989,9 +991,9 @@ function calcSignal(stock) {
   const signal   = netScore>=4?"شراء قوي":netScore>=2?"شراء":
                    netScore<=-4?"بيع قوي":netScore<=-2?"بيع":"انتظار";
 
-  // ══ قوة الإشارة (0-100) — نعيد المعايرة مع MA200
-  const maxPossibleScore = 18; // أقصى buy ممكن تقريباً
-  const strength = Math.min(100, Math.max(0, Math.round((netScore + maxPossibleScore) / (maxPossibleScore*2) * 100)));
+  // ══ قوة الإشارة (0-100) — أقصى buy ممكن نظرياً = 21
+  const maxBuy = 21;
+  const strength = Math.min(100, Math.max(0, Math.round((netScore + maxBuy) / (maxBuy*2) * 100)));
 
   // ══ الثقة (بناءً على عدد المؤشرات المتوفرة) — مجموعها 100%
   let confidence = 0;
@@ -1062,10 +1064,9 @@ function calcSignal(stock) {
   const idealEntry = nearSupport ? price : (support ? support*1.01 : price);
 
   // ══ حالة الدخول
-  const isCooldown    = (state.cooldownStocks||[]).includes(stock.id);
   const signalQuality = confidence>=70 ? 'HIGH' : confidence>=50 ? 'MEDIUM' : 'LOW';
-  const activeBuy  = signalQuality==='HIGH' && (entryTiming==='ادخل الآن' || entryTiming==='مقبول') && !isCooldown;
-  const watchOnly  = signalQuality==='MEDIUM' || entryTiming==='انتظر';
+  const activeBuy  = !isCooldown && signalQuality==='HIGH' && (entryTiming==='ادخل الآن' || entryTiming==='مقبول');
+  const watchOnly  = !isCooldown && (signalQuality==='MEDIUM' || entryTiming==='انتظر');
   const blockEntry = isCooldown || signalQuality==='LOW' || entryTiming==='متأخر';
 
   return {
@@ -1116,10 +1117,10 @@ function calcRecs() {
     .filter(s => s.earnings > 5)
     // شرط 7: لا gap-up مبالغ
     .filter(s => (s.change||0) <= 8)
-    // شرط 8: لا توصية إذا التوقيت متأخر
-    .filter(s => s.entryTiming !== 'متأخر')
-    // شرط 9: السعر فوق MA50 على الأقل — يمنع الأسهم الهابطة — جديد
-    .filter(s => s.ma50==null || s.price >= s.ma50*0.97); // هامش 3%
+    // شرط 8: توقيت الدخول مقبول — لا متأخر ولا انتظار
+    .filter(s => s.entryTiming === 'ادخل الآن' || s.entryTiming === 'مقبول')
+    // شرط 9: السعر فوق MA50 على الأقل
+    .filter(s => s.ma50==null || s.price >= s.ma50*0.97);
 
   // ترتيب: قوة × 0.4 + ثقة × 0.3 + جودة × 0.2 + توقيت × 0.1
   // FIX: conviction = 10 بدل 20 — لا يطغى على قوة السهم الحقيقية
@@ -1141,19 +1142,18 @@ function calcRecs() {
 
   const recs = [];
   const usedSectors = new Set();
+  // الجولة الأولى: توصية واحدة لكل قطاع
   for(const c of candidates) {
     if(recs.length>=maxRecs) break;
-    // نحاول تنويع القطاعات
-    if(usedSectors.has(c.sector) && recs.length<3) continue;
-    recs.push(c);
-    usedSectors.add(c.sector);
-  }
-  // لو ما وصلنا maxRecs، نكمل بدون تنويع
-  if(recs.length<maxRecs) {
-    for(const c of candidates) {
-      if(recs.length>=maxRecs) break;
-      if(!recs.find(r=>r.id===c.id)) recs.push(c);
+    if(!usedSectors.has(c.sector)) {
+      recs.push(c);
+      usedSectors.add(c.sector);
     }
+  }
+  // الجولة الثانية: أكمل بأقوى المرشحين بدون تكرار
+  for(const c of candidates) {
+    if(recs.length>=maxRecs) break;
+    if(!recs.find(r=>r.id===c.id)) recs.push(c);
   }
 
   // ══ تحديث Cooldown — سهم كان توصية وهبط -5%
@@ -1256,11 +1256,6 @@ function calcSpeculative() {
         else                    { score-=10; } // تحت MA200 = عقوبة للمجازفة
       }
 
-      // ── السعر المنخفض
-      if(price<10)      { score+=15; reasons.push('سعر منخفض — إمكانية مضاعفة عالية'); }
-      else if(price<30) { score+=10; }
-      else if(price<80) { score+=5; }
-
       // ── حجم التداول
       if(volR>2)        { score+=10; reasons.push('حجم ×'+fmt(volR,1)+' — اهتمام كبير'); }
       else if(volR>1.5) { score+=5; }
@@ -1285,15 +1280,10 @@ function calcSpeculative() {
       const lossPct   = (price - stopLoss) / price * 100;
       const riskReward= lossPct > 0 ? profitPct / lossPct : 0;
 
-      // ── FIX 4: تخصيص رأس المال — 5-10% فقط للمجازفة
-      const allocPct  = beta >= 3 ? 0.05 : 0.08; // beta عالي = 5%، طبيعي = 8%
-      const allocSar  = state.capital * allocPct;
-      const qty       = allocSar > 0 && price > 0
-        ? Math.floor(allocSar / (price * USD_RATE)) : 0;
-      const potProfit = qty * price * USD_RATE * (profitPct/100);
-      const potLoss   = qty * price * USD_RATE * (lossPct/100);
+      // ── تخصيص المجازفة — نسبة فقط (بدون رأس مال محدد)
+      const allocPct  = beta >= 3 ? 0.05 : 0.08;
 
-      // ── FIX 5: توقيت الدخول للمجازفة
+      // ── توقيت الدخول للمجازفة
       const distToSup = ind.support > 0 ? (price - ind.support) / price * 100 : 999;
       const entryTiming =
         ind.nearSupport     ? 'ادخل الآن' :
@@ -1311,9 +1301,7 @@ function calcSpeculative() {
         rsi:ind.rsi, macd:ind.macd, ma20:ind.ma20, ma50:ind.ma50, ma200:ind.ma200,
         support:ind.support, resistance:ind.resistance, atrPct:ind.atrPct,
         stopLoss, target, profitPct, lossPct, riskReward,
-        allocPct, allocSar, qty, potProfit, potLoss,
-        entryTiming,
-        nearSupport: ind.nearSupport,
+        allocPct, entryTiming, nearSupport: ind.nearSupport,
       };
     })
     .filter(Boolean)
@@ -1392,6 +1380,9 @@ function render() {
   const root = app();
   root.innerHTML = '';
   root.appendChild(renderApp());
+  // تتبع البطاقات التي ظهرت — لمنع animation عند إعادة الرسم
+  if(!state.animatedRecs) state.animatedRecs = new Set();
+  if(state.recs) state.recs.forEach(r => state.animatedRecs.add(r.id));
 }
 
 function renderApp() {
@@ -1687,8 +1678,6 @@ function renderRecTab() {
     ]);
   }
 
-  const totalAlloc = state.capital * 0.2; // 20% لكل صفقة (5 صفقات × 20%)
-
   return el('div', {style:{padding:'12px 16px'}}, [
     // رأس
     el('div', {style:{marginBottom:'12px'}}, [
@@ -1700,28 +1689,17 @@ function renderRecTab() {
           state.recsTime ? 'آخر تحديث: '+state.recsTime.toLocaleTimeString('ar') : ''
         ]),
       ]),
-      el('div', {style:{
-        marginTop:'6px', fontSize:'11px', color:C.text2,
-        background:'#0a1020', borderRadius:'8px', padding:'6px 10px',
-        border:'1px solid var(--border)',
-      }}, [
-        `💰 ${(state.capital/1000).toFixed(0)}K ريال • 20% لكل صفقة = ${(totalAlloc/1000).toFixed(0)}K ريال`
-      ]),
     ]),
 
     // البطاقات
-    ...state.recs.map((r,idx) => renderRecCard(r, idx, totalAlloc)),
+    ...state.recs.map((r,idx) => renderRecCard(r, idx)),
   ]);
 }
 
-function renderRecCard(r, idx, alloc) {
+function renderRecCard(r, idx) {
   const isSelected = state.selected === r.id;
   const sigColor = r.signal.includes('قوي') ? C.green :
                    r.signal.includes('شراء') ? C.blue : C.yellow;
-
-  const qty       = alloc>0 && r.price>0 ? Math.floor(alloc/r.price/USD_RATE) : 0;
-  const potProfit = qty * r.price * USD_RATE * (r.profitPct/100);
-  const potLoss   = qty * (r.price - r.stopLoss) * USD_RATE;
 
   // ── نوع الأمر — منطق صحيح
   // حالة 1: السعر عند الدعم مباشرة (فرق أقل من 1%) → أمر سوق
@@ -1754,7 +1732,7 @@ function renderRecCard(r, idx, alloc) {
   }
 
   return el('div', {
-    class:'fade-up',
+    class: state.animatedRecs?.has(r.id) ? '' : 'fade-up',
     style:{
       background:'#0a1020', borderRadius:'14px',
       border:`1px solid ${r.isConviction ? '#ffe03344' : 'var(--border)'}`,
@@ -1932,23 +1910,16 @@ function renderRecCard(r, idx, alloc) {
         el('span', {style:{fontSize:'10px', color:C.text3}}, ['سعر الشراء']),
         el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, [fmtPrice(buyPrice)]),
       ]),
-      qty>0 && el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['الكمية (20% رأس مالك)']),
-        el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.blue}}, [qty+' سهم']),
-      ]),
       el('div', {style:{borderTop:'1px solid rgba(255,255,255,.05)', margin:'5px 0'}}),
       el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}, [
         el('span', {style:{fontSize:'10px', color:C.text3}}, ['🛑 وقف الخسارة']),
-        el('div', {style:{textAlign:'left'}}, [
-          el('div', {style:{fontSize:'12px', fontWeight:'800', color:C.pink}}, [fmtPrice(r.stopLoss)]),
-          qty>0 && el('div', {style:{fontSize:'9px', color:C.pink}}, ['-'+fmt(potLoss,0)+' ر']),
-        ]),
+        el('span', {style:{fontSize:'12px', fontWeight:'800', color:C.pink}}, [fmtPrice(r.stopLoss)]),
       ]),
       el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}, [
         el('span', {style:{fontSize:'10px', color:C.text3}}, ['🎯 هدف الربح']),
         el('div', {style:{textAlign:'left'}}, [
           el('div', {style:{fontSize:'12px', fontWeight:'800', color:C.green}}, [fmtPrice(r.target)]),
-          qty>0 && el('div', {style:{fontSize:'9px', color:C.green}}, ['+'+fmt(potProfit,0)+' ر']),
+          el('div', {style:{fontSize:'9px', color:C.green}}, ['+'+fmt(r.profitPct,2)+'%']),
         ]),
       ]),
       el('div', {style:{
@@ -2140,26 +2111,11 @@ function renderSpecCard(s, idx) {
         el('div', {style:{fontSize:'9px', color:C.pink}}, ['-'+fmt(s.lossPct,1)+'%']),
       ]),
     ]),
-    s.qty>0 && el('div', {style:{background:'rgba(180,79,255,.06)',
-      border:'1px solid rgba(180,79,255,.2)', borderRadius:'8px',
-      padding:'7px 10px', marginBottom:'8px'}}, [
-      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}}, [
-        el('div', {}, [
-          el('div', {style:{fontSize:'9px', color:C.text3}}, ['💰 '+(s.allocPct*100).toFixed(0)+'% من رأس مالك']),
-          el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.purple}},
-            [(s.allocSar/1000).toFixed(0)+'K ر = '+s.qty+' سهم']),
-        ]),
-        el('div', {style:{textAlign:'left'}}, [
-          el('div', {style:{fontSize:'9px', color:C.green}}, ['+'+fmt(s.potProfit,0)+' ر']),
-          el('div', {style:{fontSize:'9px', color:C.pink}}, ['-'+fmt(s.potLoss,0)+' ر']),
-        ]),
-      ]),
-    ]),
     s.riskReward>0 && el('div', {style:{fontSize:'10px', marginBottom:isSelected?'8px':'0',
       color:s.riskReward>=2?C.green:s.riskReward>=1.5?C.yellow:C.orange}},
       ['نسبة مخاطرة/مكافأة: '+fmt(s.riskReward,1)+'x']),
     // ══ مربع أمر الشراء — المجازفة
-    s.qty>0 && el('div', {style:{
+    el('div', {style:{
       background:'linear-gradient(135deg,rgba(180,79,255,.07),rgba(255,45,122,.04))',
       border:'1px solid rgba(180,79,255,.3)',
       borderRadius:'10px', padding:'10px 12px',
@@ -2184,7 +2140,6 @@ function renderSpecCard(s, idx) {
           orderNote2  = 'السعر عند الدعم — اشتري فوراً';
           buyPrice2   = s.price;
         } else if(hasSup2 && distToSup2 <= 15) {
-          // المجازفة تقبل بُعد أكبر عن الدعم (15% بدل 10%)
           orderType2  = 'أمر محدد';
           orderColor2 = C.purple;
           orderNote2  = 'انتظر تراجع للدعم — ينفذ تلقائياً';
@@ -2211,12 +2166,6 @@ function renderSpecCard(s, idx) {
               '$'+fmt(buyPrice2,2)
             ]),
           ]),
-          el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'6px'}}, [
-            el('span', {style:{fontSize:'10px', color:C.text3}}, ['الكمية']),
-            el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.purple}}, [
-              s.qty+' سهم'
-            ]),
-          ]),
           el('div', {style:{borderTop:'1px solid rgba(255,255,255,.05)', margin:'6px 0'}}),
           el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}, [
             el('span', {style:{fontSize:'10px', color:C.text3}}, ['🛑 وقف الخسارة']),
@@ -2226,8 +2175,9 @@ function renderSpecCard(s, idx) {
           ]),
           el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'6px'}}, [
             el('span', {style:{fontSize:'10px', color:C.text3}}, ['🎯 هدف الربح']),
-            el('span', {style:{fontSize:'12px', fontWeight:'800', color:C.green}}, [
-              '$'+fmt(s.target,2)
+            el('div', {}, [
+              el('span', {style:{fontSize:'12px', fontWeight:'800', color:C.green}}, ['$'+fmt(s.target,2)]),
+              el('span', {style:{fontSize:'9px', color:C.green, marginRight:'4px'}}, [' +'+fmt(s.profitPct,1)+'%']),
             ]),
           ]),
           el('div', {style:{
@@ -2235,7 +2185,7 @@ function renderSpecCard(s, idx) {
             background:'rgba(255,122,0,.08)', borderRadius:'6px',
             padding:'5px 8px', border:'1px solid rgba(255,122,0,.2)',
             marginBottom:'5px',
-          }}, ['⚠️ مجازفة — '+(s.allocPct*100).toFixed(0)+'% فقط من رأس مالك']),
+          }}, ['⚠️ مجازفة — خصص جزءاً صغيراً فقط من رأس مالك']),
           el('div', {style:{
             fontSize:'10px', color:orderColor2,
             background:orderColor2+'0e', borderRadius:'6px',
@@ -2573,31 +2523,6 @@ function renderPortTab() {
 function renderCalcTab() {
   return el('div', {style:{padding:'16px'}}, [
     el('div', {style:{fontSize:'13px', fontWeight:'700', color:C.text, marginBottom:'12px'}}, ['🧮 حاسبة التداول']),
-
-    // رأس المال
-    el('div', {style:{
-      background:'#0a1020', borderRadius:'10px',
-      border:'1px solid var(--border)', padding:'12px', marginBottom:'10px',
-    }}, [
-      el('div', {style:{fontSize:'11px', color:C.text2, marginBottom:'6px'}}, ['💰 رأس مالك']),
-      el('input', {
-        type:'number', value:state.capital,
-        style:{
-          width:'100%', background:'#060b14', border:'1px solid var(--border)',
-          borderRadius:'6px', padding:'8px 10px', color:C.text,
-          fontSize:'14px', fontWeight:'700', textAlign:'center',
-        },
-        onChange: e => {
-          const v = parseFloat(e.target.value)||0;
-          state.capital = v;
-          try{localStorage.setItem('capital',v);}catch(ex){}
-          render();
-        }
-      }),
-      el('div', {style:{fontSize:'10px', color:C.text2, marginTop:'4px', textAlign:'center'}}, [
-        '20% لكل صفقة = '+(state.capital*0.2).toLocaleString('ar')+' ريال'
-      ]),
-    ]),
 
     // حاسبة الربح
     el('div', {style:{
