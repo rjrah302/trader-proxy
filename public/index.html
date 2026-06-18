@@ -62,9 +62,7 @@ button:active{transform:scale(.96);opacity:.8}
 // ================================================================
 import { initializeApp }                        from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getFirestore, doc, getDoc, setDoc,
-         collection, addDoc, getDocs,
-         updateDoc, deleteDoc, query,
-         orderBy, limit, serverTimestamp }       from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+         serverTimestamp }                       from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey:            'AIzaSyDYyLS0faQLRV8Oqu1tdIXmJhtfklCHt7M',
@@ -77,11 +75,8 @@ const firebaseConfig = {
 
 const _fbApp = initializeApp(firebaseConfig);
 const DB     = getFirestore(_fbApp);
+const USER_ID = 'default';
 
-// ── مساعدات Firestore
-const USER_ID = 'default'; // مستخدم واحد الآن — يمكن ربطه بـ Auth لاحقاً
-
-// المحفظة — مجموعة portfolio/{docId}
 async function fbSavePortfolio(portfolio) {
   try {
     const ref = doc(DB, 'users', USER_ID, 'data', 'portfolio');
@@ -95,8 +90,6 @@ async function fbLoadPortfolio() {
     return snap.exists() ? (snap.data().trades || []) : [];
   } catch(e) { console.warn('[FB] loadPortfolio:', e.message); return []; }
 }
-
-// سجل التوصيات — مجموعة rec_history/{docId}
 async function fbSaveHistory(history) {
   try {
     const ref = doc(DB, 'users', USER_ID, 'data', 'rec_history');
@@ -110,32 +103,25 @@ async function fbLoadHistory() {
     return snap.exists() ? (snap.data().records || []) : [];
   } catch(e) { console.warn('[FB] loadHistory:', e.message); return []; }
 }
-
-// ── sync: يحمّل من Firebase ثم يحدث localStorage
 async function syncFromFirebase() {
   const [portfolio, history] = await Promise.all([fbLoadPortfolio(), fbLoadHistory()]);
-  if(portfolio.length) {
-    try { localStorage.setItem('portfolio', JSON.stringify(portfolio)); } catch(e) {}
-  }
-  if(history.length) {
-    try { localStorage.setItem('rec_history', JSON.stringify(history)); } catch(e) {}
-  }
+  if(portfolio.length) try { localStorage.setItem('portfolio', JSON.stringify(portfolio)); } catch(e) {}
+  if(history.length)   try { localStorage.setItem('rec_history', JSON.stringify(history)); } catch(e) {}
   console.log('[FB] sync: portfolio='+portfolio.length+' history='+history.length);
   return { portfolio, history };
 }
 
-// ── نجعل الدوال متاحة globally للكود الموجود
+// ── تصدير للكود الرئيسي عبر window
 window._fbSavePortfolio = fbSavePortfolio;
 window._fbSaveHistory   = fbSaveHistory;
 window._fbLoadHistory   = fbLoadHistory;
 window._fbLoadPortfolio = fbLoadPortfolio;
 window._fbSync          = syncFromFirebase;
+window._fbReady         = true;
+console.log('[FB] Firebase جاهز ✅');
+</script>
 
-// ── علامة أن Firebase جاهز
-window._fbReady = true;
-
-
-// تريدر برو X — v15
+<script defer>
 // ================================================================
 // ═══════════════════ CONFIG ═════════════════════════════════════
 // ================================================================
