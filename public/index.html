@@ -3373,17 +3373,29 @@ function renderSpecCard(s, idx) {
         !s.nearSupport && s.support && el('div', {style:{fontSize:'8px', color:C.text3}},
           ['بُعد '+fmt(distToSup,1)+'%']),
       ]),
-      // مقاومة
-      el('div', {style:{
-        background:'rgba(255,45,122,.06)', border:'1px solid rgba(255,45,122,.15)',
-        borderRadius:'8px', padding:'7px 8px',
-      }}, [
-        el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'3px'}}, ['🧱 المقاومة (الهدف)']),
-        el('div', {style:{fontSize:'12px', fontWeight:'800', color:C.pink}},
-          [s.resistance ? '$'+fmt(s.resistance,2) : '—']),
-        el('div', {style:{fontSize:'8px', color:C.text3}},
-          [s.resistance ? 'بُعد +'+fmt((s.resistance-s.price)/s.price*100,1)+'%' : '—']),
-      ]),
+      // مقاومة — توضيح إذا كانت هي الهدف أم لا
+      (() => {
+        const resIsTarget = s.resistance && Math.abs(s.resistance - s.target) < 0.5;
+        const resAbove    = s.resistance && s.resistance > s.price*1.05;
+        return el('div', {style:{
+          background:'rgba(255,45,122,.06)', border:'1px solid rgba(255,45,122,.15)',
+          borderRadius:'8px', padding:'7px 8px',
+        }}, [
+          el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'3px'}}, ['🧱 أقرب مقاومة']),
+          el('div', {style:{fontSize:'12px', fontWeight:'800', color:C.pink}},
+            [s.resistance ? '$'+fmt(s.resistance,2) : '—']),
+          // توضيح العلاقة بالهدف
+          s.resistance
+            ? el('div', {style:{fontSize:'8px', color: resIsTarget?C.green:C.text3}}, [
+                resIsTarget
+                  ? '✅ هي الهدف'
+                  : resAbove
+                  ? '📍 فوق الهدف'
+                  : '⚠️ تحت الهدف — الهدف بـ ATR',
+              ])
+            : null,
+        ]);
+      })(),
     ]),
 
     // ── 8. هدف + وقف خسارة + R/R
@@ -3392,9 +3404,15 @@ function renderSpecCard(s, idx) {
         background:'rgba(0,255,136,.08)', border:'1px solid rgba(0,255,136,.2)',
         borderRadius:'8px', padding:'7px 8px', textAlign:'center',
       }}, [
-        el('div', {style:{fontSize:'9px', color:C.text3}}, ['🎯 الهدف']),
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['🎯 هدف الصفقة']),
         el('div', {style:{fontSize:'12px', fontWeight:'800', color:C.green}}, ['$'+fmt(s.target,2)]),
         el('div', {style:{fontSize:'9px', color:C.green}}, ['+'+fmt(s.profitPct,1)+'%']),
+        // مصدر الهدف
+        el('div', {style:{fontSize:'8px', color:C.text3, marginTop:'1px'}}, [
+          s.resistance && Math.abs(s.resistance-s.target)<0.5
+            ? '📍 من المقاومة'
+            : '📐 من ATR×3.5',
+        ]),
       ]),
       el('div', {style:{
         background:'rgba(255,45,122,.08)', border:'1px solid rgba(255,45,122,.2)',
@@ -3441,10 +3459,15 @@ function renderSpecCard(s, idx) {
         el('span', {style:{fontSize:'12px', fontWeight:'800', color:C.pink}}, ['$'+fmt(s.stopLoss,2)]),
       ]),
       el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'4px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['🎯 هدف الربح']),
+        el('span', {style:{fontSize:'10px', color:C.text3}}, ['🎯 هدف الصفقة']),
         el('div', {style:{textAlign:'left'}}, [
           el('span', {style:{fontSize:'12px', fontWeight:'800', color:C.green}}, ['$'+fmt(s.target,2)]),
           el('span', {style:{fontSize:'9px', color:C.green}}, [' +'+fmt(s.profitPct,1)+'%']),
+          el('div', {style:{fontSize:'8px', color:C.text3}}, [
+            s.resistance && Math.abs(s.resistance-s.target)<0.5
+              ? '📍 عند المقاومة'
+              : '📐 ATR×3.5 (مقاومة قريبة جداً)',
+          ]),
         ]),
       ]),
       el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'8px'}}, [
@@ -4159,67 +4182,217 @@ function renderCalcTab() {
 // ================================================================
 
 function renderTipsTab() {
-  const tips = [
+
+  // ── أقسام مرتبة حسب تدفق العمل الفعلي في الكود
+  const sections = [
+
+    // ── القسم 1: فهم الأداة (ماذا تفعل؟)
+    {
+      title: '🗺️ دليل الأداة v24', color: C.blue, isHeader: true,
+      lines: [
+        '🎯 توصياتي — 127 سهم × 10 مؤشرات + شموع + قوة نسبية + أخبار',
+        '🎲 مجازفة — أسهم $3-$80 عالية التقلب، R/R 3.5:1 على الأقل',
+        '📊 السوق — نظرة كاملة مع فرز بالتغيير/الحجم/السعر',
+        '💼 محفظتي — سجّل صفقاتك مع وقف وهدف وR/R',
+        '📈 السجل — تقييم تلقائي لكل توصية (ربح/خسارة)',
+        '🧮 الحاسبة — احسب الكمية ومستويات الدخول',
+      ],
+    },
+
+    // ── القسم 2: توقيت التداول (أول شيء تعرفه)
+    {icon:'⏰', title:'توقيت السوق', color:C.yellow, lines:[
+      'الافتتاح 4:30م-5:00م — الأداة تحسب التوصيات الأولى',
+      'المنتصف 7:00م — تحديث ثانٍ وأخير لليوم',
+      'الإغلاق 11:00م — لا توصيات بعده حتى اليوم التالي',
+      '✅ الأداة تحمي: لا توصيات من cache قديمة خارج وقت السوق',
+    ]},
+
+    // ── القسم 3: كيف تُرشَّح التوصيات (9 شروط)
+    {icon:'🎯', title:'الشروط التسعة للتوصية', color:C.green, lines:[
+      '1. إشارة شراء أو شراء قوي من 10 مؤشرات',
+      '2. ثقة ≥ 60% — تعكس الآن جودة الإشارة لا فقط توفر المؤشرات',
+      '3. جودة صفقة ≥ 35%',
+      '4. هدف ربح ≥ 3% (حد أدنى مضمون)',
+      '5. R/R ≥ 1:1',
+      '6. لا أرباح خلال 5 أيام',
+      '7. لا gap-up أكثر من 8%',
+      '8. فوق MA50',
+      '9. توقيت "ادخل الآن" أو "مقبول"',
+    ]},
+
+    // ── القسم 4: المؤشرات (بالترتيب المستخدم في calcSignal)
+    {icon:'📈', title:'RSI — مؤشر القوة النسبية (18% من الثقة)', color:C.green, lines:[
+      'أقل من 30 = تشبع بيع — ارتداد محتمل (+2 نقطة)',
+      'أقل من 40 = منطقة شراء (+1 نقطة)',
+      'أكثر من 70 = تشبع شراء — تحذير (-2 نقطة)',
+    ]},
+
+    {icon:'⚡', title:'MACD — الزخم (18% من الثقة)', color:C.yellow, lines:[
+      'موجب = زخم شراء نشط (+1 نقطة)',
+      'سلبي = زخم هبوطي (-1 نقطة)',
+      '⚠️ MACD سلبي يظهر كتحذير برتقالي في البطاقة',
+    ]},
+
+    {icon:'〰️', title:'المتوسطات المتحركة MA (24% من الثقة)', color:C.blue, lines:[
+      'MA20 > MA50 = Golden Cross — اتجاه صاعد (+1 نقطة)',
+      'السعر > MA200 = قوة طويلة المدى (+2 نقطة)',
+      'السعر < MA200 = ضعف (-2 نقطة)',
+    ]},
+
+    {icon:'📐', title:'Stochastic RSI (14% من الثقة)', color:C.blue, lines:[
+      'أقل من 20 = تشبع بيع شديد جداً (+2 نقطة)',
+      'أقل من 30 = منطقة شراء (+1 نقطة)',
+      'أكثر من 80 = تشبع شراء (-2 نقطة)',
+      'يعطيك إشارة أبكر من RSI العادي',
+    ]},
+
+    {icon:'🔵', title:'الدعم والمقاومة (13% من الثقة)', color:C.blue, lines:[
+      'الدعم: محسوب من pivot points التاريخية — قاعدة حقيقية',
+      'عند الدعم = +2 نقطة، عند المقاومة = -2 نقطة',
+      'وقف الخسارة يُوضع تحت الدعم مباشرة (ATR × 1.5)',
+      'الهدف = المقاومة إذا أعلى من السعر بـ 2%+ وإلا ATR × 2',
+    ]},
+
+    {icon:'📏', title:'ATR — التذبذب ووقف الخسارة (13% من الثقة)', color:C.orange, lines:[
+      'ATR = متوسط تحرك السهم اليومي',
+      'وقف الخسارة = السعر - (ATR × 1.5) — حد أقصى -15%',
+      'سهم ATR=10% → وقف أوسع | سهم ATR=2% → وقف ضيق',
+      'المجازفة تستخدم ATR × 2 (أوسع) وهدف ATR × 3.5',
+    ]},
+
+    // ── القسم 5: الشموع اليابانية
     {icon:'🕯', title:'الشموع اليابانية — 12 نمط', color:C.yellow, lines:[
-      '🔨 المطرقة = ذيل سفلي طويل — ارتداد صاعد قوي بعد هبوط',
-      '🌠 النجم الساقط = ذيل علوي طويل — انعكاس هبوطي بعد صعود',
-      '🟢 الابتلاع الصاعد = شمعة خضراء تبتلع الحمراء — إشارة قوية',
-      '⭐ نجمة الصباح (3 شمعات) = انعكاس صاعد من القاع',
-      '🚀 Three White Soldiers = 3 شمعات خضراء متتالية = زخم قوي',
-      '⊕ Doji = جسم صغير جداً = تردد السوق — انتظر تأكيد',
+      '🔨 المطرقة — ذيل سفلي طويل بعد هبوط = ارتداد (+4 نقاط)',
+      '🟢 الابتلاع الصاعد — خضراء تبتلع الحمراء (+5 نقاط)',
+      '⭐ نجمة الصباح — 3 شمعات انعكاس من القاع (+5 نقاط)',
+      '🌠 النجم الساقط — ذيل علوي بعد صعود = هبوط (-4 نقاط)',
+      '🔴 الابتلاع الهابط — حمراء تبتلع الخضراء (-5 نقاط)',
+      '⊕ Doji — جسم صغير = تردد — انتظر شمعة تأكيد',
+      '✅ في المجازفة: المطرقة والابتلاع الصاعد = نقاط مضاعفة',
     ]},
-    {icon:'📈', title:'RSI — مؤشر القوة النسبية', color:C.green, lines:['أقل من 30: فرصة شراء — السهم مباع بإفراط','أكثر من 70: خطر — السهم مشترى بإفراط','بين 30-70: منطقة محايدة — انتظر إشارة أخرى']},
+
+    // ── القسم 6: القوة النسبية vs SPY
     {icon:'📊', title:'القوة النسبية vs SPY', color:C.blue, lines:[
-      'السهم ارتفع +3% والسوق +0.5% = قوة استثنائية ✅',
-      'السهم ارتفع +1% والسوق +2% = أضعف من السوق ⚠️',
-      'هذه الإشارة مدمجة في نقاط التوصية تلقائياً',
+      '+3%↑ فوق SPY = قوة استثنائية (+3 نقاط)',
+      '+1% إلى +3% فوق SPY = أقوى من السوق (+2 نقاط)',
+      '-1% إلى +1% = مع السوق (صفر)',
+      'أضعف من SPY = عقوبة تصل -3 نقاط',
+      'هذه الإشارة مدمجة تلقائياً في حساب التوصية',
     ]},
-    {icon:'📋', title:'سجل التوصيات — تعلّم من النتائج', color:C.purple, lines:[
-      'كل توصية تُحفظ تلقائياً في تبويب السجل 📈',
-      'النتيجة تُحدَّث لما يلمس الهدف أو وقف الخسارة',
-      'تحقق من نسبة النجاح والتوقع الرياضي دورياً',
-      'نسبة نجاح < 40% = راجع إعدادات الدخول',
+
+    // ── القسم 7: فلتر الأخبار
+    {icon:'📰', title:'فلتر الأخبار الذكي', color:C.orange, lines:[
+      '36 عبارة مركّبة تقرأ العنوان + ملخص الخبر',
+      'أخبار اليوم وزنها ×2 — أخبار أمس ×1.5 — قديمة ×0.5',
+      '"guidance cut" + "freemium impact" = -9 نقاط سلبية',
+      'أخبار سلبية كثيرة تخفض الثقة -8% إلى -15%',
+      'لهذا ADBE لن يُرشَّح مع أخبار تحول الأعمال السلبية',
     ]},
-    {icon:'〰️', title:'MA20 و MA50 — المتوسطات المتحركة', color:C.blue, lines:['MA20 فوق MA50 = Golden Cross — اتجاه صاعد قوي 🚀','السعر فوق MA20 = زخم إيجابي قصير المدى','السعر تحت MA50 = ضغط بيعي على المدى المتوسط']},
-    {icon:'⚡', title:'MACD — مؤشر الزخم', color:C.yellow, lines:['الشريط فوق الصفر = زخم شراء نشط','الشريط تحت الصفر = زخم هبوطي','التقاطع مع خط الإشارة = نقطة دخول أو خروج']},
-    {icon:'💰', title:'إدارة المال — قواعد ذهبية', color:C.orange, lines:['لا تخاطر بأكثر من 2% من رأسمالك في صفقة واحدة','وقف الخسارة دائماً — بدونه تخاطر بكل رأسمالك','أسهم المجازفة = 10% فقط من محفظتك']},
-    {icon:'🎯', title:'كيف تجمع المؤشرات؟', color:C.green, lines:[
-      'شراء مثالي: RSI<35 + Stoch RSI<20 + MACD↑ + MA20>MA50 + دعم + شمعة صاعدة',
-      'لا تدخل بإشارة واحدة — اجمع 3+ مؤشرات',
-      'شمعة Hammer أو Engulfing عند الدعم = فرصة ذهبية',
+
+    // ── القسم 8: المجازفة
+    {icon:'🎲', title:'المجازفة — فلسفتها وشروطها', color:C.purple, lines:[
+      'رأسمال 5-10% فقط — رهان صغير ربحه ضخم',
+      'السعر بين $3 و$80 — لا أسهم غالية',
+      'Beta ≥ 1.7 أو ATR ≥ 2.5% — تقلب حقيقي',
+      'الوقف تحت الدعم بـ 1.5% — محدد وواضح',
+      'الهدف 3.5:1 R/R — أي سهم أقل يُرفض تلقائياً',
+      'المقاومة تُستخدم كهدف فقط إذا أعلى بـ 5%+',
     ]},
-    {icon:'📐', title:'Stochastic RSI — أسرع من RSI', color:C.blue, lines:['أقل من 20 = تشبع بيع قوي جداً — إشارة دخول مبكرة','أكثر من 80 = تشبع شراء قوي — احذر','يعطيك إشارة قبل RSI العادي بوقت أطول']},
-    {icon:'📏', title:'ATR — وقف الخسارة الذكي', color:C.orange, lines:['ATR = متوسط تحرك السهم اليومي','وقف الخسارة = السعر - (ATR × 1.5)','سهم متقلب = وقف أوسع / سهم مستقر = وقف أضيق']},
-    {icon:'🔵', title:'الدعم والمقاومة', color:C.blue, lines:['الدعم = سعر يرتد منه للأعلى — اشتري عنده','المقاومة = سعر يرتد منه للأسفل — بيع عنده','كلما تكرر = كلما كان أقوى']},
-    {icon:'⏸️', title:'Cooldown — فترة التبريد', color:C.pink, lines:['ليس مؤشراً فنياً — بل ذاكرة حماية','لو أعطى إشارة شراء ثم هبط -5% = يدخل Cooldown','يظهر badge حمراء على السهم = تجنبه مؤقتاً','يحميك من تكرار نفس الخطأ مرتين ✅']},
-    {icon:'⭐', title:'High Conviction — ثقة عالية', color:C.yellow, lines:['السهم ظهر في توصية الافتتاح 4:30م','وظهر مرة ثانية في منتصف السوق 7:00م','= السهم قوي حقيقي مو مجرد إشارة عشوائية ✅']},
-    {icon:'📊', title:'Adaptive Market — تكيّف مع السوق', color:C.purple, lines:['السوق صاعد = 5 توصيات ✅','السوق محايد = 4 توصيات','السوق هابط = 2 توصيات فقط 🛑']},
-    {icon:'⏰', title:'توقيت التداول الأمثل', color:C.yellow, lines:['4:30م-5:00م = تقلب عالي — راقب فقط ❌','5:00م-9:00م = أفضل وقت للتداول ✅','9:00م-11:00م = تقلب مرة ثانية — كن حذراً ⚠️']},
+
+    // ── القسم 9: الثقة والجودة (الجديد)
+    {icon:'💡', title:'الثقة — ماذا تعني الآن؟', color:C.green, lines:[
+      '50% من توفر المؤشرات + 50% من اتساقها مع الشراء',
+      '99% = كل مؤشرات صاعدة ومتوفرة (مثالي)',
+      '70% = مؤشرات متوفرة لكن MACD سلبي مثلاً',
+      '50% = نصف المؤشرات فقط أو متضاربة',
+      'لا تتجاوز 99% أبداً — للتذكير إنها تقدير لا ضمان',
+    ]},
+
+    // ── القسم 10: High Conviction
+    {icon:'⭐', title:'High Conviction — متى تثق أكثر؟', color:C.yellow, lines:[
+      'السهم ظهر في جلسة الافتتاح 4:30م',
+      'وعاد في جلسة المنتصف 7:00م',
+      '= السهم قوي حقيقي — الأداة تعطيه أولوية في الترتيب',
+      'يظهر بنجمة ⭐ في البطاقة',
+    ]},
+
+    // ── القسم 11: Adaptive Market
+    {icon:'🌡️', title:'Adaptive Market — الأداة تتكيف', color:C.purple, lines:[
+      'SPY > +0.3% = سوق صاعد → 5 توصيات',
+      'SPY بين -1.5% و+0.3% = محايد → 4 توصيات',
+      'SPY < -1.5% = هابط → 2 توصيات فقط + لا مجازفة',
+      'هذا يحميك من الدخول في سوق هابط بثقة زائدة',
+    ]},
+
+    // ── القسم 12: السجل والتقييم
+    {icon:'📈', title:'سجل التوصيات — كيف تقيّم الأداة؟', color:C.purple, lines:[
+      'كل توصية تُحفظ تلقائياً وقت السوق فقط',
+      'الهدف أو الوقف يُغلق الصفقة تلقائياً',
+      '5 أيام بدون إغلاق = تُغلق بالسعر الحالي',
+      'التوقع الرياضي الموجب = الاستراتيجية مربحة طويل المدى',
+      'بعد 30 صفقة مغلقة = نتيجة إحصائية موثوقة',
+    ]},
+
+    // ── القسم 13: Cooldown
+    {icon:'⏸️', title:'Cooldown — ذاكرة الحماية', color:C.pink, lines:[
+      'سهم أعطى توصية ثم هبط بشكل حاد = يدخل Cooldown',
+      'يُمسح تلقائياً مع بداية كل يوم جديد',
+      'يظهر badge حمراء على السهم = تجنبه اليوم',
+      'يحميك من تكرار نفس الخطأ في نفس اليوم',
+    ]},
+
+    // ── القسم 14: إدارة المال
+    {icon:'💰', title:'إدارة المال — القواعد الذهبية', color:C.orange, lines:[
+      'لا تخاطر بأكثر من 2% من رأسمالك في صفقة توصية',
+      'المجازفة: 5-10% فقط من المحفظة الإجمالية',
+      'وقف الخسارة إلزامي — بدونه تخاطر بكل شيء',
+      'الهدف الأول: حافظ على رأسمالك — الهدف الثاني: اربح',
+    ]},
   ];
 
   return el('div', {style:{padding:'12px 16px'}}, [
-    el('div', {style:{background:'linear-gradient(135deg,rgba(0,200,255,.06),rgba(180,79,255,.06))', border:'1px solid rgba(0,200,255,.2)', borderRadius:'14px', padding:'14px', marginBottom:'14px'}}, [
-      el('div', {style:{fontSize:'14px', fontWeight:'900', color:C.blue, marginBottom:'8px'}}, ['🗺️ دليل الأداة v23']),
-      el('div', {style:{fontSize:'12px', color:C.text2, lineHeight:'1.8'}}, [
-        '🎯 توصياتي — أسهم بناءً على 10 مؤشرات + شموع + قوة نسبية', el('br'),
-        '🎲 مجازفة — أسهم beta عالي، مخاطرة عالية وربح ضخم محتمل', el('br'),
-        '📊 السوق — نظرة كاملة على 127 سهم مع فلتر القطاعات', el('br'),
-        '💼 محفظتي — سجّل صفقاتك مع وقف الخسارة والهدف', el('br'),
-        '📈 السجل — تتبع أداء كل توصية تلقائياً ونسبة النجاح',
-      ]),
-    ]),
-    ...tips.map(t => el('div', {style:{
-      background:'#0a1020', border:`1px solid ${t.color}22`,
-      borderRadius:'14px', padding:'14px', marginBottom:'10px',
+    ...sections.map((s,i) => {
+      if(s.isHeader) return el('div', {style:{
+        background:'linear-gradient(135deg,rgba(0,200,255,.06),rgba(180,79,255,.06))',
+        border:'1px solid rgba(0,200,255,.2)', borderRadius:'14px',
+        padding:'14px', marginBottom:'14px',
+      }}, [
+        el('div', {style:{fontSize:'14px', fontWeight:'900', color:C.blue, marginBottom:'10px'}}, [s.title]),
+        ...s.lines.map(l => el('div', {style:{
+          display:'flex', gap:'8px', marginBottom:'5px',
+        }}, [
+          el('span', {style:{color:C.blue, flexShrink:0}}, ['→']),
+          el('span', {style:{fontSize:'12px', color:C.text2, lineHeight:'1.7'}}, [l]),
+        ])),
+      ]);
+
+      return el('div', {style:{
+        background:'#0a1020', border:`1px solid ${s.color}22`,
+        borderRadius:'14px', padding:'12px 14px', marginBottom:'8px',
+      }}, [
+        el('div', {style:{
+          display:'flex', alignItems:'center', gap:'8px',
+          marginBottom:'8px',
+        }}, [
+          el('span', {style:{fontSize:'18px'}}, [s.icon]),
+          el('span', {style:{fontSize:'12px', fontWeight:'700', color:s.color}}, [s.title]),
+        ]),
+        ...s.lines.map(l => el('div', {style:{
+          display:'flex', gap:'8px', marginBottom:'4px',
+        }}, [
+          el('span', {style:{color:s.color, flexShrink:0, fontSize:'10px'}}, ['•']),
+          el('span', {style:{fontSize:'11px', color:C.text2, lineHeight:'1.7'}}, [l]),
+        ])),
+      ]);
+    }),
+
+    el('div', {style:{
+      background:'rgba(255,45,122,.05)', border:'1px solid rgba(255,45,122,.15)',
+      borderRadius:'12px', padding:'12px', marginTop:'4px',
     }}, [
-      el('div', {style:{fontSize:'13px', fontWeight:'700', color:t.color, marginBottom:'10px'}}, [t.icon+' '+t.title]),
-      ...t.lines.map(l => el('div', {style:{display:'flex', gap:'8px', marginBottom:'6px'}}, [
-        el('span', {style:{color:t.color, flexShrink:'0'}}, ['•']),
-        el('span', {style:{fontSize:'12px', color:C.text2, lineHeight:'1.7'}}, [l]),
-      ])),
-    ])),
-    el('div', {style:{background:'rgba(255,45,122,.05)', border:'1px solid rgba(255,45,122,.15)', borderRadius:'12px', padding:'12px'}}, [
-      el('span', {style:{fontSize:'11px', color:'rgba(255,45,122,.7)', lineHeight:'1.7'}}, ['⚠️ المؤشرات أدوات مساعدة وليست ضمانة ربح. ادرس الأخبار والسياق قبل أي قرار.']),
+      el('span', {style:{fontSize:'11px', color:'rgba(255,45,122,.7)', lineHeight:'1.7'}}, [
+        '⚠️ المؤشرات أدوات مساعدة وليست ضمانة ربح. الأداء السابق لا يضمن المستقبل. ادرس الأخبار والسياق قبل أي قرار.',
+      ]),
     ]),
   ]);
 }
