@@ -8,63 +8,86 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
-// ── تهيئة Firebase
-firebase.initializeApp({
-  apiKey:            'AIzaSyDYyLS0faQLRV8Oqu1tdIXmJhtfklCHt7M',
-  authDomain:        'trader-pro-e8b9b.firebaseapp.com',
-  projectId:         'trader-pro-e8b9b',
-  storageBucket:     'trader-pro-e8b9b.firebasestorage.app',
-  messagingSenderId: '496012362495',
-  appId:             '1:496012362495:web:4a1fed67ee8c994d0802ca',
-});
-const _DB      = firebase.firestore();
-const _USER_ID = 'default';
-
-window._fbReady = true;
-
-window._fbSavePortfolio = async function(portfolio) {
+// ── تهيئة Firebase مع انتظار جاهزية الـ SDK
+function _initFirebase() {
   try {
-    await _DB.collection('users').doc(_USER_ID)
-             .collection('data').doc('portfolio')
-             .set({ trades: portfolio, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-  } catch(e) { console.warn('[FB] savePortfolio:', e.message); }
-};
+    if(typeof firebase === 'undefined' || typeof firebase.firestore === 'undefined') {
+      // لم يتحمل بعد — أعد المحاولة بعد 500ms
+      setTimeout(_initFirebase, 500);
+      return;
+    }
+    firebase.initializeApp({
+      apiKey:            'AIzaSyDYyLS0faQLRV8Oqu1tdIXmJhtfklCHt7M',
+      authDomain:        'trader-pro-e8b9b.firebaseapp.com',
+      projectId:         'trader-pro-e8b9b',
+      storageBucket:     'trader-pro-e8b9b.firebasestorage.app',
+      messagingSenderId: '496012362495',
+      appId:             '1:496012362495:web:4a1fed67ee8c994d0802ca',
+    });
+    const _DB      = firebase.firestore();
+    const _USER_ID = 'default';
 
-window._fbLoadPortfolio = async function() {
-  try {
-    const snap = await _DB.collection('users').doc(_USER_ID)
-                          .collection('data').doc('portfolio').get();
-    return snap.exists ? (snap.data().trades || []) : [];
-  } catch(e) { console.warn('[FB] loadPortfolio:', e.message); return []; }
-};
+    window._fbSavePortfolio = async function(portfolio) {
+      try {
+        await _DB.collection('users').doc(_USER_ID)
+                 .collection('data').doc('portfolio')
+                 .set({ trades: portfolio, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        console.log('[FB] portfolio saved ✅', portfolio.length);
+      } catch(e) { console.warn('[FB] savePortfolio:', e.message); }
+    };
 
-window._fbSaveHistory = async function(history) {
-  try {
-    await _DB.collection('users').doc(_USER_ID)
-             .collection('data').doc('rec_history')
-             .set({ records: history.slice(-500), updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-  } catch(e) { console.warn('[FB] saveHistory:', e.message); }
-};
+    window._fbLoadPortfolio = async function() {
+      try {
+        const snap = await _DB.collection('users').doc(_USER_ID)
+                              .collection('data').doc('portfolio').get();
+        return snap.exists ? (snap.data().trades || []) : [];
+      } catch(e) { console.warn('[FB] loadPortfolio:', e.message); return []; }
+    };
 
-window._fbLoadHistory = async function() {
-  try {
-    const snap = await _DB.collection('users').doc(_USER_ID)
-                          .collection('data').doc('rec_history').get();
-    return snap.exists ? (snap.data().records || []) : [];
-  } catch(e) { console.warn('[FB] loadHistory:', e.message); return []; }
-};
+    window._fbSaveHistory = async function(history) {
+      try {
+        await _DB.collection('users').doc(_USER_ID)
+                 .collection('data').doc('rec_history')
+                 .set({ records: history.slice(-500), updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        console.log('[FB] history saved ✅', history.length);
+      } catch(e) { console.warn('[FB] saveHistory:', e.message); }
+    };
 
-window._fbSync = async function() {
-  try {
-    const [portfolio, history] = await Promise.all([
-      window._fbLoadPortfolio(),
-      window._fbLoadHistory(),
-    ]);
-    if(portfolio.length) localStorage.setItem('portfolio',    JSON.stringify(portfolio));
-    if(history.length)   localStorage.setItem('rec_history',  JSON.stringify(history));
-    console.log('[FB] sync ✅ portfolio='+portfolio.length+' history='+history.length);
-  } catch(e) { console.warn('[FB] sync error:', e.message); }
-};
+    window._fbLoadHistory = async function() {
+      try {
+        const snap = await _DB.collection('users').doc(_USER_ID)
+                              .collection('data').doc('rec_history').get();
+        return snap.exists ? (snap.data().records || []) : [];
+      } catch(e) { console.warn('[FB] loadHistory:', e.message); return []; }
+    };
+
+    window._fbSync = async function() {
+      try {
+        const [portfolio, history] = await Promise.all([
+          window._fbLoadPortfolio(),
+          window._fbLoadHistory(),
+        ]);
+        if(portfolio.length) localStorage.setItem('portfolio',   JSON.stringify(portfolio));
+        if(history.length)   localStorage.setItem('rec_history', JSON.stringify(history));
+        console.log('[FB] sync ✅ portfolio='+portfolio.length+' history='+history.length);
+      } catch(e) { console.warn('[FB] sync error:', e.message); }
+    };
+
+    // ✅ Firebase جاهز فعلاً
+    window._fbReady = true;
+    console.log('[FB] Firebase جاهز ✅');
+
+    // حفظ أي بيانات معلقة
+    if(window._fbPendingPortfolio) {
+      window._fbSavePortfolio(window._fbPendingPortfolio);
+      window._fbPendingPortfolio = null;
+    }
+
+  } catch(e) {
+    console.warn('[FB] init error:', e.message);
+  }
+}
+_initFirebase();
 </script>
 <style>
 :root {
@@ -3519,7 +3542,12 @@ function renderPortTab() {
 
   function _savePortfolio() {
     try { localStorage.setItem('portfolio', JSON.stringify(portfolio)); } catch(e) {}
-    if(window._fbReady) window._fbSavePortfolio(portfolio).catch(()=>{});
+    if(window._fbReady) {
+      window._fbSavePortfolio(portfolio).catch(()=>{});
+    } else {
+      // Firebase لم يتحمل بعد — احفظ مؤقتاً وسيُرسل لما يجهز
+      window._fbPendingPortfolio = portfolio;
+    }
   }
 
   function saveTrade() {
