@@ -63,25 +63,16 @@ function _initFirebase() {
 
     window._fbSync = async function() {
       try {
-        const [portfolio, history] = await Promise.all([
-          window._fbLoadPortfolio(),
-          window._fbLoadHistory(),
-        ]);
-        if(portfolio.length) localStorage.setItem('portfolio',   JSON.stringify(portfolio));
-        if(history.length)   localStorage.setItem('rec_history', JSON.stringify(history));
-        console.log('[FB] sync ✅ portfolio='+portfolio.length+' history='+history.length);
+        // ✅ السحابة للسجل فقط — المحفظة محلية
+        const history = await window._fbLoadHistory();
+        if(history.length) localStorage.setItem('rec_history', JSON.stringify(history));
+        console.log('[FB] sync ✅ history='+history.length);
       } catch(e) { console.warn('[FB] sync error:', e.message); }
     };
 
     // ✅ Firebase جاهز فعلاً
     window._fbReady = true;
     console.log('[FB] Firebase جاهز ✅');
-
-    // حفظ أي بيانات معلقة
-    if(window._fbPendingPortfolio) {
-      window._fbSavePortfolio(window._fbPendingPortfolio);
-      window._fbPendingPortfolio = null;
-    }
 
   } catch(e) {
     console.warn('[FB] init error:', e.message);
@@ -918,25 +909,102 @@ async function fetchIndicators() {
 }
 
 
-// ── 3. أخبار
+// ── 3. أخبار محسّنة — جمل مركّبة + ملخص + وزن التاريخ
 async function fetchNews() {
   try {
-    // أهم 30 سهم فقط للأخبار لتقليل طول URL
     const topSyms = ALL_STOCKS.slice(0,30).map(s=>s.id).join(',');
-    const res  = await fetch(`${FMP_BASE}/stable/news/stock?symbols=${topSyms}&limit=50&apikey=${API_KEY}`);
+    const res  = await fetch(`${FMP_BASE}/stable/news/stock?symbols=${topSyms}&limit=100&apikey=${API_KEY}`);
     const data = await res.json();
     state.news = {};
-    if(Array.isArray(data)) {
-      data.forEach(n => {
-        const sym = n.symbol;
-        if(!sym) return;
-        if(!state.news[sym]) state.news[sym] = {pos:0, neg:0};
-        const t = (n.title||'').toLowerCase();
-        if(/beat|surge|jump|rally|strong|record|growth/.test(t)) state.news[sym].pos++;
-        else if(/miss|fall|drop|decline|loss|cut|weak/.test(t)) state.news[sym].neg++;
+    if(!Array.isArray(data)) return;
+
+    // ── كلمات ومصطلحات مركّبة مع أوزانها
+    const NEG_PHRASES = [
+      // خطورة عالية — وزن 3
+      { re:/guidance\s*(cut|lower|reduc|slash)/i,          w:3 },
+      { re:/revenue\s*(miss|shortfall|disappoint|decline)/i,w:3 },
+      { re:/earnings\s*(miss|below|disappoint)/i,           w:3 },
+      { re:/freemium|free\s*tier.*(revenue|impact|risk)/i,  w:3 },
+      { re:/price\s*target\s*(cut|lower|reduc|slash)/i,     w:3 },
+      { re:/downgrad[ei]/i,                                  w:3 },
+      { re:/sec\s*(investigation|probe|lawsuit|charge)/i,   w:3 },
+      { re:/accounting\s*(fraud|irregularit|restat)/i,      w:3 },
+      { re:/ceo\s*(resign|depart|step\s*down|fired)/i,      w:3 },
+      { re:/bankruptcy|chapter\s*11|insolvency/i,           w:3 },
+      // خطورة متوسطة — وزن 2
+      { re:/layoff|job\s*cut|workforce\s*reduc/i,           w:2 },
+      { re:/slow(ing|down|er)\s*(growth|demand|sales)/i,    w:2 },
+      { re:/compet(ition|itor)\s*(threat|pressure|challeng)/i,w:2},
+      { re:/ai\s*(disrupt|replac|threaten|obsolet)/i,       w:2 },
+      { re:/subscri\w+\s*(declin|slow|churn|cancel)/i,      w:2 },
+      { re:/margin\s*(compress|pressure|squeez|declin)/i,   w:2 },
+      { re:/debt\s*(concern|problem|issue|downgrad)/i,       w:2 },
+      { re:/miss(ed|ing)?\s*(estimate|expectation|forecast)/i,w:2},
+      { re:/below\s*(estimate|expectation|forecast|consensus)/i,w:2},
+      { re:/weak\s*(outlook|guidance|forecast|demand)/i,    w:2 },
+      // خطورة منخفضة — وزن 1
+      { re:/\b(miss|fall|drop|decline|loss|cut|weak|disappoint)\b/i, w:1 },
+      { re:/headwind|challeng|concern|risk|uncertain/i,     w:1 },
+      { re:/short\s*sell|bearish/i,                         w:1 },
+    ];
+
+    const POS_PHRASES = [
+      // قوة عالية — وزن 3
+      { re:/earnings?\s*(beat|exceed|surpass|top)/i,        w:3 },
+      { re:/revenue\s*(beat|record|surge|exceed)/i,         w:3 },
+      { re:/guidance\s*(raise|increas|upgrad|improv)/i,     w:3 },
+      { re:/price\s*target\s*(raise|increas|upgrad)/i,      w:3 },
+      { re:/buyback|share\s*repurchas/i,                    w:2 },
+      { re:/dividend\s*(increas|raise|hike)/i,              w:2 },
+      // قوة متوسطة — وزن 2
+      { re:/strong\s*(demand|growth|result|quarter)/i,      w:2 },
+      { re:/beat\s*(estimate|expectation|forecast|consensus)/i,w:2},
+      { re:/above\s*(estimate|expectation|forecast)/i,      w:2 },
+      { re:/record\s*(revenue|profit|earning|quarter)/i,    w:2 },
+      { re:/ai\s*(growth|opportunit|monetiz|revenue)/i,     w:2 },
+      { re:/partnership|deal|contract|win/i,                w:1 },
+      // قوة منخفضة — وزن 1
+      { re:/\b(beat|surge|jump|rally|strong|record|growth|upgrad)\b/i,w:1},
+      { re:/bullish|outperform|overweight|buy\s*rating/i,   w:1 },
+    ];
+
+    const now = Date.now();
+
+    data.forEach(n => {
+      const sym = n.symbol;
+      if(!sym) return;
+      if(!state.news[sym]) state.news[sym] = {pos:0, neg:0, items:[]};
+
+      // ── وزن التاريخ: اليوم=2، الأمس=1.5، يومين=1، أقدم=0.5
+      const ageHours = (now - new Date(n.publishedDate||n.date||now)) / 36e5;
+      const dateW    = ageHours < 24 ? 2 : ageHours < 48 ? 1.5 : ageHours < 96 ? 1 : 0.5;
+
+      // ── نص الخبر: عنوان + ملخص
+      const text = ((n.title||'') + ' ' + (n.text||n.summary||n.content||'')).toLowerCase();
+
+      let itemScore = 0;
+
+      // حساب النقاط السلبية
+      NEG_PHRASES.forEach(({re, w}) => {
+        if(re.test(text)) itemScore -= w * dateW;
       });
-    }
-  } catch(e) {}
+
+      // حساب النقاط الإيجابية
+      POS_PHRASES.forEach(({re, w}) => {
+        if(re.test(text)) itemScore += w * dateW;
+      });
+
+      if(itemScore > 0) state.news[sym].pos += itemScore;
+      else if(itemScore < 0) state.news[sym].neg += Math.abs(itemScore);
+    });
+
+    // ── تحويل النقاط لأعداد صحيحة
+    Object.keys(state.news).forEach(sym => {
+      state.news[sym].pos = Math.round(state.news[sym].pos);
+      state.news[sym].neg = Math.round(state.news[sym].neg);
+    });
+
+  } catch(e) { console.warn('[News] error:', e.message); }
 }
 
 // ── 4. أرباح قادمة
@@ -1103,9 +1171,14 @@ function calcSignal(stock) {
   const change = p.change||0;
   if(change>10)     { sell+=3; } // gap-up مبالغ
   else if(change>5) { sell++;  }
-  if(news.neg>=2)   { sell+=2; }
-  else if(news.neg===1) { sell++; }
-  buy += Math.min(3, news.pos);
+  // أخبار — النقاط الآن مرجّحة (0-15+ بدل 0-3)
+  if(news.neg>=6)        { sell+=5; }       // أخبار سلبية جداً (مثل ADBE freemium+guidance cut)
+  else if(news.neg>=4)   { sell+=4; }       // أخبار سلبية قوية
+  else if(news.neg>=2)   { sell+=2; }       // أخبار سلبية متوسطة
+  else if(news.neg>=1)   { sell++; }        // خبر سلبي واحد
+  if(news.pos>=6)        { buy+=4; }        // أخبار إيجابية جداً
+  else if(news.pos>=3)   { buy+=3; }        // أخبار إيجابية قوية
+  else if(news.pos>=1)   { buy += Math.min(2, Math.round(news.pos)); }
 
   // ══ الإشارة النهائية
   const netScore = buy - sell;
@@ -1431,11 +1504,16 @@ function calcSpeculative() {
       else if(volR>=2)  { score+=10; reasons.push('حجم ×'+fmt(volR,1)+' — نشاط مرتفع'); }
       else if(volR>=1.5){ score+=5; }
 
-      // ── 6. شموع — تأكيد بصري
+      // ── 6. شموع — تأكيد بصري (المطرقة والابتلاع مضاعفة في المجازفة)
       const candles = detectCandlePatterns(ind.closes, ind.highs, ind.lows);
+      const topCandle = candles[0] || null;
       candles.forEach(cp => {
         if(cp.signal==='bullish') {
-          score += cp.strength>=5 ? 10 : 6;
+          // المطرقة والابتلاع الصاعد أقوى للمجازفة — نقاط مضاعفة
+          const isBest = cp.name==='Hammer' || cp.name==='Bullish Engulfing' || cp.name==='Morning Star';
+          score += isBest
+            ? (cp.strength>=5 ? 20 : 14)   // مضاعف
+            : (cp.strength>=5 ? 10 : 6);    // عادي
           reasons.push('🕯 '+cp.ar+' — '+cp.tip);
         } else if(cp.signal==='bearish') {
           score -= cp.strength>=5 ? 10 : 5;
@@ -1507,7 +1585,7 @@ function calcSpeculative() {
         nearSupport:ind.nearSupport,
         stopLoss, target, profitPct, lossPct, riskReward,
         allocPct, entryTiming, entryNote,
-        earnDays,
+        earnDays, topCandle,
       };
     })
     .filter(Boolean)
@@ -3110,6 +3188,50 @@ function renderSpecCard(s, idx) {
       }}, ['⚠️ '+w])),
     ]),
 
+    // ── 4b. حالة الشمعة — واضحة ومؤثرة
+    s.topCandle && el('div', {style:{
+      background: s.topCandle.signal==='bullish'
+        ? 'rgba(0,255,136,.08)' : s.topCandle.signal==='bearish'
+        ? 'rgba(255,45,122,.08)' : 'rgba(255,224,51,.06)',
+      border: `1px solid ${s.topCandle.signal==='bullish'?'rgba(0,255,136,.3)':s.topCandle.signal==='bearish'?'rgba(255,45,122,.3)':'rgba(255,224,51,.25)'}`,
+      borderRadius:'8px', padding:'8px 10px', marginBottom:'8px',
+    }}, [
+      el('div', {style:{
+        display:'flex', alignItems:'center', gap:'6px', marginBottom:'3px',
+      }}, [
+        el('span', {style:{fontSize:'16px'}}, [
+          s.topCandle.signal==='bullish'?'✅':s.topCandle.signal==='bearish'?'🚨':'⚠️'
+        ]),
+        el('span', {style:{
+          fontSize:'11px', fontWeight:'800',
+          color: s.topCandle.signal==='bullish'?C.green:s.topCandle.signal==='bearish'?C.pink:C.yellow,
+        }}, [
+          s.topCandle.signal==='bullish'
+            ? 'شمعة صاعدة — تأكيد الدخول'
+            : s.topCandle.signal==='bearish'
+            ? 'شمعة هابطة — ادخل بحذر'
+            : 'تردد — انتظر تأكيد',
+        ]),
+      ]),
+      el('div', {style:{
+        fontSize:'10px',
+        color: s.topCandle.signal==='bullish'?C.green:s.topCandle.signal==='bearish'?C.pink:C.yellow,
+      }}, [s.topCandle.icon+' '+s.topCandle.ar+' — '+s.topCandle.tip]),
+      // نصيحة إضافية للهابطة
+      s.topCandle.signal==='bearish' && el('div', {style:{
+        fontSize:'9px', color:C.pink, marginTop:'4px',
+        borderTop:'1px solid rgba(255,45,122,.2)', paddingTop:'4px',
+      }}, ['انتظر شمعة صاعدة تأكيداً قبل الدخول']),
+      // مضاعفة النقاط للمطرقة والابتلاع
+      s.topCandle.signal==='bullish' &&
+      (s.topCandle.name==='Hammer'||s.topCandle.name==='Bullish Engulfing'||s.topCandle.name==='Morning Star') &&
+      el('div', {style:{
+        fontSize:'9px', color:C.green, marginTop:'3px',
+        background:'rgba(0,255,136,.06)', borderRadius:'4px', padding:'2px 6px',
+        display:'inline-block',
+      }}, ['🚀 نقاط مضاعفة في المجازفة']),
+    ]),
+
     // ── 5. توقيت الدخول
     el('div', {style:{
       background:entryColor+'11', border:'1px solid '+entryColor+'33',
@@ -3233,6 +3355,18 @@ function renderSpecCard(s, idx) {
         background:'rgba(255,122,0,.08)', borderRadius:'6px',
         padding:'5px 8px',
       }}, ['⚠️ هذه مجازفة — الخسارة محدودة والربح ضخم محتمل. الوقف إلزامي.']),
+      // رسالة الشمعة في أسفل الأمر
+      s.topCandle && el('div', {style:{
+        fontSize:'9px', marginTop:'5px', borderRadius:'6px', padding:'5px 8px',
+        color: s.topCandle.signal==='bullish'?C.green:s.topCandle.signal==='bearish'?C.pink:C.yellow,
+        background: s.topCandle.signal==='bullish'?'rgba(0,255,136,.06)':s.topCandle.signal==='bearish'?'rgba(255,45,122,.06)':'rgba(255,224,51,.06)',
+      }}, [
+        s.topCandle.signal==='bullish'
+          ? '✅ شمعة صاعدة تؤكد الدخول — الزخم في صالحك'
+          : s.topCandle.signal==='bearish'
+          ? '🚨 شمعة هابطة — انتظر تأكيداً صاعداً قبل الدخول'
+          : '⚠️ Doji — تردد في السوق، انتظر الشمعة التالية',
+      ]),
     ]),
 
     // ── 10. تفاصيل إضافية عند الضغط
@@ -3542,12 +3676,7 @@ function renderPortTab() {
 
   function _savePortfolio() {
     try { localStorage.setItem('portfolio', JSON.stringify(portfolio)); } catch(e) {}
-    if(window._fbReady) {
-      window._fbSavePortfolio(portfolio).catch(()=>{});
-    } else {
-      // Firebase لم يتحمل بعد — احفظ مؤقتاً وسيُرسل لما يجهز
-      window._fbPendingPortfolio = portfolio;
-    }
+    // المحفظة تُحفظ محلياً فقط — السجل هو ما يذهب للسحابة
   }
 
   function saveTrade() {
