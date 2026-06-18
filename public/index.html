@@ -525,7 +525,6 @@ async function fetchMarketTrend() {
                       'neutral';
       console.log('[Market] SPY:'+state.spyChange+'% QQQ:'+state.qqqChange+'% avg:'+avg.toFixed(2)+'% → '+state.marketTrend);
     }
-    }
   } catch(e) { console.warn('[Market] error:', e.message); }
 }
 
