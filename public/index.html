@@ -1190,18 +1190,41 @@ function calcSignal(stock) {
   const maxBuy = 26;
   const strength = Math.min(100, Math.max(0, Math.round((netScore + maxBuy) / (maxBuy*2) * 100)));
 
-  // ══ الثقة (بناءً على عدد المؤشرات المتوفرة) — مجموعها 100%
+  // ══ الثقة — تعكس جودة الإشارة لا مجرد توفر المؤشرات
+  // الأساس: هل المؤشرات المتوفرة تتفق مع الإشارة؟
   let confidence = 0;
-  if(rsi!=null)                confidence += 18;
-  if(macd!=null)               confidence += 18;
-  if(ma20!=null && ma50!=null) confidence += 12;
-  if(ma200!=null)              confidence += 12;
-  if(support!=null)            confidence += 13;
-  if(atrPct!=null)             confidence += 13;
-  if(stochRsi!=null)           confidence += 14;
-  // مكافآت بسيطة (لا تتجاوز 100)
-  if(p.avgVolume>0) confidence = Math.min(100, confidence+5);
-  if(news.pos>0)    confidence = Math.min(100, confidence+5);
+
+  // 1. اتساق المؤشرات مع بعض (الأهم)
+  const bullSignals = [
+    rsi!=null && rsi<45,                          // RSI في منطقة شراء
+    macd!=null && macd>0,                          // MACD صاعد
+    ma20!=null && ma50!=null && ma20>ma50,         // Golden cross
+    ma200!=null && price>ma200,                    // فوق MA200
+    nearSupport,                                    // عند الدعم
+    stochRsi!=null && stochRsi<40,                 // StochRSI منخفض
+    atrPct!=null && atrPct<5,                      // تذبذب معقول
+    news.pos>0,                                    // أخبار إيجابية
+  ].filter(Boolean).length;
+
+  const totalSignals = [
+    rsi!=null, macd!=null, ma20!=null&&ma50!=null,
+    ma200!=null, support!=null, stochRsi!=null, atrPct!=null,
+  ].filter(Boolean).length;
+
+  // نسبة المؤشرات المتوفرة (0-50%)
+  const availScore = totalSignals > 0 ? Math.round(totalSignals/7*50) : 0;
+
+  // نسبة الاتساق مع الإشارة (0-50%)
+  const alignScore = totalSignals > 0 ? Math.round(bullSignals/Math.max(totalSignals,1)*50) : 0;
+
+  confidence = Math.min(99, availScore + alignScore);
+
+  // مكافأة: أخبار إيجابية + حجم مرتفع
+  if(news.pos>0 && p.avgVolume>0) confidence = Math.min(99, confidence+3);
+
+  // عقوبة: أخبار سلبية تخفض الثقة
+  if(news.neg>=4) confidence = Math.max(10, confidence-15);
+  else if(news.neg>=2) confidence = Math.max(10, confidence-8);
 
   // ══ هدف الربح ووقف الخسارة
   const atrStop  = atrPct ? Math.min(atrPct*1.5, 15) : 2;
@@ -1551,7 +1574,9 @@ function calcSpeculative() {
 
       // الهدف: المقاومة أو 3x-4x وقف الخسارة
       const minTarget = price * (1 + lossPct*3/100);  // 3:1 R/R على الأقل
-      const target    = ind.resistance && ind.resistance > price && ind.resistance > minTarget
+      // ✅ المقاومة تُستخدم فقط إذا أعلى من السعر بـ 5%+ (للمجازفة تحتاج هدف حقيقي)
+      const resValidSpec = ind.resistance && ind.resistance > price*1.05 && ind.resistance > minTarget;
+      const target    = resValidSpec
         ? ind.resistance
         : price * (1 + lossPct*3.5/100);  // هدف 3.5:1
 
@@ -2856,6 +2881,10 @@ function renderRecCard(r, idx) {
           color: r.confidence>=80?C.green:r.confidence>=60?C.blue:C.yellow,
         }}, [r.confidence+'%']),
         el('div', {style:{fontSize:'9px', color:C.text3}}, [r.tradeQuality+'% جودة']),
+        // ⚠️ تحذير MACD سلبي
+        r.macd!=null && r.macd<0 && el('div', {style:{
+          fontSize:'8px', color:C.orange, marginTop:'2px',
+        }}, ['⚠️ MACD↓']),
       ]),
     ]),
 
@@ -2932,6 +2961,16 @@ function renderRecCard(r, idx) {
       ? renderCandleChart(r.closes, r.highs, r.lows)
       : null,
     renderRelativeStrength(r.change),
+    // ⚠️ تحذير MACD سلبي — تنبيه واضح
+    r.macd!=null && r.macd<0 && el('div', {style:{
+      background:'rgba(255,122,0,.08)', border:'1px solid rgba(255,122,0,.25)',
+      borderRadius:'7px', padding:'6px 10px', marginBottom:'6px',
+      fontSize:'10px', color:C.orange,
+      display:'flex', alignItems:'center', gap:'6px',
+    }}, [
+      el('span',{},['⚠️']),
+      el('span',{},['MACD سلبي ('+fmt(r.macd,3)+') — زخم متوسط المدى هابط، تحقق من الرسم البياني']),
+    ]),
 
     // ── 7. حجم التداول
     el('div', {style:{
@@ -3185,20 +3224,52 @@ function renderSpecCard(s, idx) {
       ]),
     ]),
 
-    // ── 2. شريط النقاط + ATR
-    el('div', {style:{display:'flex', alignItems:'center', gap:'8px', marginBottom:'8px'}}, [
-      el('div', {style:{flex:1, height:'4px', background:'#1a2340', borderRadius:'2px'}}, [
-        el('div', {style:{
-          height:'4px', borderRadius:'2px', width:Math.min(100,s.score)+'%',
-          background:'linear-gradient(90deg,'+C.purple+','+C.pink+')',
-        }}),
+    // ── 2. شريط القوة + معلومات المجازفة
+    el('div', {style:{marginBottom:'8px'}}, [
+      // شريط القوة مع النسبة
+      el('div', {style:{display:'flex', alignItems:'center', gap:'8px', marginBottom:'5px'}}, [
+        el('div', {style:{flex:1, height:'4px', background:'#1a2340', borderRadius:'2px'}}, [
+          el('div', {style:{
+            height:'4px', borderRadius:'2px', width:Math.min(100,s.score)+'%',
+            background:'linear-gradient(90deg,'+C.purple+','+C.pink+')',
+          }}),
+        ]),
+        el('span', {style:{fontSize:'10px', fontWeight:'700', color:labelColor, flexShrink:0}},
+          [s.score+'/100']),
       ]),
-      el('span', {style:{fontSize:'10px', fontWeight:'700', color:labelColor, flexShrink:0}},
-        [s.score+'/100']),
-      el('span', {style:{
-        fontSize:'9px', color:C.orange,
-        background:'rgba(255,122,0,.1)', borderRadius:'4px', padding:'1px 6px', flexShrink:0,
-      }}, ['ATR '+fmt(s.atrPct,1)+'%']),
+      // معلومات المجازفة الثلاثة: ATR + Beta + R/R
+      el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'5px'}}, [
+        el('div', {style:{
+          background:'rgba(255,122,0,.08)', borderRadius:'6px',
+          padding:'4px 6px', textAlign:'center',
+        }}, [
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['📈 ATR']),
+          el('div', {style:{fontSize:'11px', fontWeight:'800', color:C.orange}},
+            [fmt(s.atrPct,1)+'%']),
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['تذبذب']),
+        ]),
+        el('div', {style:{
+          background:'rgba(180,79,255,.08)', borderRadius:'6px',
+          padding:'4px 6px', textAlign:'center',
+        }}, [
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['⚡ Beta']),
+          el('div', {style:{fontSize:'11px', fontWeight:'800', color:C.purple}},
+            [fmt(s.beta,1)+'x']),
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['تقلب']),
+        ]),
+        el('div', {style:{
+          background: s.riskReward>=3?'rgba(0,255,136,.08)':'rgba(0,200,255,.08)',
+          borderRadius:'6px', padding:'4px 6px', textAlign:'center',
+        }}, [
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['⚖️ R/R']),
+          el('div', {style:{
+            fontSize:'11px', fontWeight:'800',
+            color: s.riskReward>=3?C.green:C.blue,
+          }}, [fmt(s.riskReward,1)+'x']),
+          el('div', {style:{fontSize:'8px', color:C.text3}},
+            [s.riskReward>=3?'ممتاز':'جيد']),
+        ]),
+      ]),
     ]),
 
     // ── 3. سبب الاختيار — واضح ومباشر
