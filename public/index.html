@@ -1130,13 +1130,14 @@ function calcSignal(stock) {
   // 8. ATR Risk/Reward — محسّن
   let riskReward = 0;
   if(atrPct!=null) {
-    const atrStop   = atrPct * 1.5;
-    // استخدم المقاومة إذا بعيدة بما يكفي، وإلا استخدم هدف 3x ATR
-    const targetPrice = (resistance!=null && resistance>price && (resistance-price)/price*100 > atrPct)
+    const atrStop2   = atrPct * 1.5;
+    // ✅ المقاومة تُستخدم فقط إذا كانت أعلى من السعر بـ 2%+ (نفس منطق الهدف)
+    const resValid2  = resistance!=null && resistance > price*1.02;
+    const targetPrice = resValid2
       ? resistance
-      : price * (1 + atrPct*3/100);
+      : price * (1 + Math.max(atrPct*3, 3)/100);
     const distToTarget = (targetPrice - price) / price * 100;
-    riskReward = atrStop > 0 ? distToTarget / atrStop : 0;
+    riskReward = atrStop2 > 0 ? distToTarget / atrStop2 : 0;
     if(riskReward>=3.0) { buy+=3; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة جداً'); }
     else if(riskReward>=2.0) { buy+=2; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة'); }
     else if(riskReward>=1.5) { buy++; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x جيدة'); }
@@ -1203,10 +1204,20 @@ function calcSignal(stock) {
   if(news.pos>0)    confidence = Math.min(100, confidence+5);
 
   // ══ هدف الربح ووقف الخسارة
-  const atrStop  = atrPct ? Math.min(atrPct*1.5, 15) : 2; // حد أقصى 15% للوقف
-  const stopLoss = Math.max(price*(1-atrStop/100), price*0.75); // لا يتجاوز -25% أبداً
-  const target   = resistance ?? price*(1+atrStop*2/100);
-  const profitPct= (target-price)/price*100;
+  const atrStop  = atrPct ? Math.min(atrPct*1.5, 15) : 2;
+  const stopLoss = Math.max(price*(1-atrStop/100), price*0.75);
+
+  // ✅ الهدف يجب أن يكون فوق السعر الحالي بـ 3%+ على الأقل
+  const minTarget    = price * 1.03;                          // حد أدنى +3%
+  const atrTarget    = price * (1 + Math.max(atrStop*2, 3)/100); // ATR-based هدف
+  // المقاومة تُستخدم فقط إذا كانت أعلى من السعر بـ 2%+ وأعلى من الحد الأدنى
+  const resValid     = resistance && resistance > price*1.02 && resistance > minTarget;
+  const target       = resValid ? resistance : Math.max(atrTarget, minTarget);
+  const profitPct    = (target-price)/price*100;
+
+  // ══ R/R النهائي — يُحسب من الهدف الصحيح والوقف
+  const lossPct    = (price-stopLoss)/price*100;
+  riskReward       = lossPct > 0 ? profitPct/lossPct : 0;
 
   // ══ جودة الصفقة — معادلة محسّنة
   let tradeQuality = 0;
@@ -2011,7 +2022,7 @@ function saveHistory(h) {
 }
 
 // ── تسجيل توصيات اليوم في السجل (يُستدعى بعد calcRecs)
-function recordRecsToHistory(recs) {
+function recordRecsToHistory(recs, forceSession) {
   if(!recs||!recs.length) return;
   // ✅ لا تسجيل خارج وقت السوق — أسعار الـ cache لا تُمثّل إشارة حقيقية
   if(!isMarketOpen()) return;
@@ -2019,10 +2030,10 @@ function recordRecsToHistory(recs) {
   const now     = new Date();
   const today   = now.toDateString();
 
-  // تحديد الجلسة: افتتاح أو منتصف؟
+  // تحديد الجلسة: يُمرر صراحةً أو يُحسب من الوقت
   const t       = getMarketTimes();
   const m       = getNowMins();
-  const session = (m >= t.midDay && m <= t.midDay+60) ? 'منتصف' : 'افتتاح';
+  const session = forceSession || ((m >= t.midDay && m <= t.midDay+60) ? 'منتصف' : 'افتتاح');
 
   recs.forEach(r => {
     // لا تكرار لنفس السهم في نفس الجلسة من نفس اليوم
@@ -2681,23 +2692,50 @@ function renderRecTab() {
 
   // حالة: لا توصيات
   if(!state.recs || state.recs.length===0) {
+    const trend = state.marketTrend;
+    const spyChg = state.spyChange;
+    const trendMsg = trend==='bearish'
+      ? '📉 السوق هابط — الأداة تحمي رأسمالك بتقليل التوصيات'
+      : trend==='neutral'
+      ? '⚠️ السوق محايد — لا فرص تستوفي الشروط حالياً'
+      : '🔍 السوق صاعد لكن لا سهم يستوفي كل الشروط اليوم';
+
     return el('div', {style:{padding:'20px 16px', textAlign:'center'}}, [
       el('div', {style:{fontSize:'40px', marginBottom:'12px'}}, ['🔍']),
       el('div', {style:{fontSize:'14px', fontWeight:'700', color:C.text, marginBottom:'8px'}}, [
         'لا توجد توصيات تستوفي الشروط اليوم'
       ]),
-      el('div', {style:{fontSize:'11px', color:C.text2, lineHeight:'1.8'}}, [
-        'الشروط المطلوبة:',
-        el('br'),
-        '• إشارة شراء من 8 مؤشرات',
-        el('br'),
-        '• ثقة 50%+ • جودة صفقة 30%+',
-        el('br'),
-        '• هدف ربح 2%+ • لا أرباح قريبة',
+      // حالة السوق
+      spyChg!==null && el('div', {style:{
+        display:'flex', justifyContent:'center', gap:'10px',
+        marginBottom:'10px', fontSize:'11px', fontWeight:'700',
+      }}, [
+        el('span', {style:{color:spyChg>=0?C.green:C.pink}},
+          ['SPY '+(spyChg>=0?'+':'')+spyChg.toFixed(2)+'%']),
+        el('span', {style:{color:state.qqqChange>=0?C.green:C.pink}},
+          ['QQQ '+(state.qqqChange>=0?'+':'')+state.qqqChange.toFixed(2)+'%']),
       ]),
       el('div', {style:{
-        marginTop:'12px', fontSize:'11px', color:C.yellow,
-      }}, ['السوق لا يعطي فرص ممتازة كل يوم — الانتظار قرار صحيح ✅']),
+        fontSize:'11px', color:C.text2, lineHeight:'1.9',
+        background:'rgba(255,255,255,.03)', borderRadius:'10px',
+        padding:'10px 14px', marginBottom:'10px', textAlign:'right',
+      }}, [
+        el('div', {style:{fontWeight:'700', color:C.text, marginBottom:'4px'}}, ['الشروط التسعة المطلوبة:']),
+        '• إشارة شراء من 10 مؤشرات', el('br'),
+        '• ثقة 60%+ • جودة صفقة 35%+', el('br'),
+        '• هدف ربح 2%+ • R/R 1:1+', el('br'),
+        '• لا أرباح خلال 5 أيام', el('br'),
+        '• لا gap-up أكثر من 8%', el('br'),
+        '• توقيت مقبول • فوق MA50',
+      ]),
+      el('div', {style:{
+        fontSize:'11px', color:C.yellow,
+        background:'rgba(255,224,51,.06)', borderRadius:'8px',
+        padding:'8px 12px', border:'1px solid rgba(255,224,51,.2)',
+      }}, [trendMsg]),
+      el('div', {style:{fontSize:'10px', color:C.text3, marginTop:'8px'}}, [
+        'السوق لا يعطي فرص ممتازة كل يوم — الانتظار قرار صحيح ✅'
+      ]),
     ]);
   }
 
@@ -4189,6 +4227,10 @@ setInterval(async () => {
     // calcRecs ستقارن التوصيات الجديدة مع sessionOneIds المحفوظة أعلاه
     calcRecs();
     calcSpeculative();
+    // ✅ تسجيل جلسة المنتصف صراحةً بعد calcRecs
+    if(state.recs?.length > 0 && isMarketOpen()) {
+      recordRecsToHistory(state.recs, 'منتصف');
+    }
     _recsLockedToday = true;
     try { localStorage.setItem('recs_midday', 'true'); } catch(e) {}
     render();
