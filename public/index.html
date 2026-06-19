@@ -791,6 +791,65 @@ async function fetchIndicators() {
         const ema26 = calcEMA(closes, 26);
         const macd  = (ema12!=null && ema26!=null) ? ema12-ema26 : null;
 
+        // ── MACD Signal Line (EMA9 من MACD) + Histogram
+        let macdSignal = null, macdHist = null, macdHistDir = null;
+        if(closes.length >= 35) {
+          // نبني مصفوفة MACD لآخر 30 يوم
+          const macdArr = [];
+          for(let j=35; j<=closes.length; j++) {
+            const sl   = closes.slice(0, j);
+            const e12  = calcEMA(sl, 12);
+            const e26  = calcEMA(sl, 26);
+            if(e12!=null && e26!=null) macdArr.push(e12-e26);
+          }
+          if(macdArr.length >= 9) {
+            macdSignal  = calcEMA(macdArr, 9);
+            macdHist    = macd!=null && macdSignal!=null ? macd - macdSignal : null;
+            // اتجاه الهيستوغرام: هل يتوسع أم يضيق؟
+            if(macdArr.length >= 10 && macdSignal!=null) {
+              const prevMacd   = macdArr[macdArr.length-2];
+              const prevSignal = calcEMA(macdArr.slice(0,-1), 9);
+              const prevHist   = prevSignal!=null ? prevMacd - prevSignal : null;
+              if(prevHist!=null && macdHist!=null) {
+                macdHistDir = macdHist > prevHist ? 'expanding' : 'contracting';
+              }
+            }
+          }
+        }
+
+        // ── MACD أسبوعي (نجمع كل 5 أيام يومية = شمعة أسبوعية)
+        let weeklyMacd = null, weeklyMacdHist = null, weeklyTrend = null;
+        if(closes.length >= 60) {
+          const wCloses = [];
+          for(let j=4; j<closes.length; j+=5) {
+            wCloses.push(closes[j]); // آخر إغلاق لكل أسبوع
+          }
+          if(wCloses.length >= 26) {
+            const we12 = calcEMA(wCloses, 12);
+            const we26 = calcEMA(wCloses, 26);
+            weeklyMacd = (we12!=null && we26!=null) ? we12-we26 : null;
+            if(wCloses.length >= 35) {
+              const wMacdArr = [];
+              for(let j=35; j<=wCloses.length; j++) {
+                const wsl = wCloses.slice(0,j);
+                const we12j = calcEMA(wsl,12);
+                const we26j = calcEMA(wsl,26);
+                if(we12j!=null && we26j!=null) wMacdArr.push(we12j-we26j);
+              }
+              if(wMacdArr.length >= 9) {
+                const wSig = calcEMA(wMacdArr, 9);
+                weeklyMacdHist = weeklyMacd!=null && wSig!=null ? weeklyMacd-wSig : null;
+              }
+            }
+            // اتجاه أسبوعي: هل MA20 أسبوعي > MA50 أسبوعي؟
+            if(wCloses.length >= 50) {
+              const wma20 = wCloses.slice(-20).reduce((a,b)=>a+b,0)/20;
+              const wma50 = wCloses.slice(-50).reduce((a,b)=>a+b,0)/50;
+              weeklyTrend = wma20 > wma50 ? 'bullish' : 'bearish';
+            }
+          }
+        }
+
         // ── Bollinger Bands (تحتاج MA20)
         let bb_upper = null, bb_lower = null;
         if(ma20!=null) {
@@ -870,7 +929,9 @@ async function fetchIndicators() {
 
         // ── حفظ
         state.indicators[sym] = {
-          rsi, ma20, ma50, ma200, macd, bb_upper, bb_lower,
+          rsi, ma20, ma50, ma200, macd, macdSignal, macdHist, macdHistDir,
+          weeklyMacd, weeklyMacdHist, weeklyTrend,
+          bb_upper, bb_lower,
           support, resistance, nearSupport, nearResistance,
           atrPct, stochRsi,
           closes: closes.slice(-30),
@@ -1127,11 +1188,12 @@ function calcSignal(stock) {
     else         { sell++; }
   }
 
-  // 8. ATR Risk/Reward — محسّن
+  // 8. ATR Risk/Reward + MACD Histogram — محسّن
   let riskReward = 0;
   if(atrPct!=null) {
-    const atrStop2   = atrPct * 1.5;
-    // ✅ المقاومة تُستخدم فقط إذا كانت أعلى من السعر بـ 2%+ (نفس منطق الهدف)
+    // ATR ديناميكي حسب تقلب السهم
+    const atrMult = atrPct < 2 ? 1.5 : atrPct < 4 ? 2.0 : 2.5;
+    const atrStop2   = atrPct * atrMult;
     const resValid2  = resistance!=null && resistance > price*1.02;
     const targetPrice = resValid2
       ? resistance
@@ -1142,6 +1204,23 @@ function calcSignal(stock) {
     else if(riskReward>=2.0) { buy+=2; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة'); }
     else if(riskReward>=1.5) { buy++; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x جيدة'); }
     else if(riskReward<1)    { sell++; }
+  }
+
+  // ── MACD Histogram — الأهم (يتجاوز MACD البسيط)
+  if(ind.macdHist!=null) {
+    const hist    = ind.macdHist;
+    const histDir = ind.macdHistDir;
+    if(hist > 0 && histDir === 'expanding')       { buy+=2;  reasons.push('MACD Hist +'+fmt(hist,2)+' ↑ زخم شراء متصاعد'); }
+    else if(hist > 0 && histDir === 'contracting'){ buy++;   reasons.push('MACD Hist +'+fmt(hist,2)+' ↗ زخم يضعف'); }
+    else if(hist < 0 && histDir === 'expanding')  { sell+=3; } // زخم بيعي متصاعد — عقوبة قوية
+    else if(hist < 0 && histDir === 'contracting'){ sell++;  } // زخم بيعي يضعف
+  }
+
+  // ── MACD أسبوعي — حماية من الهبوط الكبير
+  if(ind.weeklyTrend === 'bearish' && ind.weeklyMacdHist!=null && ind.weeklyMacdHist < 0) {
+    sell+=2; // الأسبوعي هابط = تحذير قوي
+  } else if(ind.weeklyTrend === 'bullish') {
+    buy++;   // الأسبوعي صاعد = مكافأة
   }
 
   // 9. القوة النسبية vs SPY — إشارة حقيقية
@@ -1227,7 +1306,9 @@ function calcSignal(stock) {
   else if(news.neg>=2) confidence = Math.max(10, confidence-8);
 
   // ══ هدف الربح ووقف الخسارة
-  const atrStop  = atrPct ? Math.min(atrPct*1.5, 15) : 2;
+  // ══ هدف الربح ووقف الخسارة — ATR ديناميكي
+  const atrMultFinal = atrPct ? (atrPct < 2 ? 1.5 : atrPct < 4 ? 2.0 : 2.5) : 1.5;
+  const atrStop  = atrPct ? Math.min(atrPct*atrMultFinal, 15) : 2;
   const stopLoss = Math.max(price*(1-atrStop/100), price*0.75);
 
   // ✅ الهدف يجب أن يكون فوق السعر الحالي بـ 3%+ على الأقل
@@ -1300,7 +1381,9 @@ function calcSignal(stock) {
   return {
     id: stock.id, name: stock.name, sector: stock.sector, cat: stock.cat,
     price, change, high:p.high, low:p.low, volume:vol, volR,
-    rsi, ma20, ma50, ma200, macd, bb_upper, bb_lower,
+    rsi, ma20, ma50, ma200, macd, macdHist:ind.macdHist, macdHistDir:ind.macdHistDir,
+    weeklyTrend:ind.weeklyTrend, weeklyMacdHist:ind.weeklyMacdHist,
+    bb_upper, bb_lower,
     support, resistance, nearSupport, nearResistance,
     resTouches: ind.resTouches??1, supTouches: ind.supTouches??1,
     atrPct, stochRsi, riskReward,
@@ -1525,12 +1608,39 @@ function calcSpeculative() {
         warnings.push('الاتجاه غير واضح — تحقق من الرسم');
       }
 
-      // ── 4. MACD — زخم قصير المدى
-      if(ind.macd!=null && ind.macd>0) {
-        score+=12;
-        reasons.push('MACD صاعد — زخم شراء قصير المدى');
-      } else if(ind.macd!=null && ind.macd<0) {
-        score-=5;
+      // ── 4. MACD Histogram — الزخم الحقيقي للمجازفة
+      if(ind.macdHist!=null) {
+        const hist    = ind.macdHist;
+        const histDir = ind.macdHistDir;
+        if(hist > 0 && histDir === 'expanding') {
+          // ✅ زخم شراء متصاعد — الأنسب للمجازفة
+          score+=18;
+          reasons.push('MACD Hist +'+fmt(hist,2)+' ↑ — زخم شراء متصاعد');
+        } else if(hist > 0 && histDir === 'contracting') {
+          // زخم موجب لكن يضعف — مقبول مع تحذير
+          score+=6;
+          warnings.push('MACD Hist يضيق — الزخم يتراجع');
+        } else if(hist < 0 && histDir === 'expanding') {
+          // ❌ زخم بيعي متصاعد — حجب فوري في المجازفة
+          return null;
+        } else if(hist < 0 && histDir === 'contracting') {
+          // زخم سالب لكن يضعف — عقوبة فقط
+          score-=8;
+          warnings.push('MACD Hist سالب — انتظر تحول الزخم');
+        }
+      } else if(ind.macd!=null) {
+        // fallback للـ MACD البسيط إذا لا يوجد Histogram
+        if(ind.macd>0) { score+=12; reasons.push('MACD صاعد — زخم شراء قصير المدى'); }
+        else           { score-=5; }
+      }
+
+      // ── أسبوعي — لا مجازفة في هبوط أسبوعي حاد
+      if(ind.weeklyTrend === 'bearish' && ind.weeklyMacdHist!=null && ind.weeklyMacdHist < -1) {
+        // الأسبوعي هابط بقوة — حجب
+        return null;
+      } else if(ind.weeklyTrend === 'bullish') {
+        score+=8;
+        reasons.push('أسبوعي صاعد — الاتجاه الكبير في صالحك');
       }
 
       // ── 5. حجم التداول — اهتمام حقيقي
@@ -2418,12 +2528,16 @@ function render() {
 }
 
 function renderApp() {
-  return el('div', {id:'main'}, [
+  return el('div', {id:'main', style:{
+    display:'flex', flexDirection:'column',
+    minHeight:'100vh', paddingBottom:'60px', // مساحة للـ bottom nav
+  }}, [
     renderHeader(),
     renderTicker(),
     renderDataCheck(),
-    renderTabs(),
+    renderMacdBar(),   // ✅ شريط MACD Hist + أسبوعي جديد
     renderContent(),
+    renderBottomNav(), // ✅ التبويبات في الأسفل
   ]);
 }
 
@@ -2584,6 +2698,119 @@ function renderDataCheck() {
 }
 
 // ── Tabs
+// ── شريط MACD Hist + أسبوعي (يظهر في جميع التبويبات)
+function renderMacdBar() {
+  // نجمع إحصائيات من كل الأسهم التي عندها بيانات
+  const inds = Object.values(state.indicators);
+  const withHist = inds.filter(i=>i.macdHist!=null);
+  if(withHist.length === 0) return null;
+
+  const bullHist  = withHist.filter(i=>i.macdHist>0 && i.macdHistDir==='expanding').length;
+  const bearHist  = withHist.filter(i=>i.macdHist<0 && i.macdHistDir==='expanding').length;
+  const bullWeek  = withHist.filter(i=>i.weeklyTrend==='bullish').length;
+  const total     = withHist.length;
+  const moodColor = bullHist > bearHist ? C.green : bearHist > bullHist ? C.pink : C.yellow;
+  const moodText  = bullHist > bearHist ? 'زخم صاعد' : bearHist > bullHist ? 'زخم هابط' : 'متوازن';
+
+  return el('div', {style:{
+    background:'#060b14', borderBottom:'1px solid #1a2340',
+    padding:'6px 16px', display:'flex', gap:'8px', alignItems:'center',
+    overflowX:'auto',
+  }}, [
+    // MACD Histogram السوق
+    el('div', {style:{
+      display:'flex', alignItems:'center', gap:'5px', flexShrink:'0',
+    }}, [
+      el('span', {style:{fontSize:'9px', color:C.text3}}, ['MACD Hist']),
+      el('span', {style:{
+        fontSize:'10px', fontWeight:'700', color:moodColor,
+        background:moodColor+'12', borderRadius:'5px', padding:'2px 7px',
+      }}, [bullHist+'↑ / '+bearHist+'↓ '+moodText]),
+    ]),
+    el('div', {style:{width:'1px', height:'16px', background:'#1a2340', flexShrink:'0'}}),
+    // أسبوعي
+    el('div', {style:{
+      display:'flex', alignItems:'center', gap:'5px', flexShrink:'0',
+    }}, [
+      el('span', {style:{fontSize:'9px', color:C.text3}}, ['أسبوعي']),
+      el('span', {style:{
+        fontSize:'10px', fontWeight:'700',
+        color: bullWeek/total > 0.6 ? C.green : bullWeek/total < 0.4 ? C.pink : C.yellow,
+        background: bullWeek/total > 0.6 ? 'rgba(0,255,136,.1)' : bullWeek/total < 0.4 ? 'rgba(255,45,122,.1)' : 'rgba(255,224,51,.1)',
+        borderRadius:'5px', padding:'2px 7px',
+      }}, [
+        bullWeek/total > 0.6 ? '↑ صاعد' : bullWeek/total < 0.4 ? '↓ هابط' : '↔ متوازن',
+      ]),
+    ]),
+    el('div', {style:{width:'1px', height:'16px', background:'#1a2340', flexShrink:'0'}}),
+    // ATR
+    (() => {
+      const avgATR = withHist.filter(i=>i.atrPct!=null).reduce((s,i)=>s+i.atrPct,0)/Math.max(withHist.filter(i=>i.atrPct!=null).length,1);
+      return el('div', {style:{display:'flex', alignItems:'center', gap:'5px', flexShrink:'0'}}, [
+        el('span', {style:{fontSize:'9px', color:C.text3}}, ['ATR متوسط']),
+        el('span', {style:{
+          fontSize:'10px', fontWeight:'700',
+          color: avgATR>4?C.orange:avgATR>2?C.yellow:C.text2,
+        }}, [fmt(avgATR,1)+'%']),
+      ]);
+    })(),
+  ]);
+}
+
+// ── Bottom Navigation (للجوال)
+function renderBottomNav() {
+  const tabs = [
+    {id:'rec',     icon:'ti-target',     label:'توصيات'},
+    {id:'spec',    icon:'ti-dice',       label:'مجازفة'},
+    {id:'market',  icon:'ti-chart-bar',  label:'السوق'},
+    {id:'port',    icon:'ti-briefcase',  label:'محفظة'},
+    {id:'history', icon:'ti-history',    label:'سجل'},
+  ];
+
+  const histPending = (() => {
+    try { return JSON.parse(localStorage.getItem('rec_history')||'[]').filter(x=>x.result==='pending').length; }
+    catch(e) { return 0; }
+  })();
+
+  return el('div', {style:{
+    position:'fixed', bottom:'0', left:'0', right:'0', zIndex:200,
+    background:'#050810', borderTop:'1px solid #1a2340',
+    display:'grid', gridTemplateColumns:'repeat(5,1fr)',
+    paddingBottom:'env(safe-area-inset-bottom, 4px)',
+    boxShadow:'0 -4px 20px rgba(0,0,0,.5)',
+  }}, tabs.map(t =>
+    el('button', {
+      style:{
+        display:'flex', flexDirection:'column', alignItems:'center',
+        justifyContent:'center', padding:'8px 4px 6px',
+        color: state.tab===t.id ? C.purple : C.text3,
+        background:'none', position:'relative',
+        borderTop: state.tab===t.id ? `2px solid ${C.purple}` : '2px solid transparent',
+        transition:'color 0.15s',
+      },
+      onClick: () => { state.tab = t.id; render(); }
+    }, [
+      el('i', {
+        class:'ti '+t.icon,
+        style:{fontSize:'20px'},
+        'aria-hidden':'true',
+      }),
+      el('span', {style:{fontSize:'9px', marginTop:'2px', fontWeight:'700'}}, [t.label]),
+      // badge على السجل
+      t.id==='history' && histPending>0
+        ? el('span', {style:{
+            position:'absolute', top:'4px', right:'20%',
+            fontSize:'8px', fontWeight:'900',
+            background:C.orange, color:'#050810',
+            borderRadius:'8px', padding:'0 4px', minWidth:'14px',
+            textAlign:'center', lineHeight:'14px',
+          }}, [String(histPending)])
+        : null,
+    ])
+  ));
+}
+
+// ── التبويبات العلوية (نحتفظ بها للـ desktop فقط)
 function renderTabs() {
   const tabs = [
     {id:'rec',     icon:'🎯', label:'توصياتي'},
@@ -2595,7 +2822,6 @@ function renderTabs() {
     {id:'tips',    icon:'📚', label:'نصائح'},
   ];
 
-  // badge على السجل إذا فيه توصيات معلقة
   const histPending = (() => {
     try {
       const h = JSON.parse(localStorage.getItem('rec_history')||'[]');
@@ -2621,7 +2847,6 @@ function renderTabs() {
       onClick: () => { state.tab = t.id; render(); }
     }, [
       t.icon+' '+t.label,
-      // badge عدد المعلقة على السجل
       t.id==='history' && histPending>0
         ? el('span', {style:{
             position:'absolute', top:'6px', right:'2px',
@@ -2971,6 +3196,27 @@ function renderRecCard(r, idx) {
       el('span',{},['⚠️']),
       el('span',{},['MACD سلبي ('+fmt(r.macd,3)+') — زخم متوسط المدى هابط، تحقق من الرسم البياني']),
     ]),
+
+    // ── MACD Histogram + أسبوعي — جديد
+    el('div', {style:{display:'flex', gap:'5px', marginBottom:'6px', flexWrap:'wrap'}}, [
+      r.macdHist!=null && el('span', {style:{
+        fontSize:'9px', fontWeight:'700', borderRadius:'5px', padding:'2px 8px',
+        color: r.macdHist>0 && r.macdHistDir==='expanding' ? C.green
+             : r.macdHist>0 ? C.yellow
+             : r.macdHistDir==='expanding' ? C.pink : C.orange,
+        background: r.macdHist>0
+          ? (r.macdHistDir==='expanding'?'rgba(0,255,136,.12)':'rgba(255,224,51,.08)')
+          : (r.macdHistDir==='expanding'?'rgba(255,45,122,.12)':'rgba(255,122,0,.08)'),
+      }}, [
+        'Hist '+(r.macdHist>0?'+':'')+fmt(r.macdHist,2)+
+        ' '+(r.macdHistDir==='expanding'?'↑ يتوسع':'↓ يضيق'),
+      ]),
+      r.weeklyTrend!=null && el('span', {style:{
+        fontSize:'9px', fontWeight:'700', borderRadius:'5px', padding:'2px 8px',
+        color: r.weeklyTrend==='bullish' ? C.blue : C.pink,
+        background: r.weeklyTrend==='bullish'?'rgba(0,200,255,.08)':'rgba(255,45,122,.08)',
+      }}, [r.weeklyTrend==='bullish'?'📅 أسبوعي ↑':'📅 أسبوعي ↓']),
+    ].filter(Boolean)),
 
     // ── 7. حجم التداول
     el('div', {style:{
