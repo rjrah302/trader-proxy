@@ -442,7 +442,9 @@ const state = {
   tab:        'rec',
   search:     '',
   sector:     'الكل',
-  marketSort: 'change',  // فرز قائمة السوق: change | vol | price
+  marketSort:    'change',
+  selectedStock: null,
+  _showMore:     false,
   histFilter: 'all',   // فلتر تبويب السجل: 'all' | 'افتتاح' | 'منتصف'
 
   selected:  null,
@@ -686,22 +688,13 @@ async function fetchIndicators() {
   state.indicators = {};
   console.log('[Indicators] بدء تحميل المؤشرات...');
 
-  const INDICATOR_STOCKS = [
-    'AAPL','NVDA','MSFT','GOOGL','META','AMZN','TSLA','AVGO','ORCL','CRM',
-    'ADBE','NOW','CRWD','PANW','AMD','QCOM','TSM','ASML','ARM','APP',
-    'JPM','GS','V','AXP','MS','BLK','BAC','LLY','JNJ','UNH',
-    'XOM','CVX','NEE','NFLX','COST',
-    'PLTR','SNOW','DDOG','NET','MDB','ALAB','NBIS','DELL','VST','CEG',
-    'SHOP','MELI','COIN','PYPL','SQ','HOOD','SOFI','UBER','ABNB','DASH',
-    'RBLX','SPOT','RIVN','RKLB','MSTR',
-    'IONQ','QBTS','JOBY','LUNR','HIMS','CELH','ARRY','PLUG','NIO','SNAP',
-  ];
+  const INDICATOR_STOCKS = ALL_STOCKS.map(s=>s.id); // ✅ كل الـ 127 سهم
 
   let dc = state.dataCheck;
   dc.rsi.total = dc.macd.total = dc.ma.total = dc.ma200.total =
   dc.support.total = dc.atr.total = dc.bb.total = INDICATOR_STOCKS.length;
 
-  const BATCH = 5;
+  const BATCH = 7; // ✅ رُفع من 5 → 7 (750 طلب/دقيقة الحد، نستخدم ~490)
 
   try {
   for(let i=0; i<INDICATOR_STOCKS.length; i+=BATCH) {
@@ -953,7 +946,7 @@ async function fetchIndicators() {
     // render كل 5 دفعات فقط بدل كل دفعة — يمنع الرمش
     if(i % (BATCH*5) === 0) render();
     if(i+BATCH < INDICATOR_STOCKS.length) {
-      await new Promise(r=>setTimeout(r,1200));
+      await new Promise(r=>setTimeout(r,800)); // ✅ خُفّض من 1200ms → 800ms
     }
   }
 
@@ -1125,6 +1118,10 @@ function calcSignal(stock) {
   if(!p || !p.price || !ind) return null;
   // اشتراط isReal فقط في أوقات السوق المفتوح
   if(isMarketOpen() && !p.isReal) return null;
+
+  // ✅ جودة البيانات — 100 يوم للتوصية العادية
+  const dataQuality = ind.closes?.length || 0;
+  const hasFullData = dataQuality >= 100;
 
   const price = p.price;
   const {rsi, ma20, ma50, ma200, macd, bb_upper, bb_lower,
@@ -1436,7 +1433,9 @@ function calcRecs() {
     // شرط 8: توقيت الدخول مقبول — لا متأخر ولا انتظار
     .filter(s => s.entryTiming === 'ادخل الآن' || s.entryTiming === 'مقبول')
     // شرط 9: السعر فوق MA50 على الأقل
-    .filter(s => s.ma50==null || s.price >= s.ma50*0.97);
+    .filter(s => s.ma50==null || s.price >= s.ma50*0.97)
+    // شرط 10: ✅ بيانات كافية — 100 يوم على الأقل (MA50 + MACD أسبوعي + Histogram)
+    .filter(s => (state.indicators[s.id]?.closes?.length || 0) >= 100);
 
   // ترتيب: قوة × 0.4 + ثقة × 0.3 + جودة × 0.2 + توقيت × 0.1
   // FIX: conviction = 10 بدل 20 — لا يطغى على قوة السهم الحقيقية
@@ -1556,7 +1555,8 @@ function calcSpeculative() {
       const beta   = pro?.beta || s.beta || 1;
       const volR   = p.avgVolume>0 ? p.volume/p.avgVolume : 0;
       const change = p.change||0;
-      const earnDays = state.earnings[s.id]??999;
+      const earnDays    = state.earnings[s.id]??999;
+      const dataQuality = ind.closes?.length || 0; // ✅ جودة البيانات
 
       // ══ شرط 1: السعر — متوسط إلى صغير ($3 - $80)
       // المجازفة الحقيقية = سهم رخيص يتضاعف، مش سهم غالٍ
@@ -1573,6 +1573,9 @@ function calcSpeculative() {
 
       // ══ شرط 4: لا أرباح قريبة جداً (<5 أيام)
       if(earnDays <= 5) return null;
+
+      // ✅ شرط 5: بيانات كافية — 60 يوم على الأقل للمجازفة (أقل من التوصية)
+      if(dataQuality < 60) return null;
 
       // ══ حساب النقاط — فكرة: الربح المحتمل vs الخسارة المحدودة
       let score = 0;
@@ -2765,6 +2768,8 @@ function renderBottomNav() {
     {id:'market',  icon:'ti-chart-bar',  label:'السوق'},
     {id:'port',    icon:'ti-briefcase',  label:'محفظة'},
     {id:'history', icon:'ti-history',    label:'سجل'},
+    {id:'calc',    icon:'ti-calculator', label:'حاسبة'},
+    {id:'tips',    icon:'ti-book',       label:'تعلم'},
   ];
 
   const histPending = (() => {
@@ -2772,42 +2777,85 @@ function renderBottomNav() {
     catch(e) { return 0; }
   })();
 
+  // الـ 5 الأساسية + زر "المزيد"
+  const mainTabs = tabs.slice(0, 5);
+  const moreTabs = tabs.slice(5);
+  const isMore   = moreTabs.some(t=>t.id===state.tab);
+
   return el('div', {style:{
     position:'fixed', bottom:'0', left:'0', right:'0', zIndex:200,
     background:'#050810', borderTop:'1px solid #1a2340',
-    display:'grid', gridTemplateColumns:'repeat(5,1fr)',
-    paddingBottom:'env(safe-area-inset-bottom, 4px)',
     boxShadow:'0 -4px 20px rgba(0,0,0,.5)',
-  }}, tabs.map(t =>
-    el('button', {
-      style:{
-        display:'flex', flexDirection:'column', alignItems:'center',
-        justifyContent:'center', padding:'8px 4px 6px',
-        color: state.tab===t.id ? C.purple : C.text3,
-        background:'none', position:'relative',
-        borderTop: state.tab===t.id ? `2px solid ${C.purple}` : '2px solid transparent',
-        transition:'color 0.15s',
-      },
-      onClick: () => { state.tab = t.id; render(); }
-    }, [
-      el('i', {
-        class:'ti '+t.icon,
-        style:{fontSize:'20px'},
-        'aria-hidden':'true',
-      }),
-      el('span', {style:{fontSize:'9px', marginTop:'2px', fontWeight:'700'}}, [t.label]),
-      // badge على السجل
-      t.id==='history' && histPending>0
-        ? el('span', {style:{
-            position:'absolute', top:'4px', right:'20%',
-            fontSize:'8px', fontWeight:'900',
-            background:C.orange, color:'#050810',
-            borderRadius:'8px', padding:'0 4px', minWidth:'14px',
-            textAlign:'center', lineHeight:'14px',
-          }}, [String(histPending)])
-        : null,
-    ])
-  ));
+  }}, [
+
+    // ── قائمة المزيد (تظهر فوق الـ nav عند الضغط)
+    state._showMore && el('div', {style:{
+      position:'absolute', bottom:'100%', right:'0',
+      background:'#0a1020', border:'1px solid #1a2340',
+      borderRadius:'12px 12px 0 0', padding:'8px',
+      display:'flex', gap:'6px',
+    }}, [
+      ...moreTabs.map(t =>
+        el('button', {
+          style:{
+            display:'flex', flexDirection:'column', alignItems:'center',
+            padding:'10px 16px', borderRadius:'8px',
+            color: state.tab===t.id ? C.purple : C.text2,
+            background: state.tab===t.id ? 'rgba(180,79,255,.1)' : 'none',
+          },
+          onClick:()=>{ state.tab=t.id; state._showMore=false; render(); }
+        },[
+          el('i',{class:'ti '+t.icon, style:{fontSize:'20px'}, 'aria-hidden':'true'}),
+          el('span',{style:{fontSize:'9px',marginTop:'3px',fontWeight:'700'}},[t.label]),
+        ])
+      ),
+    ]),
+
+    // ── الشريط الرئيسي
+    el('div', {style:{
+      display:'grid', gridTemplateColumns:'repeat(6,1fr)',
+      paddingBottom:'env(safe-area-inset-bottom, 4px)',
+    }}, [
+      ...mainTabs.map(t =>
+        el('button', {
+          style:{
+            display:'flex', flexDirection:'column', alignItems:'center',
+            justifyContent:'center', padding:'8px 4px 6px',
+            color: state.tab===t.id ? C.purple : C.text3,
+            background:'none', position:'relative',
+            borderTop: state.tab===t.id ? `2px solid ${C.purple}` : '2px solid transparent',
+          },
+          onClick:()=>{ state.tab=t.id; state._showMore=false; render(); }
+        },[
+          el('i',{class:'ti '+t.icon, style:{fontSize:'20px'}, 'aria-hidden':'true'}),
+          el('span',{style:{fontSize:'9px',marginTop:'2px',fontWeight:'700'}},[t.label]),
+          t.id==='history' && histPending>0
+            ? el('span',{style:{
+                position:'absolute',top:'4px',right:'20%',
+                fontSize:'8px',fontWeight:'900',
+                background:C.orange,color:'#050810',
+                borderRadius:'8px',padding:'0 4px',minWidth:'14px',
+                textAlign:'center',lineHeight:'14px',
+              }},[String(histPending)])
+            : null,
+        ])
+      ),
+      // زر المزيد
+      el('button', {
+        style:{
+          display:'flex', flexDirection:'column', alignItems:'center',
+          justifyContent:'center', padding:'8px 4px 6px',
+          color: isMore ? C.purple : C.text3,
+          background:'none',
+          borderTop: isMore ? `2px solid ${C.purple}` : '2px solid transparent',
+        },
+        onClick:()=>{ state._showMore=!state._showMore; render(); }
+      },[
+        el('i',{class:'ti ti-dots', style:{fontSize:'20px'}, 'aria-hidden':'true'}),
+        el('span',{style:{fontSize:'9px',marginTop:'2px',fontWeight:'700'}},['المزيد']),
+      ]),
+    ]),
+  ]);
 }
 
 // ── التبويبات العلوية (نحتفظ بها للـ desktop فقط)
@@ -3079,6 +3127,47 @@ function renderRecCard(r, idx) {
         }}, ['⏸️ Cooldown']),
       ]),
     ]),
+
+    // ── 1.5 تنبيه "ظهر أمس" — يحمي من التكرار
+    (() => {
+      const history = loadHistory();
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate()-1);
+      const yStr = yesterday.toDateString();
+      const prevRec = history.find(h =>
+        h.symbol === r.id &&
+        new Date(h.date||h.recDate).toDateString() === yStr
+      );
+      if(!prevRec) return null;
+
+      const prevPrice = parseFloat(prevRec.entryPrice||prevRec.entry||0);
+      const priceDiff = prevPrice>0 ? ((r.price-prevPrice)/prevPrice*100) : null;
+      const diffColor = priceDiff>=0 ? C.green : C.pink;
+
+      return el('div', {style:{
+        background:'rgba(255,122,0,.08)',
+        border:'1px solid rgba(255,122,0,.3)',
+        borderRadius:'8px', padding:'8px 10px',
+        marginBottom:'8px',
+        display:'flex', alignItems:'flex-start', gap:'8px',
+      }}, [
+        el('span', {style:{fontSize:'14px', flexShrink:'0'}}, ['⚠️']),
+        el('div', {style:{flex:'1'}}, [
+          el('div', {style:{fontSize:'10px', fontWeight:'800', color:C.orange, marginBottom:'3px'}}, [
+            'ظهر في توصية أمس — تحقق من مركزك',
+          ]),
+          el('div', {style:{fontSize:'9px', color:C.text2}}, [
+            'سعر الأمس: $'+fmt(prevPrice,2),
+            priceDiff!=null && el('span', {style:{color:diffColor, marginRight:'6px'}}, [
+              ' | اليوم: '+(priceDiff>=0?'+':'')+fmt(priceDiff,2)+'%',
+            ]),
+          ]),
+          el('div', {style:{fontSize:'9px', color:C.orange, marginTop:'3px'}}, [
+            'إذا عندك مركز مفتوح → لا تشتري مجدداً',
+          ]),
+        ]),
+      ]);
+    })(),
 
     // ── 2. السعر + RSI + ثقة
     el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'6px', marginBottom:'8px'}}, [
@@ -3975,53 +4064,180 @@ function renderMarketTab() {
 }
 
 function renderMiniStock(s) {
-  const chg     = s.p.change || 0;
-  const isUp    = chg > 0;
-  const clr     = chg > 0 ? C.green : chg < 0 ? C.pink : C.text2;
-  const spyDiff = state.spyChange != null ? chg - state.spyChange : null;
-  const ind     = state.indicators[s.id];
-  const volR    = s.p.avgVolume>0 ? s.p.volume/s.p.avgVolume : 0;
+  const chg      = s.p.change || 0;
+  const isUp     = chg > 0;
+  const clr      = chg > 0 ? C.green : chg < 0 ? C.pink : C.text2;
+  const spyDiff  = state.spyChange != null ? chg - state.spyChange : null;
+  const ind      = state.indicators[s.id];
+  const volR     = s.p.avgVolume>0 ? s.p.volume/s.p.avgVolume : 0;
+  const isOpen   = state.selectedStock === s.id;
 
   return el('div',{style:{
     background:'#060b14', borderRadius:'8px',
-    padding:'8px 10px',
-    border:`1px solid ${clr}18`,
-    display:'flex', flexDirection:'column', gap:'2px',
-    minWidth:'0', // مهم لـ grid overflow
-  }},[
-    // ── السطر الأول: رمز + تغيير
-    el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},[
-      el('div',{},[
-        el('div',{style:{fontSize:'11px',fontWeight:'800',color:C.text,
-          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'80px'}},
-          [s.name]),
-        el('div',{style:{fontSize:'9px',color:C.text3}},[s.id]),
+    border:`1px solid ${isOpen ? C.purple : clr+'18'}`,
+    minWidth:'0', overflow:'hidden',
+    cursor:'pointer',
+  }, onClick:()=>{ state.selectedStock = isOpen ? null : s.id; render(); }},[
+
+    // ── رأس البطاقة
+    el('div',{style:{padding:'8px 10px'}},[
+      el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'2px'}},[
+        el('div',{},[
+          el('div',{style:{fontSize:'11px',fontWeight:'800',color:C.text,
+            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'80px'}},
+            [s.name]),
+          el('div',{style:{fontSize:'9px',color:C.text3}},[s.id]),
+        ]),
+        el('div',{style:{textAlign:'left',flexShrink:'0'}},[
+          el('div',{style:{fontSize:'12px',fontWeight:'800',color:clr}},
+            [(isUp?'+':'')+fmt(chg,2)+'%']),
+          el('div',{style:{fontSize:'10px',color:C.text2}},['$'+fmtPrice(s.p.price)]),
+        ]),
       ]),
-      el('div',{style:{textAlign:'left',flexShrink:'0'}},[
-        el('div',{style:{fontSize:'12px',fontWeight:'800',color:clr}},
-          [(isUp?'+':'')+fmt(chg,2)+'%']),
-        el('div',{style:{fontSize:'10px',color:C.text2}},['$'+fmtPrice(s.p.price)]),
-      ]),
+      el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},[
+        spyDiff!=null && el('span',{style:{
+          fontSize:'8px',color:spyDiff>=0?C.green:C.pink,
+          background:spyDiff>=0?'rgba(0,255,136,.08)':'rgba(255,45,122,.08)',
+          borderRadius:'3px',padding:'1px 4px',
+        }},[(spyDiff>=0?'+':'')+spyDiff.toFixed(1)+'% SPY']),
+        volR>=1.5 && el('span',{style:{
+          fontSize:'8px',color:C.blue,
+          background:'rgba(0,200,255,.08)',
+          borderRadius:'3px',padding:'1px 4px',
+        }},['vol ×'+fmt(volR,1)]),
+        ind?.rsi!=null && el('span',{style:{
+          fontSize:'8px',
+          color: ind.rsi<35?C.green:ind.rsi>70?C.pink:C.text3,
+          background:'rgba(255,255,255,.04)',
+          borderRadius:'3px',padding:'1px 4px',
+        }},['RSI '+Math.round(ind.rsi)]),
+        // ✅ badge جودة البيانات للأسهم الجديدة
+        ind && (ind.closes?.length||0) < 100 && el('span',{style:{
+          fontSize:'8px', color:C.orange,
+          background:'rgba(255,122,0,.08)',
+          borderRadius:'3px', padding:'1px 4px',
+        }},['📊 '+( ind.closes?.length||0)+'y']),
+      ].filter(Boolean)),
     ]),
-    // ── السطر الثاني: vs SPY + حجم
-    el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},[
-      spyDiff!=null && el('span',{style:{
-        fontSize:'8px',color:spyDiff>=0?C.green:C.pink,
-        background:spyDiff>=0?'rgba(0,255,136,.08)':'rgba(255,45,122,.08)',
-        borderRadius:'3px',padding:'1px 4px',
-      }},[(spyDiff>=0?'+':'')+spyDiff.toFixed(1)+'% SPY']),
-      volR>=1.5 && el('span',{style:{
-        fontSize:'8px',color:C.blue,
-        background:'rgba(0,200,255,.08)',
-        borderRadius:'3px',padding:'1px 4px',
-      }},['vol ×'+fmt(volR,1)]),
-      ind?.rsi!=null && el('span',{style:{
-        fontSize:'8px',
-        color: ind.rsi<35?C.green:ind.rsi>70?C.pink:C.text3,
-        background:'rgba(255,255,255,.04)',
-        borderRadius:'3px',padding:'1px 4px',
-      }},['RSI '+Math.round(ind.rsi)]),
-    ].filter(Boolean)),
+
+    // ── بطاقة تحليل المضارب (عند الضغط)
+    isOpen && ind && renderTraderCard(s, ind, volR, chg),
+  ]);
+}
+
+// ── بطاقة تحليل المضارب اليومي
+function renderTraderCard(s, ind, volR, chg) {
+  const price = s.p.price;
+
+  // ── حساب كل إشارة
+  const signals = [];
+
+  // 1. MACD Histogram
+  if(ind.macdHist!=null) {
+    const h = ind.macdHist, d = ind.macdHistDir;
+    const col = h>0&&d==='expanding'?C.green : h>0?C.yellow : d==='expanding'?C.pink:C.orange;
+    const icon= h>0&&d==='expanding'?'✅':h>0?'⚠️':d==='expanding'?'❌':'⚠️';
+    const txt = h>0&&d==='expanding'?'زخم شراء متوسع'
+              : h>0?'زخم موجب يضعف'
+              : d==='expanding'?'زخم بيعي متوسع ⚠️'
+              : 'زخم بيعي يضعف';
+    signals.push({label:'MACD Hist', value:(h>0?'+':'')+fmt(h,2)+(d==='expanding'?' ↑':' ↓'), desc:txt, color:col, icon});
+  }
+
+  // 2. RSI
+  if(ind.rsi!=null) {
+    const r = ind.rsi;
+    const col = r<35?C.green:r>70?C.pink:C.yellow;
+    const icon= r<35?'✅':r>70?'❌':'⚠️';
+    const txt = r<35?'تشبع بيع — ارتداد محتمل':r<45?'منطقة شراء':r<60?'محايد — انتظر':r<70?'قوي — راقب':' تشبع شراء — احذر';
+    signals.push({label:'RSI', value:fmt(r,1)+'%', desc:txt, color:col, icon});
+  }
+
+  // 3. الشمعة الأخيرة
+  if(ind.closes?.length >= 3) {
+    const candles = detectCandlePatterns(ind.closes, ind.highs, ind.lows);
+    const top = candles[0];
+    if(top) {
+      const col = top.signal==='bullish'?C.green:top.signal==='bearish'?C.pink:C.yellow;
+      const icon= top.signal==='bullish'?'✅':top.signal==='bearish'?'❌':'⚠️';
+      signals.push({label:'الشمعة', value:top.ar, desc:top.tip, color:col, icon});
+    } else {
+      signals.push({label:'الشمعة', value:'محايدة', desc:'لا نمط واضح', color:C.text3, icon:'⚠️'});
+    }
+  }
+
+  // 4. الحجم
+  const volCol  = volR>=2?C.green:volR>=1.2?C.blue:volR<0.7?C.pink:C.text3;
+  const volIcon = volR>=2?'✅':volR>=1.2?'✅':volR<0.7?'❌':'⚠️';
+  const volTxt  = volR>=2?'اهتمام قوي — تأكيد الحركة':volR>=1.2?'حجم مرتفع':volR<0.7?'حجم ضعيف — لا اهتمام':'طبيعي';
+  signals.push({label:'الحجم', value:'×'+fmt(volR,1), desc:volTxt, color:volCol, icon:volIcon});
+
+  // 5. الأسبوعي
+  if(ind.weeklyTrend) {
+    const col  = ind.weeklyTrend==='bullish'?C.blue:C.pink;
+    const icon = ind.weeklyTrend==='bullish'?'✅':'❌';
+    const txt  = ind.weeklyTrend==='bullish'?'اتجاه كبير صاعد — في صالحك':'اتجاه كبير هابط — تيار معاكس';
+    signals.push({label:'أسبوعي', value:ind.weeklyTrend==='bullish'?'صاعد ↑':'هابط ↓', desc:txt, color:col, icon});
+  }
+
+  // 6. الدعم
+  if(ind.support && ind.support > 0) {
+    const dist    = (price - ind.support)/price*100;
+    const atSup   = dist < 2;
+    const belowSup= price < ind.support;
+    const col  = atSup?C.green:belowSup?C.pink:C.text3;
+    const icon = atSup?'✅':belowSup?'❌':'⚠️';
+    const txt  = atSup?'عند الدعم — نقطة ارتداد':belowSup?'كسر الدعم — خطر':'بُعد '+fmt(dist,1)+'% من الدعم';
+    signals.push({label:'الدعم', value:'$'+fmt(ind.support,2), desc:txt, color:col, icon});
+  }
+
+  // ── حساب القرار النهائي
+  const greens = signals.filter(s=>s.icon==='✅').length;
+  const reds   = signals.filter(s=>s.icon==='❌').length;
+  let decision, decColor, decBg;
+  if(greens >= 4)          { decision='اشتري / تمسك 🟢'; decColor=C.green;  decBg='rgba(0,255,136,.08)'; }
+  else if(reds >= 3)       { decision='بيع / اخرج 🔴';   decColor=C.pink;   decBg='rgba(255,45,122,.08)'; }
+  else if(greens >= reds)  { decision='انتظر تأكيد 🟡';  decColor=C.yellow; decBg='rgba(255,224,51,.06)'; }
+  else                     { decision='ميل للبيع ⚠️';    decColor=C.orange; decBg='rgba(255,122,0,.08)'; }
+
+  return el('div',{style:{
+    borderTop:'1px solid #1a2340',
+    background:'#050810',
+    padding:'10px',
+  }},[
+
+    // ── المؤشرات
+    el('div',{style:{display:'flex',flexDirection:'column',gap:'5px',marginBottom:'10px'}},
+      signals.map(sig => el('div',{style:{
+        display:'flex',alignItems:'center',gap:'6px',
+        background:'#060b14',borderRadius:'6px',padding:'5px 8px',
+      }},[
+        el('span',{style:{fontSize:'12px',flexShrink:'0'}},[sig.icon]),
+        el('div',{style:{flex:'1',minWidth:'0'}},[
+          el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},[
+            el('span',{style:{fontSize:'9px',color:C.text3,flexShrink:'0'}},[sig.label]),
+            el('span',{style:{fontSize:'10px',fontWeight:'800',color:sig.color,flexShrink:'0'}},[sig.value]),
+          ]),
+          el('div',{style:{fontSize:'9px',color:sig.color,marginTop:'1px',
+            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},[sig.desc]),
+        ]),
+      ]))
+    ),
+
+    // ── القرار النهائي
+    el('div',{style:{
+      background:decBg,
+      border:`1px solid ${decColor}33`,
+      borderRadius:'8px',padding:'8px 12px',
+      display:'flex',justifyContent:'space-between',alignItems:'center',
+    }},[
+      el('span',{style:{fontSize:'11px',fontWeight:'900',color:decColor}},[decision]),
+      el('span',{style:{fontSize:'9px',color:C.text3}},['✅'+greens+' ❌'+reds]),
+    ]),
+
+    // ── تحذير
+    el('div',{style:{fontSize:'8px',color:C.text3,marginTop:'6px',textAlign:'center'}},
+      ['⚠️ تحليل تقني لحظي — القرار النهائي لك']),
   ]);
 }
 
@@ -4593,6 +4809,65 @@ function renderTipsTab() {
       'المجازفة: 5-10% فقط من المحفظة الإجمالية',
       'وقف الخسارة إلزامي — بدونه تخاطر بكل شيء',
       'الهدف الأول: حافظ على رأسمالك — الهدف الثاني: اربح',
+    ]},
+
+    // ══ الجديد: MACD Histogram
+    {icon:'📊', title:'MACD Histogram — الجديد (ما يفيد المضارب)', color:C.green, lines:[
+      'Histogram = MACD - Signal Line (EMA9)',
+      '↑ يتوسع موجب = زخم شراء يقوى — أفضل وقت للدخول ✅',
+      '↓ يضيق موجب = الزخم يضعف — راقب الخروج ⚠️',
+      '↑ يتوسع سالب = زخم بيعي قوي — لا تدخل، فكر بالخروج ❌',
+      '↓ يضيق سالب = الزخم البيعي يضعف — ارتداد محتمل ⚠️',
+      'ADBE كان Hist -5.77 ↑ = الأداة الآن ترفضه تلقائياً',
+    ]},
+
+    // ══ الجديد: أسبوعي
+    {icon:'📅', title:'MACD أسبوعي — الصورة الكبيرة', color:C.blue, lines:[
+      'يُحسب من تجميع كل 5 أيام يومية = شمعة أسبوعية',
+      'أسبوعي صاعد + يومي صاعد = ثقة عالية في التوصية ✅',
+      'أسبوعي هابط + يومي صاعد = قد يكون تصحيحاً مؤقتاً ⚠️',
+      'أسبوعي هابط + يومي سالب = لا تدخل (تيار معاكس) ❌',
+      'في المجازفة: أسبوعي هابط قوي = حجب فوري للسهم',
+    ]},
+
+    // ══ الجديد: ATR ديناميكي
+    {icon:'📏', title:'ATR ديناميكي — وقف أذكى', color:C.orange, lines:[
+      'ATR < 2% (سهم هادئ) → مضاعف 1.5x — وقف ضيق',
+      'ATR 2-4% (متوسط) → مضاعف 2.0x',
+      'ATR > 4% (متقلب) → مضاعف 2.5x — وقف أوسع',
+      'يمنع تفعيل الوقف بسبب تقلبات طبيعية في الأسهم المتقلبة',
+      'مثال: JOBY ATR=7.2% → وقف = سعر - (7.2×2.5) = -18%',
+    ]},
+
+    // ══ الجديد: بطاقة المضارب
+    {icon:'⚡', title:'بطاقة المضارب — قرار فوري', color:C.purple, lines:[
+      'اضغط على أي سهم في تبويب السوق → تفتح البطاقة',
+      '6 مؤشرات: MACD Hist + RSI + الشمعة + الحجم + أسبوعي + الدعم',
+      '4+ إشارات خضراء = اشتري / تمسك 🟢',
+      '3+ إشارات حمراء = بيع / اخرج 🔴',
+      'مختلطة = انتظر تأكيد 🟡',
+      '⚠️ تحليل تقني لحظي — القرار النهائي لك دائماً',
+    ]},
+
+    // ══ الجديد: نظام التوصية الكامل
+    {icon:'🎯', title:'نظام التوصية — كيف يعمل الآن', color:C.green, lines:[
+      'الخطوة 1: 10 مؤشرات تُعطي نقاط شراء/بيع لكل سهم',
+      'الخطوة 2: MACD Hist متوسع موجب = +2 نقطة إضافية',
+      'الخطوة 3: MACD Hist متوسع سالب = -3 نقطة (عقوبة قوية)',
+      'الخطوة 4: أسبوعي صاعد = +1 | هابط مع MACD سلبي = -2',
+      'الخطوة 5: ATR ديناميكي يحسب الوقف والهدف بدقة',
+      'الخطوة 6: 9 شروط صارمة → من يجتازها يظهر في التوصيات',
+    ]},
+
+    // ══ الجديد: نظام المجازفة الكامل
+    {icon:'🎲', title:'نظام المجازفة — كيف يعمل الآن', color:C.purple, lines:[
+      'شرط 1: السعر $3-$80 فقط (لا أسهم غالية)',
+      'شرط 2: Beta ≥ 1.7 أو ATR ≥ 2.5% (تقلب حقيقي)',
+      'شرط 3: MACD Hist سالب متوسع = حجب فوري ❌',
+      'شرط 4: أسبوعي هابط قوي = حجب فوري ❌',
+      'شرط 5: R/R أقل من 2:1 = رفض تلقائي',
+      'الهدف: ATR×3.5 أو مقاومة أعلى بـ 5%+ فقط',
+      'نقاط مضاعفة: المطرقة والابتلاع الصاعد أقوى من غيرهما',
     ]},
   ];
 
