@@ -927,9 +927,10 @@ async function fetchIndicators() {
           bb_upper, bb_lower,
           support, resistance, nearSupport, nearResistance,
           atrPct, stochRsi,
+          dataLen: closes.length,        // ✅ العدد الحقيقي للأيام (للـ badge)
           closes: closes.slice(-30),
-          highs:  highs.slice(-30),   // ✅ للشموع اليابانية الحقيقية
-          lows:   lows.slice(-30),    // ✅ للشموع اليابانية الحقيقية
+          highs:  highs.slice(-30),
+          lows:   lows.slice(-30),
         };
 
         if(rsi!=null)          dc.rsi.real++;
@@ -1120,7 +1121,7 @@ function calcSignal(stock) {
   if(isMarketOpen() && !p.isReal) return null;
 
   // ✅ جودة البيانات — 100 يوم للتوصية العادية
-  const dataQuality = ind.closes?.length || 0;
+  const dataQuality = ind.dataLen || ind.closes?.length || 0;
   const hasFullData = dataQuality >= 100;
 
   const price = p.price;
@@ -1434,8 +1435,8 @@ function calcRecs() {
     .filter(s => s.entryTiming === 'ادخل الآن' || s.entryTiming === 'مقبول')
     // شرط 9: السعر فوق MA50 على الأقل
     .filter(s => s.ma50==null || s.price >= s.ma50*0.97)
-    // شرط 10: ✅ بيانات كافية — 100 يوم على الأقل (MA50 + MACD أسبوعي + Histogram)
-    .filter(s => (state.indicators[s.id]?.closes?.length || 0) >= 100);
+    // شرط 10: ✅ بيانات كافية — 100 يوم على الأقل
+    .filter(s => (state.indicators[s.id]?.dataLen || state.indicators[s.id]?.closes?.length || 0) >= 100);;
 
   // ترتيب: قوة × 0.4 + ثقة × 0.3 + جودة × 0.2 + توقيت × 0.1
   // FIX: conviction = 10 بدل 20 — لا يطغى على قوة السهم الحقيقية
@@ -1556,7 +1557,7 @@ function calcSpeculative() {
       const volR   = p.avgVolume>0 ? p.volume/p.avgVolume : 0;
       const change = p.change||0;
       const earnDays    = state.earnings[s.id]??999;
-      const dataQuality = ind.closes?.length || 0; // ✅ جودة البيانات
+      const dataQuality = ind.dataLen || ind.closes?.length || 0; // ✅ العدد الحقيقي
 
       // ══ شرط 1: السعر — متوسط إلى صغير ($3 - $80)
       // المجازفة الحقيقية = سهم رخيص يتضاعف، مش سهم غالٍ
@@ -4111,12 +4112,12 @@ function renderMiniStock(s) {
           background:'rgba(255,255,255,.04)',
           borderRadius:'3px',padding:'1px 4px',
         }},['RSI '+Math.round(ind.rsi)]),
-        // ✅ badge جودة البيانات للأسهم الجديدة
-        ind && (ind.closes?.length||0) < 100 && el('span',{style:{
+        // ✅ badge جودة البيانات — يستخدم العدد الحقيقي
+        ind && (ind.dataLen || ind.closes?.length || 0) < 100 && el('span',{style:{
           fontSize:'8px', color:C.orange,
           background:'rgba(255,122,0,.08)',
           borderRadius:'3px', padding:'1px 4px',
-        }},['📊 '+( ind.closes?.length||0)+'y']),
+        }},['📊 '+(ind.dataLen || ind.closes?.length||0)+'y']),
       ].filter(Boolean)),
     ]),
 
