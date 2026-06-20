@@ -3,7 +3,7 @@
 // /api/telegram.js
 // ═══════════════════════════════════════════════
 
-const TG_TOKEN   = '8640829693:AAEyEhSjVgW2ydLOfYAqu6epemQeL1nNMa4';
+const TG_TOKEN   = '8975284766:AAFFQWCyE7X8rqG3iU6h-PNy_n95iEmRX-U';
 const TG_CHAT_ID = '6195578236';
 const FMP_KEY    = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
 const TG_API     = `https://api.telegram.org/bot${TG_TOKEN}`;
