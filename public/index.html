@@ -4174,14 +4174,16 @@ function renderStockPage(s, p, ind, volR) {
 
     // ── المحتوى
     el('div', {style:{padding:'12px 16px', flex:'1'}}, [
-      renderTraderCard(s, ind, volR, chg),
+      renderTraderCard(s, ind, volR, chg, p), // ✅ نمرر p للسعر
     ]),
   ]);
 }
 
 // ── بطاقة تحليل المضارب اليومي
-function renderTraderCard(s, ind, volR, chg) {
-  const price = s.p.price;
+function renderTraderCard(s, ind, volR, chg, priceObj) {
+  // ✅ السعر إما من priceObj (renderStockPage) أو s.p (renderMiniStock)
+  const pData = priceObj || s.p || {};
+  const price = pData.price || 0;
 
   // ── حساب كل إشارة
   const signals = [];
