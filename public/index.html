@@ -3443,6 +3443,31 @@ function renderRecCard(r, idx) {
       }}, ['💡 '+orderNote]),
     ]),
 
+    // ── مدة الصفقة المتوقعة
+    (() => {
+      if(!r.atrPct || !r.profitPct) return null;
+      const days = Math.ceil(r.profitPct / r.atrPct);
+      const type = days <= 1 ? {label:'🔥 يومي', color:C.pink,    desc:'قد تصل الهدف اليوم — راقب كل ساعة'}
+                 : days <= 3 ? {label:'⚡ قصير',  color:C.orange,  desc:'1-3 أيام تداول — راقب يومياً'}
+                 : days <= 7 ? {label:'📅 أسبوعي',color:C.blue,    desc:'3-7 أيام — اصبر ولا تتسرع في الخروج'}
+                 :             {label:'⏳ متوسط', color:C.text2,   desc:'أكثر من أسبوع — هل يناسبك كمضارب يومي؟'};
+      return el('div', {style:{
+        background:'#060b14', border:`1px solid ${type.color}33`,
+        borderRadius:'8px', padding:'8px 12px', marginTop:'8px',
+        display:'flex', justifyContent:'space-between', alignItems:'center',
+      }}, [
+        el('div', {}, [
+          el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'2px'}}, ['⏱️ مدة الصفقة المتوقعة']),
+          el('div', {style:{fontSize:'12px', fontWeight:'800', color:type.color}}, [type.label]),
+          el('div', {style:{fontSize:'9px', color:C.text2, marginTop:'2px'}}, [type.desc]),
+        ]),
+        el('div', {style:{textAlign:'left', flexShrink:'0'}}, [
+          el('div', {style:{fontSize:'18px', fontWeight:'900', color:type.color}}, [days+''])  ,
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['يوم تداول']),
+        ]),
+      ]);
+    })(),
+
     // ── 8. التفاصيل (عند الضغط) — مبسطة
     isSelected && el('div', {style:{borderTop:'1px solid var(--border)', paddingTop:'10px', marginTop:'2px'}}, [
       r.reasons.length>0 && el('div', {style:{marginBottom:'8px'}}, [
@@ -3896,6 +3921,31 @@ function renderSpecCard(s, idx) {
         background:'rgba(255,122,0,.08)', borderRadius:'6px',
         padding:'5px 8px',
       }}, ['⚠️ هذه مجازفة — الخسارة محدودة والربح ضخم محتمل. الوقف إلزامي.']),
+
+      // ── مدة الصفقة المتوقعة للمجازفة
+      (() => {
+        if(!s.atrPct || !s.profitPct) return null;
+        const days = Math.ceil(s.profitPct / s.atrPct);
+        const type = days <= 1 ? {label:'🔥 يومي',  color:C.pink,   desc:'حركة سريعة — راقب كل ساعة'}
+                   : days <= 3 ? {label:'⚡ قصير',   color:C.orange, desc:'1-3 أيام — الأنسب للمجازفة'}
+                   : days <= 7 ? {label:'📅 أسبوعي', color:C.blue,   desc:'3-7 أيام — اصبر على المركز'}
+                   :             {label:'⏳ طويل',   color:C.text2,  desc:'أكثر من أسبوع — مجازفة تحتاج صبراً'};
+        return el('div', {style:{
+          background:'#060b14', border:`1px solid ${type.color}33`,
+          borderRadius:'8px', padding:'8px 12px', marginTop:'8px',
+          display:'flex', justifyContent:'space-between', alignItems:'center',
+        }}, [
+          el('div', {}, [
+            el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'2px'}}, ['⏱️ مدة المجازفة المتوقعة']),
+            el('div', {style:{fontSize:'12px', fontWeight:'800', color:type.color}}, [type.label]),
+            el('div', {style:{fontSize:'9px', color:C.text2, marginTop:'2px'}}, [type.desc]),
+          ]),
+          el('div', {style:{textAlign:'left', flexShrink:'0'}}, [
+            el('div', {style:{fontSize:'18px', fontWeight:'900', color:type.color}}, [days+'']),
+            el('div', {style:{fontSize:'8px', color:C.text3}}, ['يوم تداول']),
+          ]),
+        ]);
+      })(),
       // رسالة الشمعة في أسفل الأمر
       s.topCandle && el('div', {style:{
         fontSize:'9px', marginTop:'5px', borderRadius:'6px', padding:'5px 8px',
@@ -4224,7 +4274,7 @@ function renderStockPage(s, p, ind, volR) {
         el('div', {style:{fontSize:'11px', color:C.text3}}, [s.id+' • '+(s.sector||'')]),
       ]),
       el('div', {style:{textAlign:'left', flexShrink:'0'}}, [
-        el('div', {style:{fontSize:'16px', fontWeight:'900', color:C.text}}, ['$'+fmtPrice(p.price)]),
+        el('div', {style:{fontSize:'16px', fontWeight:'900', color:C.text}}, [fmtPrice(p.price)]),
         el('div', {style:{fontSize:'12px', fontWeight:'700', color:clr}}, [(chg>0?'+':'')+fmt(chg,2)+'%']),
       ]),
       // زر الرجوع في اليسار
@@ -4386,12 +4436,22 @@ function renderTraderCard(s, ind, volR, chg, priceObj) {
     el('div',{style:{
       background:decBg,
       border:`1px solid ${decColor}33`,
-      borderRadius:'8px',padding:'10px 14px',
-      display:'flex',justifyContent:'space-between',alignItems:'center',
-      direction:'rtl',
+      borderRadius:'10px',padding:'12px 14px',
+      direction:'rtl', marginBottom:'8px',
     }},[
-      el('span',{style:{fontSize:'13px',fontWeight:'900',color:decColor}},[decision]),
-      el('span',{style:{fontSize:'10px',color:C.text3}},['✅'+greens+' ❌'+reds]),
+      el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}},[
+        el('span',{style:{fontSize:'14px',fontWeight:'900',color:decColor}},[decision]),
+        el('span',{style:{fontSize:'10px',color:C.text3}},['✅'+greens+' ❌'+reds+' ⚠️'+(signals.length-greens-reds)]),
+      ]),
+      el('div',{style:{fontSize:'11px',color:C.text2,lineHeight:'1.6'}},[
+        greens >= 4
+          ? 'معظم المؤشرات تشير للشراء — يمكن الدخول مع وقف الخسارة الإلزامي'
+          : reds >= 3
+          ? 'معظم المؤشرات تشير للبيع — تجنب الدخول أو اخرج إذا عندك مركز مفتوح'
+          : greens >= reds
+          ? 'المؤشرات مختلطة — انتظر شمعة غد: إذا أغلق بخضراء قوية مع حجم مرتفع ادخل، وإلا انتظر'
+          : 'الميل للهبوط — انتظر حتى يستقر السعر عند دعم أو يتحول MACD للإيجابي',
+      ]),
     ]),
 
     // ── تحذير
@@ -5250,9 +5310,215 @@ window.retryPrices = async () => {
     render();
   } catch(e) {
     console.error('[Init] خطأ في التحميل الأول:', e.message);
-    render(); // حاول العرض حتى مع الخطأ
+    render();
   }
 })();
+
+// ═══════════════════════════════════════════════════════
+// 🦅 RamiFalconX — Telegram Bot Integration
+// ═══════════════════════════════════════════════════════
+
+const TG_TOKEN   = '8640829693:AAEyEhSjVgW2ydLOfYAqu6epemQeL1nNMa4';
+const TG_CHAT_ID = '6195578236';
+const TG_API     = 'https://api.telegram.org/bot' + TG_TOKEN;
+
+// ── إرسال رسالة
+async function tgSend(text) {
+  try {
+    await fetch(TG_API+'/sendMessage', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ chat_id:TG_CHAT_ID, text, parse_mode:'HTML' }),
+    });
+  } catch(e){ console.warn('TG:',e.message); }
+}
+
+// ── إرسال توصيات عند الافتتاح والمنتصف
+function tgSendRecs(recs, session) {
+  if(!recs || recs.length===0) return;
+  const time = session==='منتصف' ? '7:00م' : '4:30م';
+  let msg = `🔔 <b>تريدر برو — ${session==='منتصف'?'تحديث المنتصف':'افتتاح السوق'} ${time}</b>\n`;
+  msg += `📊 SPY ${(state.spyChange||0)>=0?'+':''}${fmt(state.spyChange||0,2)}%\n\n`;
+  msg += `<b>توصيات اليوم:</b>\n`;
+  recs.slice(0,5).forEach((r,i)=>{
+    msg += `${i+1}. <b>${r.id}</b> ثقة ${r.confidence}% | هدف +${fmt(r.profitPct,1)}%\n`;
+  });
+  msg += `\nافتح الأداة للتفاصيل 👆`;
+  tgSend(msg);
+}
+
+// ── تنبيه وصول الهدف أو الوقف
+function tgCheckTrades() {
+  try {
+    const portfolio = JSON.parse(localStorage.getItem('portfolio')||'[]');
+    portfolio.filter(t=>!t.closed).forEach(t=>{
+      const p = state.prices[t.symbol];
+      if(!p) return;
+      const cur = p.price, target = parseFloat(t.target||0), stop = parseFloat(t.stop||0);
+      if(target>0 && cur>=target && !t._tgTarget) {
+        t._tgTarget=true;
+        tgSend(`🎯 <b>${t.symbol} وصل الهدف!</b>\n$${t.entry} → $${cur.toFixed(2)}\nربح: +${((cur-t.entry)/t.entry*100).toFixed(2)}% 🎉\nاكتب للبوت: <code>خرجت ${t.symbol}</code>`);
+      }
+      if(stop>0 && cur<=stop*1.02 && cur>stop && !t._tgStop) {
+        t._tgStop=true;
+        tgSend(`⚠️ <b>${t.symbol} اقترب من الوقف!</b>\n$${cur.toFixed(2)} | وقف: $${stop}\nراقب وكن مستعداً`);
+      }
+      if(stop>0 && cur<=stop && !t._tgBreak) {
+        t._tgBreak=true;
+        tgSend(`🚨 <b>${t.symbol} كسر الوقف!</b>\n$${cur.toFixed(2)} | خسارة: ${((cur-t.entry)/t.entry*100).toFixed(2)}%\nاخرج فوراً!`);
+      }
+    });
+  } catch(e){}
+}
+
+// ── حالة المحادثة
+const tgState = {};
+
+// ── polling — يستقبل رسائلك كل 3 ثوانٍ
+let tgOffset = 0;
+async function tgPoll() {
+  try {
+    const r = await fetch(`${TG_API}/getUpdates?offset=${tgOffset}&timeout=3`);
+    const d = await r.json();
+    if(!d.ok) return;
+    for(const u of (d.result||[])) {
+      tgOffset = u.update_id + 1;
+      const msg = u.message?.text?.trim();
+      const cid  = String(u.message?.chat?.id);
+      if(!msg || cid !== TG_CHAT_ID) continue;
+      await tgHandle(msg, cid);
+    }
+  } catch(e){}
+}
+
+// ── معالج الرسائل الذكي
+async function tgHandle(msg, cid) {
+  const s = tgState[cid] || {};
+  const low = msg.toLowerCase();
+
+  // ── أمر الخروج من سهم
+  if(low.startsWith('خرجت') || low.startsWith('بعت')) {
+    const sym = msg.split(/\s+/)[1]?.toUpperCase();
+    if(sym) {
+      try {
+        const port = JSON.parse(localStorage.getItem('portfolio')||'[]');
+        const t = port.find(x=>x.symbol===sym && !x.closed);
+        if(t) {
+          const cur = state.prices[sym]?.price || parseFloat(msg.split(/\s+/)[2]||t.target);
+          t.closed = true; t.closePrice = cur; t.closeDate = new Date().toISOString();
+          const pnl = ((cur-t.entry)/t.entry*100).toFixed(2);
+          localStorage.setItem('portfolio', JSON.stringify(port));
+          await tgSend(`✅ <b>${sym} مغلقة</b>\nدخول: $${t.entry} → خروج: $${cur}\n${pnl>0?'ربح +':'خسارة '}${pnl}%\nالسجل حُدّث 📊`);
+        } else {
+          await tgSend(`⚠️ ${sym} غير موجود في محفظتك`);
+        }
+      } catch(e){ await tgSend('⚠️ خطأ في التسجيل'); }
+      tgState[cid] = {};
+      return;
+    }
+  }
+
+  // ── محفظتي
+  if(msg==='محفظتي' || msg==='portfolio') {
+    try {
+      const port = JSON.parse(localStorage.getItem('portfolio')||'[]').filter(t=>!t.closed);
+      if(port.length===0) { await tgSend('📂 محفظتك فارغة'); return; }
+      let m = '💼 <b>محفظتك الآن:</b>\n──────────────\n';
+      let totalPnl = 0;
+      port.forEach(t=>{
+        const cur = state.prices[t.symbol]?.price || t.entry;
+        const pnl = ((cur-t.entry)/t.entry*100).toFixed(2);
+        const icon = pnl>0?'✅':'❌';
+        totalPnl += parseFloat(pnl);
+        m += `${icon} <b>${t.symbol}</b> دخول $${t.entry} → الآن $${cur?.toFixed(2)} (${pnl>0?'+':''}${pnl}%)\n`;
+      });
+      m += `──────────────\nإجمالي: ${totalPnl>0?'+':''}${(totalPnl/port.length).toFixed(2)}% متوسط`;
+      await tgSend(m);
+    } catch(e){ await tgSend('⚠️ خطأ'); }
+    return;
+  }
+
+  // ── تقرير اليوم
+  if(msg==='تقرير' || msg==='اليوم') {
+    const recs = state.recs || [];
+    let m = '📊 <b>توصيات اليوم:</b>\n';
+    if(recs.length===0) m += 'لا توصيات بعد — السوق مغلق\n';
+    recs.forEach((r,i)=>{ m += `${i+1}. <b>${r.id}</b> هدف +${fmt(r.profitPct,1)}% | ثقة ${r.confidence}%\n`; });
+    m += `\nSPY ${(state.spyChange||0)>=0?'+':''}${fmt(state.spyChange||0,2)}%`;
+    await tgSend(m);
+    return;
+  }
+
+  // ── استعلام عن سهم
+  const sym = msg.toUpperCase().replace(/[^A-Z]/g,'');
+  const stockExists = ALL_STOCKS?.find(x=>x.id===sym);
+  if(sym.length>=2 && sym.length<=5 && stockExists && !s.step) {
+    const ind = state.indicators[sym];
+    const p   = state.prices[sym];
+    if(!p) { await tgSend(`⏳ ${sym} — لم تُحمَّل بياناته بعد`); return; }
+    const hist = ind?.macdHist;
+    const rsi  = ind?.rsi;
+    const weekly = ind?.weeklyTrend;
+    let analysis = `📊 <b>${stockExists.name} (${sym})</b>\n`;
+    analysis += `السعر: <b>$${p.price?.toFixed(2)}</b> ${p.change>=0?'📈':'📉'} ${p.change>=0?'+':''}${p.change?.toFixed(2)}%\n`;
+    analysis += `──────────────\n`;
+    if(hist!=null) analysis += `MACD Hist: ${hist>0?'✅':'❌'} ${hist>0?'+':''}${hist?.toFixed(2)} ${ind?.macdHistDir==='expanding'?'↑ يتوسع':'↓ يضيق'}\n`;
+    if(rsi!=null)  analysis += `RSI: ${rsi<35?'✅':rsi>70?'❌':'⚠️'} ${rsi?.toFixed(1)}\n`;
+    if(weekly)     analysis += `أسبوعي: ${weekly==='bullish'?'✅ صاعد':'❌ هابط'}\n`;
+    analysis += `──────────────\n`;
+    analysis += `هل اشتريت ${sym}؟\n1️⃣ نعم — سجّل صفقة\n2️⃣ لا — معلومات فقط`;
+    tgState[cid] = { step:'ask_bought', sym, price:p.price };
+    await tgSend(analysis);
+    return;
+  }
+
+  // ── خطوات تسجيل الصفقة
+  if(s.step==='ask_bought') {
+    if(msg==='1' || msg==='نعم') {
+      tgState[cid] = { ...s, step:'ask_price' };
+      await tgSend(`بكم اشتريت ${s.sym}؟\n(اضغط إرسال للسعر الحالي $${s.price?.toFixed(2)})`);
+    } else {
+      tgState[cid] = {};
+      await tgSend(`✅ تمام — ${s.sym} للمراقبة فقط`);
+    }
+    return;
+  }
+
+  if(s.step==='ask_price') {
+    const entry = parseFloat(msg) || s.price;
+    tgState[cid] = { ...s, step:'ask_qty', entry };
+    await tgSend(`كم سهم اشتريت من ${s.sym}؟`);
+    return;
+  }
+
+  if(s.step==='ask_qty') {
+    const qty = parseInt(msg) || 1;
+    const ind  = state.indicators[s.sym];
+    const atrPct = ind?.atrPct || 3;
+    const stop = (s.entry * (1 - atrPct*2/100)).toFixed(2);
+    const target = (s.entry * (1 + atrPct*3.5/100)).toFixed(2);
+    const profitPct = ((target-s.entry)/s.entry*100).toFixed(1);
+    const days = Math.ceil((target-s.entry)/s.entry*100/atrPct);
+
+    // حفظ في المحفظة
+    try {
+      const port = JSON.parse(localStorage.getItem('portfolio')||'[]');
+      port.push({ symbol:s.sym, entry:s.entry, qty, stop:parseFloat(stop), target:parseFloat(target), date:new Date().toISOString(), closed:false });
+      localStorage.setItem('portfolio', JSON.stringify(port));
+    } catch(e){}
+
+    const msg2 = `✅ <b>تم تسجيل ${s.sym}</b>\n──────────────\nدخول: $${s.entry?.toFixed(2)}\nكمية: ${qty} سهم\nرأس المال: $${(s.entry*qty).toFixed(0)}\n──────────────\n🛑 وقف: $${stop} (-${atrPct*2}%)\n🎯 هدف: $${target} (+${profitPct}%)\n⏱️ مدة متوقعة: ${days<=1?'🔥 يومي':days<=3?'⚡ '+days+' أيام':'📅 '+days+' أيام'}\n──────────────\nسأراقبه وأنبهك 👀`;
+    tgState[cid] = {};
+    await tgSend(msg2);
+    return;
+  }
+
+  // ── مساعدة
+  await tgSend(`🦅 <b>RamiFalconX</b>\n──────────────\nاكتب رمز السهم: <code>NVDA</code>\nمحفظتك: <code>محفظتي</code>\nتقرير اليوم: <code>تقرير</code>\nخروج من سهم: <code>خرجت ALAB</code>`);
+}
+
+// ── ابدأ Polling كل 3 ثوانٍ
+setInterval(tgPoll, 3000);
+tgPoll(); // استدعاء أولي فوري
 
 </script>
 </body>
