@@ -4144,6 +4144,7 @@ function renderStockPage(s, p, ind, volR) {
     position:'fixed', top:0, left:0, right:0, bottom:0,
     background:'#050810', zIndex:500,
     overflowY:'auto', display:'flex', flexDirection:'column',
+    direction:'rtl', // ✅ اتجاه عربي
   }}, [
 
     // ── هيدر الصفحة
@@ -4152,29 +4153,31 @@ function renderStockPage(s, p, ind, volR) {
       background:'#050810', borderBottom:'1px solid #1a2340',
       padding:'12px 16px',
       display:'flex', alignItems:'center', gap:'12px',
+      direction:'rtl',
     }}, [
-      // زر الرجوع
-      el('button', {
-        style:{
-          background:'rgba(255,255,255,.06)', border:'none',
-          borderRadius:'8px', padding:'7px 12px',
-          color:C.text, fontSize:'16px', flexShrink:'0',
-        },
-        onClick:()=>{ state.selectedStock=null; render(); }
-      }, ['←']),
       el('div', {style:{flex:'1'}}, [
         el('div', {style:{fontSize:'15px', fontWeight:'800', color:C.text}}, [s.name]),
-        el('div', {style:{fontSize:'11px', color:C.text3}}, [s.id+' • '+s.sector]),
+        el('div', {style:{fontSize:'11px', color:C.text3}}, [s.id+' • '+(s.sector||'')]),
       ]),
-      el('div', {style:{textAlign:'left'}}, [
+      el('div', {style:{textAlign:'left', flexShrink:'0'}}, [
         el('div', {style:{fontSize:'16px', fontWeight:'900', color:C.text}}, ['$'+fmtPrice(p.price)]),
         el('div', {style:{fontSize:'12px', fontWeight:'700', color:clr}}, [(chg>0?'+':'')+fmt(chg,2)+'%']),
       ]),
+      // زر الرجوع في اليسار
+      el('button', {
+        style:{
+          background:'rgba(255,255,255,.08)', border:'1px solid #1a2340',
+          borderRadius:'8px', padding:'7px 14px',
+          color:C.text, fontSize:'13px', fontWeight:'700',
+          flexShrink:'0', cursor:'pointer',
+        },
+        onClick:()=>{ state.selectedStock=null; render(); }
+      }, ['✕ رجوع']),
     ]),
 
     // ── المحتوى
-    el('div', {style:{padding:'12px 16px', flex:'1'}}, [
-      renderTraderCard(s, ind, volR, chg, p), // ✅ نمرر p للسعر
+    el('div', {style:{padding:'12px 16px', flex:'1', direction:'rtl'}}, [
+      renderTraderCard(s, ind, volR, chg, p),
     ]),
   ]);
 }
@@ -4263,7 +4266,7 @@ function renderTraderCard(s, ind, volR, chg, priceObj) {
   }},[
 
     // ── المؤشرات
-    el('div',{style:{display:'flex',flexDirection:'column',gap:'5px',marginBottom:'10px'}},
+    el('div',{style:{display:'flex',flexDirection:'column',gap:'5px',marginBottom:'10px',direction:'rtl'}},
       signals.map(sig => el('div',{style:{
         display:'flex',alignItems:'center',gap:'6px',
         background:'#060b14',borderRadius:'6px',padding:'5px 8px',
