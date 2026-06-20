@@ -4240,7 +4240,7 @@ function renderStockPage(s, p, ind, volR) {
     ]),
 
     // ── المحتوى
-    el('div', {style:{padding:'12px 16px', flex:'1', direction:'rtl'}}, [
+    el('div', {style:{padding:'12px 16px', flex:'1', direction:'rtl', width:'100%', boxSizing:'border-box'}}, [
       renderTraderCard(s, ind, volR, chg, p),
     ]),
   ]);
@@ -4248,32 +4248,39 @@ function renderStockPage(s, p, ind, volR) {
 
 // ── بطاقة تحليل المضارب اليومي
 function renderTraderCard(s, ind, volR, chg, priceObj) {
-  // ✅ السعر إما من priceObj (renderStockPage) أو s.p (renderMiniStock)
   const pData = priceObj || s.p || {};
   const price = pData.price || 0;
 
-  // ── حساب كل إشارة
   const signals = [];
 
-  // 1. MACD Histogram
+  // 1. MACD Histogram — زخم الحركة
   if(ind.macdHist!=null) {
     const h = ind.macdHist, d = ind.macdHistDir;
-    const col = h>0&&d==='expanding'?C.green : h>0?C.yellow : d==='expanding'?C.pink:C.orange;
-    const icon= h>0&&d==='expanding'?'✅':h>0?'⚠️':d==='expanding'?'❌':'⚠️';
-    const txt = h>0&&d==='expanding'?'زخم شراء متوسع'
-              : h>0?'زخم موجب يضعف'
-              : d==='expanding'?'زخم بيعي متوسع ⚠️'
-              : 'زخم بيعي يضعف';
-    signals.push({label:'MACD Hist', value:(h>0?'+':'')+fmt(h,2)+(d==='expanding'?' ↑':' ↓'), desc:txt, color:col, icon});
+    const col  = h>0&&d==='expanding'?C.green : h>0?C.yellow : d==='expanding'?C.pink:C.orange;
+    const icon = h>0&&d==='expanding'?'✅':h>0?'⚠️':d==='expanding'?'❌':'⚠️';
+    const txt  = h>0&&d==='expanding'
+      ? 'الزخم يتصاعد للأعلى — قوة الشراء تزداد — فرصة دخول جيدة'
+      : h>0
+      ? 'الزخم موجب لكن يضعف — الحركة تتباطأ — راقب الخروج'
+      : d==='expanding'
+      ? 'الزخم يتصاعد للأسفل — قوة البيع تزيد — تجنب الدخول'
+      : 'الزخم سالب لكن يضعف — قد يرتد — انتظر تأكيداً';
+    const hint = 'MACD Histogram يقيس قوة واتجاه الحركة';
+    signals.push({label:'زخم الحركة (MACD)', value:(h>0?'+':'')+fmt(h,2)+(d==='expanding'?' ↑':' ↓'), desc:txt, hint, color:col, icon});
   }
 
-  // 2. RSI
+  // 2. RSI — هل السهم مباع أو مشترى بإفراط؟
   if(ind.rsi!=null) {
-    const r = ind.rsi;
+    const r   = ind.rsi;
     const col = r<35?C.green:r>70?C.pink:C.yellow;
     const icon= r<35?'✅':r>70?'❌':'⚠️';
-    const txt = r<35?'تشبع بيع — ارتداد محتمل':r<45?'منطقة شراء':r<60?'محايد — انتظر':r<70?'قوي — راقب':' تشبع شراء — احذر';
-    signals.push({label:'RSI', value:fmt(r,1)+'%', desc:txt, color:col, icon});
+    const txt = r<30 ? 'مباع بإفراط شديد — ارتداد قوي محتمل — فرصة شراء'
+              : r<45 ? 'منطقة شراء — السهم رخيص نسبياً'
+              : r<60 ? 'منطقة محايدة — لا إشارة واضحة — انتظر'
+              : r<70 ? 'السهم قوي لكن راقب التشبع'
+              :        'مشترى بإفراط — قد ينزل — احذر من الدخول الآن';
+    const hint = 'RSI: أقل من 30 = رخيص جداً | أكثر من 70 = غالٍ جداً';
+    signals.push({label:'RSI — القوة النسبية', value:fmt(r,1), desc:txt, hint, color:col, icon});
   }
 
   // 3. الشمعة الأخيرة
@@ -4281,75 +4288,96 @@ function renderTraderCard(s, ind, volR, chg, priceObj) {
     const candles = detectCandlePatterns(ind.closes, ind.highs, ind.lows);
     const top = candles[0];
     if(top) {
-      const col = top.signal==='bullish'?C.green:top.signal==='bearish'?C.pink:C.yellow;
-      const icon= top.signal==='bullish'?'✅':top.signal==='bearish'?'❌':'⚠️';
-      signals.push({label:'الشمعة', value:top.ar, desc:top.tip, color:col, icon});
+      const col  = top.signal==='bullish'?C.green:top.signal==='bearish'?C.pink:C.yellow;
+      const icon = top.signal==='bullish'?'✅':top.signal==='bearish'?'❌':'⚠️';
+      const extra= top.signal==='bullish'?' — إشارة شراء':top.signal==='bearish'?' — إشارة بيع':' — انتظر تأكيد';
+      const hint = 'الشمعة تعكس حركة السعر في اليوم الأخير';
+      signals.push({label:'الشمعة اليابانية', value:top.ar, desc:top.tip+extra, hint, color:col, icon});
     } else {
-      signals.push({label:'الشمعة', value:'محايدة', desc:'لا نمط واضح', color:C.text3, icon:'⚠️'});
+      const hint = 'الشمعة تعكس حركة السعر في اليوم الأخير';
+      signals.push({label:'الشمعة اليابانية', value:'محايدة', desc:'لا نمط واضح — السوق في تردد — انتظر جلسة أخرى', hint, color:C.text3, icon:'⚠️'});
     }
   }
 
   // 4. الحجم
   const volCol  = volR>=2?C.green:volR>=1.2?C.blue:volR<0.7?C.pink:C.text3;
   const volIcon = volR>=2?'✅':volR>=1.2?'✅':volR<0.7?'❌':'⚠️';
-  const volTxt  = volR>=2?'اهتمام قوي — تأكيد الحركة':volR>=1.2?'حجم مرتفع':volR<0.7?'حجم ضعيف — لا اهتمام':'طبيعي';
-  signals.push({label:'الحجم', value:'×'+fmt(volR,1), desc:volTxt, color:volCol, icon:volIcon});
+  const volTxt  = volR>=2 ? 'اهتمام قوي جداً — حركة حقيقية وليست وهمية'
+                : volR>=1.2 ? 'حجم مرتفع — تأكيد للحركة'
+                : volR<0.7  ? 'حجم ضعيف — الحركة قد لا تستمر'
+                :             'حجم طبيعي — لا تأكيد إضافي';
+  const volHint = 'الحجم يقيس عدد الأسهم المتداولة مقارنة بالمعدل';
+  signals.push({label:'حجم التداول', value:'×'+fmt(volR,1), desc:volTxt, hint:volHint, color:volCol, icon:volIcon});
 
   // 5. الأسبوعي
   if(ind.weeklyTrend) {
     const col  = ind.weeklyTrend==='bullish'?C.blue:C.pink;
     const icon = ind.weeklyTrend==='bullish'?'✅':'❌';
-    const txt  = ind.weeklyTrend==='bullish'?'اتجاه كبير صاعد — في صالحك':'اتجاه كبير هابط — تيار معاكس';
-    signals.push({label:'أسبوعي', value:ind.weeklyTrend==='bullish'?'صاعد ↑':'هابط ↓', desc:txt, color:col, icon});
+    const txt  = ind.weeklyTrend==='bullish'
+      ? 'الاتجاه الكبير صاعد — الموجة في صالحك — أفضل للشراء'
+      : 'الاتجاه الكبير هابط — تسبح عكس التيار — خطر أعلى';
+    const hint = 'الأسبوعي يعكس اتجاه السهم على مدى أسابيع';
+    signals.push({label:'الاتجاه الأسبوعي', value:ind.weeklyTrend==='bullish'?'صاعد ↑':'هابط ↓', desc:txt, hint, color:col, icon});
   }
 
   // 6. الدعم
   if(ind.support && ind.support > 0) {
-    const dist    = (price - ind.support)/price*100;
-    const atSup   = dist < 2;
-    const belowSup= price < ind.support;
+    const dist     = (price - ind.support)/price*100;
+    const atSup    = dist < 2;
+    const belowSup = price < ind.support;
     const col  = atSup?C.green:belowSup?C.pink:C.text3;
     const icon = atSup?'✅':belowSup?'❌':'⚠️';
-    const txt  = atSup?'عند الدعم — نقطة ارتداد':belowSup?'كسر الدعم — خطر':'بُعد '+fmt(dist,1)+'% من الدعم';
-    signals.push({label:'الدعم', value:'$'+fmt(ind.support,2), desc:txt, color:col, icon});
+    const txt  = atSup
+      ? 'السعر عند الدعم — تاريخياً يرتد من هنا — نقطة شراء محتملة'
+      : belowSup
+      ? 'السعر كسر الدعم — إشارة هبوط — انتظر الاستقرار'
+      : 'بُعد '+fmt(dist,1)+'% من الدعم — ليس عند نقطة ارتداد بعد';
+    const hint = 'الدعم = مستوى سعري يرتد منه السهم للأعلى تاريخياً';
+    signals.push({label:'مستوى الدعم', value:'$'+fmt(ind.support,2), desc:txt, hint, color:col, icon});
   }
 
-  // ── حساب القرار النهائي
+  // ── القرار
   const greens = signals.filter(s=>s.icon==='✅').length;
   const reds   = signals.filter(s=>s.icon==='❌').length;
   let decision, decColor, decBg;
-  if(greens >= 4)          { decision='اشتري / تمسك 🟢'; decColor=C.green;  decBg='rgba(0,255,136,.08)'; }
-  else if(reds >= 3)       { decision='بيع / اخرج 🔴';   decColor=C.pink;   decBg='rgba(255,45,122,.08)'; }
-  else if(greens >= reds)  { decision='انتظر تأكيد 🟡';  decColor=C.yellow; decBg='rgba(255,224,51,.06)'; }
-  else                     { decision='ميل للبيع ⚠️';    decColor=C.orange; decBg='rgba(255,122,0,.08)'; }
+  if(greens >= 4)         { decision='اشتري / تمسك 🟢'; decColor=C.green;  decBg='rgba(0,255,136,.08)'; }
+  else if(reds >= 3)      { decision='بيع / اخرج 🔴';   decColor=C.pink;   decBg='rgba(255,45,122,.08)'; }
+  else if(greens >= reds) { decision='انتظر تأكيد 🟡';  decColor=C.yellow; decBg='rgba(255,224,51,.06)'; }
+  else                    { decision='ميل للبيع ⚠️';    decColor=C.orange; decBg='rgba(255,122,0,.08)'; }
 
   return el('div',{style:{
-    borderTop:'1px solid #1a2340',
-    background:'#050810',
-    padding:'10px',
+    background:'#050810', padding:'10px',
   }},[
 
     // ── المؤشرات
-    el('div',{style:{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'12px'}},
+    el('div',{style:{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'12px',width:'100%'}},
       signals.map(sig => el('div',{style:{
-        background:'#060b14', borderRadius:'8px', padding:'8px 12px',
-        border:`1px solid ${sig.color}18`,
-        display:'grid',
-        gridTemplateColumns:'24px 1fr auto',
-        gap:'8px', alignItems:'center',
-        direction:'rtl',
+        background:'#060b14', borderRadius:'10px', padding:'10px 14px',
+        border:`1px solid ${sig.color}22`,
+        display:'flex', alignItems:'flex-start', gap:'10px',
+        width:'100%', boxSizing:'border-box',
       }},[
         // أيقونة
-        el('span',{style:{fontSize:'14px',textAlign:'center'}},[sig.icon]),
-        // وصف
-        el('div',{style:{minWidth:'0'}},[
-          el('div',{style:{fontSize:'10px',fontWeight:'700',color:sig.color,
-            lineHeight:'1.4', wordBreak:'break-word'}},[sig.desc]),
+        el('span',{style:{fontSize:'20px',flexShrink:'0',marginTop:'2px'}},[sig.icon]),
+        // وصف يملأ المساحة
+        el('div',{style:{flex:'1',minWidth:'0',textAlign:'right'}},[
+          el('div',{style:{
+            fontSize:'13px',fontWeight:'700',color:sig.color,
+            lineHeight:'1.6', marginBottom:'3px',
+          }},[sig.desc]),
+          sig.hint && el('div',{style:{
+            fontSize:'10px',color:C.text3,
+            borderTop:`1px solid ${sig.color}15`, paddingTop:'3px', marginTop:'3px',
+          }},[sig.hint]),
         ]),
-        // اسم المؤشر + القيمة
-        el('div',{style:{textAlign:'left',flexShrink:'0'}},[
-          el('div',{style:{fontSize:'11px',fontWeight:'900',color:sig.color}},[sig.value]),
-          el('div',{style:{fontSize:'8px',color:C.text3,marginTop:'1px'}},[sig.label]),
+        // القيمة + اسم المؤشر
+        el('div',{style:{
+          textAlign:'right', flexShrink:'0',
+          borderRight:`2px solid ${sig.color}40`,
+          paddingRight:'10px', minWidth:'70px',
+        }},[
+          el('div',{style:{fontSize:'14px',fontWeight:'900',color:sig.color}},[sig.value]),
+          el('div',{style:{fontSize:'9px',color:C.text3,marginTop:'2px'}},[sig.label]),
         ]),
       ]))
     ),
