@@ -4330,19 +4330,26 @@ function renderTraderCard(s, ind, volR, chg, priceObj) {
   }},[
 
     // ── المؤشرات
-    el('div',{style:{display:'flex',flexDirection:'column',gap:'5px',marginBottom:'10px',direction:'rtl'}},
+    el('div',{style:{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'12px'}},
       signals.map(sig => el('div',{style:{
-        display:'flex',alignItems:'center',gap:'6px',
-        background:'#060b14',borderRadius:'6px',padding:'5px 8px',
+        background:'#060b14', borderRadius:'8px', padding:'8px 12px',
+        border:`1px solid ${sig.color}18`,
+        display:'grid',
+        gridTemplateColumns:'24px 1fr auto',
+        gap:'8px', alignItems:'center',
+        direction:'rtl',
       }},[
-        el('span',{style:{fontSize:'12px',flexShrink:'0'}},[sig.icon]),
-        el('div',{style:{flex:'1',minWidth:'0'}},[
-          el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},[
-            el('span',{style:{fontSize:'9px',color:C.text3,flexShrink:'0'}},[sig.label]),
-            el('span',{style:{fontSize:'10px',fontWeight:'800',color:sig.color,flexShrink:'0'}},[sig.value]),
-          ]),
-          el('div',{style:{fontSize:'9px',color:sig.color,marginTop:'1px',
+        // أيقونة
+        el('span',{style:{fontSize:'14px',textAlign:'center'}},[sig.icon]),
+        // وصف
+        el('div',{style:{minWidth:'0'}},[
+          el('div',{style:{fontSize:'10px',fontWeight:'700',color:sig.color,
             lineHeight:'1.4', wordBreak:'break-word'}},[sig.desc]),
+        ]),
+        // اسم المؤشر + القيمة
+        el('div',{style:{textAlign:'left',flexShrink:'0'}},[
+          el('div',{style:{fontSize:'11px',fontWeight:'900',color:sig.color}},[sig.value]),
+          el('div',{style:{fontSize:'8px',color:C.text3,marginTop:'1px'}},[sig.label]),
         ]),
       ]))
     ),
@@ -4351,11 +4358,12 @@ function renderTraderCard(s, ind, volR, chg, priceObj) {
     el('div',{style:{
       background:decBg,
       border:`1px solid ${decColor}33`,
-      borderRadius:'8px',padding:'8px 12px',
+      borderRadius:'8px',padding:'10px 14px',
       display:'flex',justifyContent:'space-between',alignItems:'center',
+      direction:'rtl',
     }},[
-      el('span',{style:{fontSize:'11px',fontWeight:'900',color:decColor}},[decision]),
-      el('span',{style:{fontSize:'9px',color:C.text3}},['✅'+greens+' ❌'+reds]),
+      el('span',{style:{fontSize:'13px',fontWeight:'900',color:decColor}},[decision]),
+      el('span',{style:{fontSize:'10px',color:C.text3}},['✅'+greens+' ❌'+reds]),
     ]),
 
     // ── تحذير
