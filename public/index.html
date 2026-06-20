@@ -2534,14 +2534,23 @@ function render() {
 function renderApp() {
   return el('div', {id:'main', style:{
     display:'flex', flexDirection:'column',
-    minHeight:'100vh', paddingBottom:'60px', // مساحة للـ bottom nav
+    minHeight:'100vh', paddingBottom:'60px',
   }}, [
     renderHeader(),
     renderTicker(),
     renderDataCheck(),
-    renderMacdBar(),   // ✅ شريط MACD Hist + أسبوعي جديد
+    renderMacdBar(),
     renderContent(),
-    renderBottomNav(), // ✅ التبويبات في الأسفل
+    renderBottomNav(),
+    // ── صفحة تحليل السهم الكاملة (overlay)
+    state.selectedStock && (() => {
+      const s   = ALL_STOCKS.find(x=>x.id===state.selectedStock);
+      const p   = state.prices[state.selectedStock];
+      const ind = state.indicators[state.selectedStock];
+      if(!s || !p || !ind) return null;
+      const volR = p.avgVolume>0 ? p.volume/p.avgVolume : 0;
+      return renderStockPage(s, p, ind, volR);
+    })(),
   ]);
 }
 
@@ -4121,8 +4130,52 @@ function renderMiniStock(s) {
       ].filter(Boolean)),
     ]),
 
-    // ── بطاقة تحليل المضارب (عند الضغط)
-    isOpen && ind && renderTraderCard(s, ind, volR, chg),
+    // ── البطاقة تفتح صفحة كاملة عند الضغط
+    isOpen && ind && null, // الصفحة الكاملة تُعرض في renderApp
+  ]);
+}
+
+// ── صفحة تحليل السهم الكاملة (overlay)
+function renderStockPage(s, p, ind, volR) {
+  const chg = p.change || 0;
+  const clr = chg>0?C.green:chg<0?C.pink:C.text2;
+
+  return el('div', {style:{
+    position:'fixed', top:0, left:0, right:0, bottom:0,
+    background:'#050810', zIndex:500,
+    overflowY:'auto', display:'flex', flexDirection:'column',
+  }}, [
+
+    // ── هيدر الصفحة
+    el('div', {style:{
+      position:'sticky', top:0, zIndex:10,
+      background:'#050810', borderBottom:'1px solid #1a2340',
+      padding:'12px 16px',
+      display:'flex', alignItems:'center', gap:'12px',
+    }}, [
+      // زر الرجوع
+      el('button', {
+        style:{
+          background:'rgba(255,255,255,.06)', border:'none',
+          borderRadius:'8px', padding:'7px 12px',
+          color:C.text, fontSize:'16px', flexShrink:'0',
+        },
+        onClick:()=>{ state.selectedStock=null; render(); }
+      }, ['←']),
+      el('div', {style:{flex:'1'}}, [
+        el('div', {style:{fontSize:'15px', fontWeight:'800', color:C.text}}, [s.name]),
+        el('div', {style:{fontSize:'11px', color:C.text3}}, [s.id+' • '+s.sector]),
+      ]),
+      el('div', {style:{textAlign:'left'}}, [
+        el('div', {style:{fontSize:'16px', fontWeight:'900', color:C.text}}, ['$'+fmtPrice(p.price)]),
+        el('div', {style:{fontSize:'12px', fontWeight:'700', color:clr}}, [(chg>0?'+':'')+fmt(chg,2)+'%']),
+      ]),
+    ]),
+
+    // ── المحتوى
+    el('div', {style:{padding:'12px 16px', flex:'1'}}, [
+      renderTraderCard(s, ind, volR, chg),
+    ]),
   ]);
 }
 
@@ -4220,7 +4273,7 @@ function renderTraderCard(s, ind, volR, chg) {
             el('span',{style:{fontSize:'10px',fontWeight:'800',color:sig.color,flexShrink:'0'}},[sig.value]),
           ]),
           el('div',{style:{fontSize:'9px',color:sig.color,marginTop:'1px',
-            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},[sig.desc]),
+            lineHeight:'1.4', wordBreak:'break-word'}},[sig.desc]),
         ]),
       ]))
     ),
