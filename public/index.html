@@ -172,8 +172,41 @@ function getNowMins() {
 // ── حالة السوق الأربع
 function getMarketSession() {
   if(window.DEBUG_MARKET) return 'open';
-  const t = getMarketTimes();
-  const m = getNowMins();
+  const t   = getMarketTimes();
+  const m   = getNowMins();
+  const now = new Date();
+
+  // ✅ فحص نهاية الأسبوع
+  const day = now.getDay(); // 0=أحد، 6=سبت
+  if(day === 0 || day === 6) return 'closed';
+
+  // ✅ العطلات الرسمية الأمريكية (NYSE)
+  const month = now.getMonth()+1;
+  const date  = now.getDate();
+  const year  = now.getFullYear();
+  const holidays = [
+    `1/1`,   // رأس السنة
+    `6/19`,  // Juneteenth
+    `7/4`,   // يوم الاستقلال
+    `12/25`, // عيد الميلاد
+  ];
+  if(holidays.includes(`${month}/${date}`)) return 'closed';
+  // MLK Day — ثالث اثنين يناير
+  if(month===1 && day===1 && date>=15 && date<=21) return 'closed';
+  // Presidents Day — ثالث اثنين فبراير
+  if(month===2 && day===1 && date>=15 && date<=21) return 'closed';
+  // يوم الذاكرة — آخر اثنين مايو
+  if(month===5 && day===1 && date>=25) return 'closed';
+  // عيد العمال — أول اثنين سبتمبر
+  if(month===9 && day===1 && date<=7) return 'closed';
+  // عيد الشكر — رابع خميس نوفمبر
+  if(month===11 && day===4 && date>=22 && date<=28) return 'closed';
+  // الجمعة السوداء — نصف يوم
+  if(month===11 && day===5 && date>=23 && date<=29) return 'short';
+  // عيد الميلاد إذا الأحد → الاثنين إجازة
+  if(month===12 && date===26 && day===1) return 'closed';
+  // رأس السنة إذا الأحد → الاثنين إجازة
+  if(month===1 && date===2 && day===1 && now.getDay()===1) return 'closed';
 
   // السوق مفتوح
   if(m >= t.open && m < t.close) return 'open';
@@ -213,7 +246,22 @@ function getSessionInfo() {
         dot:    true,
         canRec: true,   // يمكن التوصية
       };
-    case 'pre':
+    case 'closed':
+      return {
+        label:  'السوق مغلق',
+        sub:    'عطلة أسبوعية أو رسمية',
+        color:  '#ff2d7a',
+        dot:    false,
+        canRec: false,
+      };
+    case 'short':
+      return {
+        label:  'السوق — نصف يوم',
+        sub:    'Juneteenth / Black Friday',
+        color:  '#ffa500',
+        dot:    true,
+        canRec: true,
+      };
       return {
         label:  'ما قبل الافتتاح',
         sub:    `يفتح ${t.isSummer?'4:30م':'5:30م'} ${tz}`,
@@ -2547,7 +2595,23 @@ function renderApp() {
       const s   = ALL_STOCKS.find(x=>x.id===state.selectedStock);
       const p   = state.prices[state.selectedStock];
       const ind = state.indicators[state.selectedStock];
-      if(!s || !p || !ind) return null;
+      if(!s) return null;
+      // ✅ إذا لا يوجد سعر أو مؤشرات — نعرض صفحة بسيطة
+      if(!p || !ind) return el('div', {style:{
+        position:'fixed', top:0, left:0, right:0, bottom:0,
+        background:'#050810', zIndex:500,
+        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+        direction:'rtl',
+      }}, [
+        el('div', {style:{fontSize:'20px', marginBottom:'8px'}}, ['⏳']),
+        el('div', {style:{fontSize:'14px', color:C.text, marginBottom:'4px'}}, [s.name]),
+        el('div', {style:{fontSize:'11px', color:C.text2, marginBottom:'16px'}}, ['جاري تحميل البيانات...']),
+        el('button', {
+          style:{background:'rgba(255,255,255,.08)', border:'1px solid #1a2340',
+            borderRadius:'8px', padding:'8px 16px', color:C.text, cursor:'pointer'},
+          onClick:()=>{ state.selectedStock=null; render(); }
+        }, ['✕ رجوع']),
+      ]);
       const volR = p.avgVolume>0 ? p.volume/p.avgVolume : 0;
       return renderStockPage(s, p, ind, volR);
     })(),
