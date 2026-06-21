@@ -2953,15 +2953,15 @@ function renderBottomNav() {
         el('button', {
           style:{
             display:'flex', flexDirection:'column', alignItems:'center',
-            justifyContent:'center', padding:'8px 4px 6px',
+            justifyContent:'center', padding:'10px 4px 8px',
             color: state.tab===t.id ? C.purple : C.text3,
             background:'none', position:'relative',
             borderTop: state.tab===t.id ? `2px solid ${C.purple}` : '2px solid transparent',
           },
           onClick:()=>{ state.tab=t.id; state._showMore=false; render(); }
         },[
-          el('i',{class:'ti '+t.icon, style:{fontSize:'20px'}, 'aria-hidden':'true'}),
-          el('span',{style:{fontSize:'9px',marginTop:'2px',fontWeight:'700'}},[t.label]),
+          el('i',{class:'ti '+t.icon, style:{fontSize:'24px'}, 'aria-hidden':'true'}),
+          el('span',{style:{fontSize:'11px',marginTop:'3px',fontWeight:'700'}},[t.label]),
           t.id==='history' && histPending>0
             ? el('span',{style:{
                 position:'absolute',top:'4px',right:'20%',
@@ -2984,8 +2984,8 @@ function renderBottomNav() {
         },
         onClick:()=>{ state._showMore=!state._showMore; render(); }
       },[
-        el('i',{class:'ti ti-dots', style:{fontSize:'20px'}, 'aria-hidden':'true'}),
-        el('span',{style:{fontSize:'9px',marginTop:'2px',fontWeight:'700'}},['المزيد']),
+        el('i',{class:'ti ti-dots', style:{fontSize:'24px'}, 'aria-hidden':'true'}),
+        el('span',{style:{fontSize:'11px',marginTop:'3px',fontWeight:'700'}},['المزيد']),
       ]),
     ]),
   ]);
