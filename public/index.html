@@ -494,6 +494,7 @@ const state = {
   selectedStock: null,
   _showMore:     false,
   histFilter: 'all',   // فلتر تبويب السجل: 'all' | 'افتتاح' | 'منتصف'
+  histType:   'rec',    // نوع السجل: 'rec' | 'spec'
 
   selected:  null,
   _loadStart: Date.now(), // وقت بدء التحميل
@@ -2345,10 +2346,13 @@ function calcHistoryStats(history) {
 
 // ── واجهة عرض التاريخ
 function renderHistoryTab() {
-  const history = updateHistoryResults();
+  const allHistory = updateHistoryResults();
+
+  // ── فلتر النوع: توصيات أو مجازفة
+  const history = allHistory.filter(h => (h.type || 'rec') === state.histType);
   const stats   = calcHistoryStats(history);
 
-  // ── فلتر الجلسة (مُهيأ في state من البداية)
+  // ── فلتر الجلسة
   const filtered = state.histFilter === 'all' ? history
     : history.filter(h => h.session === state.histFilter);
   const recent = [...filtered].reverse();
@@ -2400,7 +2404,7 @@ function renderHistoryTab() {
       padding:'14px', marginBottom:'12px',
     }}, [
       el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'12px'}}, [
-        el('div', {style:{fontSize:'13px', fontWeight:'900', color:C.blue}}, ['📊 أداء التوصيات']),
+        el('div', {style:{fontSize:'13px', fontWeight:'900', color:state.histType==='rec'?C.blue:C.purple}}, [state.histType==='rec'?'📊 أداء التوصيات':'🎲 أداء المجازفة']),
         el('div', {style:{fontSize:'10px', color:C.text3}}, [history.length+'/500 سجل']),
       ]),
       el('div', {style:{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'8px', marginBottom:'10px'}}, [
@@ -2467,6 +2471,30 @@ function renderHistoryTab() {
           ]),
         ]);
       })(),
+    ]),
+
+    // ─ تبديل بين التوصيات والمجازفة
+    el('div', {style:{display:'flex', gap:'6px', marginBottom:'10px'}}, [
+      el('button', {
+        style:{
+          flex:'1', fontSize:'12px', fontWeight:'800', padding:'8px',
+          borderRadius:'10px',
+          color: state.histType==='rec' ? '#050810' : C.text2,
+          background: state.histType==='rec' ? C.blue : 'rgba(255,255,255,.05)',
+          border: state.histType==='rec' ? 'none' : '1px solid #1a2340',
+        },
+        onClick: () => { state.histType='rec'; state.histFilter='all'; render(); },
+      }, ['📊 التوصيات']),
+      el('button', {
+        style:{
+          flex:'1', fontSize:'12px', fontWeight:'800', padding:'8px',
+          borderRadius:'10px',
+          color: state.histType==='spec' ? '#050810' : C.text2,
+          background: state.histType==='spec' ? C.purple : 'rgba(255,255,255,.05)',
+          border: state.histType==='spec' ? 'none' : '1px solid #1a2340',
+        },
+        onClick: () => { state.histType='spec'; state.histFilter='all'; render(); },
+      }, ['🎲 المجازفة']),
     ]),
 
     // ─ أزرار الفلتر + تصدير + مسح
