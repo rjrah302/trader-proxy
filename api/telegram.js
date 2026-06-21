@@ -1,9 +1,12 @@
-const {initializeApp,cert}=require('firebase-admin/app');
+const {initializeApp,cert,getApps}=require('firebase-admin/app');
 const {getFirestore}=require('firebase-admin/firestore');
 let db;
 function getDB(){
   if(!db){
-    initializeApp({credential:cert({projectId:process.env.FIREBASE_PROJECT_ID,clientEmail:process.env.FIREBASE_CLIENT_EMAIL,privateKey:process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g,'\n')})});
+    if(!getApps().length){
+      const sa=JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT,'base64').toString('utf8'));
+      initializeApp({credential:cert(sa)});
+    }
     db=getFirestore();
   }
   return db;
@@ -13,7 +16,7 @@ const TG_CHAT_ID=process.env.TG_CHAT_ID||'6195578236';
 const FMP_KEY=process.env.FMP_API_KEY;
 const TG_API=`https://api.telegram.org/bot${TG_TOKEN}`;
 async function tgSend(text){try{await fetch(`${TG_API}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:TG_CHAT_ID,text,parse_mode:'HTML'})});}catch(e){console.error('tgSend:',e.message);}}
-async function fbGet(doc){try{const s=await getDB().collection('bot').doc(doc).get();return s.exists?s.data():{};}catch(e){return{};}}
+async function fbGet(doc){try{const s=await getDB().collection('bot').doc(doc).get();return s.exists?s.data():{};}catch(e){console.error('fbGet:',e.message);return{};}}
 async function fbSet(doc,data){try{await getDB().collection('bot').doc(doc).set(data,{merge:true});}catch(e){console.error('fbSet:',e.message);}}
 function calcEMA(arr,p){if(!arr||arr.length<p)return null;const k=2/(p+1);let ema=arr.slice(0,p).reduce((a,b)=>a+b,0)/p;for(let i=p;i<arr.length;i++)ema=arr[i]*k+ema*(1-k);return ema;}
 function calcRSI(c){if(!c||c.length<15)return null;const d=c.slice(-15).map((v,i,a)=>i>0?v-a[i-1]:0).slice(1);const ag=d.map(x=>x>0?x:0).reduce((a,b)=>a+b,0)/14;const al=d.map(x=>x<0?-x:0).reduce((a,b)=>a+b,0)/14;return al===0?100:100-(100/(1+ag/al));}
@@ -62,8 +65,7 @@ const tips=getWatchAdvice(s.rsi,s.hist,s.weekly);
 let m=`👁 <b>${s.sym} أضيف للمراقبة</b>\n──────────────\n`;
 tips.forEach(t=>{m+=`• ${t}\n`;});
 m+=`──────────────\n⏰ اكتب <code>مراقبتي</code> لرؤية قائمتك`;
-await tgSend(m);
-sess[cid]={};}
+await tgSend(m);sess[cid]={};}
 res.status(200).json({ok:true});return;}
 if(s.step==='ask_price'){const entry=parseFloat(text)===0?s.price:(parseFloat(text)||s.price);sess[cid]={...s,step:'ask_qty',entry};await tgSend(`كم سهم اشتريت من <b>${s.sym}</b>؟`);res.status(200).json({ok:true});return;}
 if(s.step==='ask_qty'){const qty=parseInt(text)||1;const atr=s.atr||3;const stop=parseFloat((s.entry*(1-atr*2/100)).toFixed(2));const target=parseFloat((s.entry*(1+atr*3.5/100)).toFixed(2));const pct=((target-s.entry)/s.entry*100).toFixed(1);const days=Math.ceil(parseFloat(pct)/atr);const data=await fbGet('portfolio');const port=data.trades||[];port.push({symbol:s.sym,entry:s.entry,qty,stop,target,date:new Date().toISOString(),closed:false});await fbSet('portfolio',{trades:port});sess[cid]={};await tgSend(`✅ <b>تم تسجيل ${s.sym}</b>\n──────────────\nدخول: <b>$${s.entry?.toFixed(2)}</b> × ${qty} سهم\nرأس المال: <b>$${(s.entry*qty).toFixed(0)}</b>\n──────────────\n🛑 وقف: <b>$${stop}</b> (-${(atr*2).toFixed(1)}%)\n🎯 هدف: <b>$${target}</b> (+${pct}%)\n⏱️ مدة: ${days<=1?'🔥 يومي':days<=3?`⚡ ${days} أيام`:`📅 ${days} أيام`}\n──────────────\n👀 سأراقبه وأنبهك`);res.status(200).json({ok:true});return;}
