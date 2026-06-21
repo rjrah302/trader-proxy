@@ -1796,6 +1796,7 @@ function calcSpeculative() {
     .slice(0, 5);
 
   state.speculativeRecs = candidates;
+  if(candidates.length && isMarketOpen()) recordSpecToHistory(candidates);
   return candidates;
 }
 
@@ -2232,6 +2233,7 @@ function recordRecsToHistory(recs, forceSession) {
     if(exists) return;
     history.push({
       id:         r.id,
+      type:       'rec',                // ← توصية عادية
       name:       r.name,
       sector:     r.sector,
       session,                          // 'افتتاح' أو 'منتصف'
@@ -2247,6 +2249,45 @@ function recordRecsToHistory(recs, forceSession) {
       resultDate: null,
       resultPrice:null,
       pnlPct:     null,
+    });
+  });
+  saveHistory(history);
+}
+
+// ── تسجيل المجازفة في السجل
+function recordSpecToHistory(specs) {
+  if(!specs||!specs.length) return;
+  if(!isMarketOpen()) return;
+  const history = loadHistory();
+  const now     = new Date();
+  const today   = now.toDateString();
+
+  specs.forEach(r => {
+    const exists = history.some(h =>
+      h.id === r.id && h.type === 'spec' &&
+      new Date(h.recDate).toDateString() === today
+    );
+    if(exists) return;
+    history.push({
+      id:          r.id,
+      type:        'spec',              // ← مجازفة
+      name:        r.name,
+      sector:      r.sector,
+      session:     'مجازفة',
+      recDate:     now.toISOString(),
+      recPrice:    r.price,
+      target:      r.target,
+      stopLoss:    r.stopLoss,
+      riskReward:  r.riskReward,
+      lossPct:     r.lossPct,
+      allocPct:    r.allocPct,
+      score:       r.score,
+      spyChange:   state.spyChange,
+      marketTrend: state.marketTrend,
+      result:      'pending',
+      resultDate:  null,
+      resultPrice: null,
+      pnlPct:      null,
     });
   });
   saveHistory(history);
