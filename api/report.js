@@ -1,3 +1,7 @@
+// ================================================================
+// report.js — تقرير أسبوعي كل جمعة 11م
+// يفصل بين التوصيات العادية والمجازفة
+// ================================================================
 const { initializeApp, cert, getApps } = require('firebase-admin/app');
 const { getFirestore }                  = require('firebase-admin/firestore');
 
@@ -21,36 +25,43 @@ const TG_API     = `https://api.telegram.org/bot${TG_TOKEN}`;
 async function tgSend(text) {
   try {
     await fetch(`${TG_API}/sendMessage`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: TG_CHAT_ID, text, parse_mode: 'HTML' }),
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ chat_id: TG_CHAT_ID, text, parse_mode: 'HTML' }),
     });
   } catch (e) { console.error('tgSend:', e.message); }
 }
 
 async function getHistory() {
   try {
-    const s = await getDB().collection('users').doc('default').collection('data').doc('rec_history').get();
+    const s = await getDB().collection('users').doc('default')
+      .collection('data').doc('rec_history').get();
     return s.exists ? (s.data().records || []) : [];
   } catch (e) { return []; }
 }
 
 async function saveHistory(records) {
   try {
-    await getDB().collection('users').doc('default').collection('data').doc('rec_history')
+    await getDB().collection('users').doc('default')
+      .collection('data').doc('rec_history')
       .set({ records, updatedAt: new Date() }, { merge: true });
   } catch (e) {}
 }
 
 async function getCurrentPrice(sym) {
   try {
-    const r = await fetch(`https://financialmodelingprep.com/stable/quote?symbol=${sym}&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) });
+    const r = await fetch(
+      `https://financialmodelingprep.com/stable/quote?symbol=${sym}&apikey=${FMP_KEY}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
     const d = await r.json();
     return Array.isArray(d) && d[0]?.price ? +d[0].price : null;
   } catch (e) { return null; }
 }
 
+// ── تحديث نتائج المعلقة
 async function updatePendingResults(history) {
-  let changed  = false;
+  let changed   = false;
   const pending = history.filter(h => h.result === 'pending');
   if (!pending.length) return { history, changed };
 
@@ -67,115 +78,207 @@ async function updatePendingResults(history) {
     if (h.result !== 'pending') return;
     const cur = prices[h.id];
     if (!cur) return;
+
+    // المجازفة 7 أيام، التوصية العادية 5 أيام
+    const maxDays   = h.type === 'spec' ? 7 : 5;
     const daysSince = (Date.now() - new Date(h.recDate)) / (1000 * 60 * 60 * 24);
     const pnlPct    = +((cur - h.recPrice) / h.recPrice * 100).toFixed(2);
     const hitTarget = h.target   && cur >= h.target;
     const hitStop   = h.stopLoss && cur <= h.stopLoss;
-    const expired   = daysSince  >= 7;
+    const expired   = daysSince  >= maxDays;
+
     if (hitTarget || hitStop || expired) {
-      h.result = pnlPct >= 0 ? 'win' : 'loss';
-      h.resultDate = new Date().toISOString(); h.resultPrice = cur; h.pnlPct = pnlPct;
-      h.closedBy = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
-      changed = true;
-    } else { h.pnlPct = pnlPct; }
+      h.result      = pnlPct >= 0 ? 'win' : 'loss';
+      h.resultDate  = new Date().toISOString();
+      h.resultPrice = cur;
+      h.pnlPct      = pnlPct;
+      h.closedBy    = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
+      changed       = true;
+    } else {
+      h.pnlPct = pnlPct;
+    }
   });
 
   return { history, changed };
 }
 
+// ── حساب الإحصائيات
+function calcStats(recs) {
+  const closed  = recs.filter(h => h.result !== 'pending');
+  const wins    = closed.filter(h => h.result === 'win');
+  const losses  = closed.filter(h => h.result === 'loss');
+  const winRate = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
+  const avgWin  = wins.length   ? +(wins.reduce((s, h) => s + (h.pnlPct || 0), 0) / wins.length).toFixed(2)   : 0;
+  const avgLoss = losses.length ? +(losses.reduce((s, h) => s + (h.pnlPct || 0), 0) / losses.length).toFixed(2) : 0;
+  const exp     = closed.length ? +((winRate / 100 * avgWin) + ((1 - winRate / 100) * avgLoss)).toFixed(2) : 0;
+  const best    = [...wins].sort((a, b) => (b.pnlPct || 0) - (a.pnlPct || 0))[0];
+  const worst   = [...losses].sort((a, b) => (a.pnlPct || 0) - (b.pnlPct || 0))[0];
+
+  // للمجازفة
+  const withRR = recs.filter(h => h.riskReward);
+  const avgRR  = withRR.length ? +(withRR.reduce((s, h) => s + h.riskReward, 0) / withRR.length).toFixed(2) : null;
+  const withLP = recs.filter(h => h.lossPct);
+  const avgLP  = withLP.length ? +(withLP.reduce((s, h) => s + h.lossPct, 0) / withLP.length).toFixed(2) : null;
+
+  // للتوصية العادية
+  const openR  = closed.filter(h => h.session === 'افتتاح');
+  const midR   = closed.filter(h => h.session === 'منتصف');
+  const openWR = openR.length ? Math.round(openR.filter(h => h.result === 'win').length / openR.length * 100) : null;
+  const midWR  = midR.length  ? Math.round(midR.filter(h => h.result === 'win').length  / midR.length  * 100) : null;
+
+  return {
+    total: recs.length, wins: wins.length, losses: losses.length,
+    pending: recs.filter(h => h.result === 'pending').length,
+    winRate, avgWin, avgLoss, exp, best, worst,
+    avgRR, avgLP,
+    openWR, midWR, openCount: openR.length, midCount: midR.length,
+  };
+}
+
+function getVerdict(exp, winRate, isSpec = false) {
+  if (isSpec) {
+    if (exp >= 3 && winRate >= 55) return '✅ المجازفة مربحة جداً — استمر';
+    if (exp >= 1 && winRate >= 45) return '⚠️ المجازفة متعادلة — راجع الشروط';
+    return '❌ المجازفة خاسرة — شدد شرط R/R أو score';
+  }
+  if (exp >= 2 && winRate >= 60) return '✅ الأداة ممتازة — استمر';
+  if (exp >= 1 && winRate >= 50) return '✅ الأداة مربحة — جيد';
+  if (exp >= 0 && winRate >= 45) return '⚠️ الأداة متعادلة — راجع المعادلات';
+  if (winRate >= 40)             return '⚠️ أداء ضعيف — خفف المخاطرة';
+  return '❌ الأداة خاسرة — أوقف وراجع الكود';
+}
+
+// ================================================================
+// ═══════════════════ MAIN HANDLER ═══════════════════════════════
+// ================================================================
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+
   try {
     let history = await getHistory();
+
     if (!history.length) {
-      await tgSend('📊 <b>تقرير تريدر برو X</b>\n──────────────\n⏳ لا يوجد سجل توصيات بعد');
+      await tgSend('📊 <b>تقرير تريدر برو X</b>\n──────────────\n⏳ لا يوجد سجل توصيات بعد\nافتح الأداة في يوم تداول وانتظر توليد التوصيات');
       res.status(200).json({ ok: true }); return;
     }
 
+    // تحديث النتائج المعلقة
     const { history: updated, changed } = await updatePendingResults(history);
     if (changed) { await saveHistory(updated); history = updated; }
 
+    // ── فصل التوصيات عن المجازفة
+    // السجل القديم بدون type يُعامَل كـ rec تلقائياً
+    const recAll  = history.filter(h => (h.type || 'rec') === 'rec');
+    const specAll = history.filter(h => h.type === 'spec');
+
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const thisWeek   = history.filter(h => new Date(h.recDate) >= oneWeekAgo);
+    const recWeek    = recAll.filter(h  => new Date(h.recDate) >= oneWeekAgo);
+    const specWeek   = specAll.filter(h => new Date(h.recDate) >= oneWeekAgo);
 
-    function stats(recs) {
-      const closed  = recs.filter(h => h.result !== 'pending');
-      const wins    = closed.filter(h => h.result === 'win');
-      const losses  = closed.filter(h => h.result === 'loss');
-      const winRate = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
-      const avgWin  = wins.length   ? +(wins.reduce((s, h) => s + (h.pnlPct || 0), 0) / wins.length).toFixed(2)   : 0;
-      const avgLoss = losses.length ? +(losses.reduce((s, h) => s + (h.pnlPct || 0), 0) / losses.length).toFixed(2) : 0;
-      const exp     = closed.length ? +((winRate / 100 * avgWin) + ((1 - winRate / 100) * avgLoss)).toFixed(2) : 0;
-      const best    = [...wins].sort((a, b) => (b.pnlPct || 0) - (a.pnlPct || 0))[0];
-      const worst   = [...losses].sort((a, b) => (a.pnlPct || 0) - (b.pnlPct || 0))[0];
-      const openR   = closed.filter(h => h.session === 'افتتاح');
-      const midR    = closed.filter(h => h.session === 'منتصف');
-      return {
-        total: recs.length, wins: wins.length, losses: losses.length,
-        pending: recs.filter(h => h.result === 'pending').length,
-        winRate, avgWin, avgLoss, exp, best, worst,
-        openWR: openR.length ? Math.round(openR.filter(h => h.result === 'win').length / openR.length * 100) : null,
-        midWR:  midR.length  ? Math.round(midR.filter(h => h.result === 'win').length  / midR.length  * 100) : null,
-        openCount: openR.length, midCount: midR.length,
-      };
-    }
+    const rw = calcStats(recWeek);
+    const ra = calcStats(recAll);
+    const sw = calcStats(specWeek);
+    const sa = calcStats(specAll);
 
-    const w = stats(thisWeek);
-    const a = stats(history);
+    const dateStr = new Date().toLocaleDateString('ar-SA', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
 
-    const dateStr = new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    // ════════════════════════════════
+    // رسالة 1 — التوصيات العادية
+    // ════════════════════════════════
+    let msg1 = `📊 <b>تقرير التوصيات — تريدر برو X</b>\n`;
+    msg1    += `📅 ${dateStr}\n`;
+    msg1    += `━━━━━━━━━━━━━━━━\n\n`;
 
-    let msg = `📊 <b>تقرير تريدر برو X</b>\n📅 ${dateStr}\n━━━━━━━━━━━━━━━━\n\n`;
-
-    msg += `🗓 <b>هذا الأسبوع (${w.total} توصية)</b>\n──────────────\n`;
-    if (!w.wins && !w.losses) {
-      msg += `⏳ لا توجد صفقات مغلقة بعد\n`;
+    msg1 += `🗓 <b>هذا الأسبوع (${rw.total} توصية)</b>\n──────────────\n`;
+    if (!rw.wins && !rw.losses) {
+      msg1 += `⏳ لا توجد نتائج مغلقة بعد\n`;
     } else {
-      msg += `✅ ${w.wins} ناجحة  ❌ ${w.losses} خاسرة  ⏳ ${w.pending} معلقة\n`;
-      msg += `🎯 نسبة النجاح: <b>${w.winRate}%</b>\n`;
-      msg += `💰 متوسط الربح: <b>+${w.avgWin}%</b>\n`;
-      msg += `📉 متوسط الخسارة: <b>${w.avgLoss}%</b>\n`;
-      msg += `🧮 التوقع الرياضي: <b>${w.exp >= 0 ? '+' : ''}${w.exp}%</b>\n`;
-      if (w.openWR !== null) msg += `──────────────\n🌅 الافتتاح: ${w.openWR}% (${w.openCount})\n🌇 المنتصف: ${w.midWR}% (${w.midCount})\n`;
-      if (w.best)  msg += `──────────────\n🏆 أفضل: <b>${w.best.id}</b> +${w.best.pnlPct}%\n`;
-      if (w.worst) msg += `💀 أسوأ: <b>${w.worst.id}</b> ${w.worst.pnlPct}%\n`;
+      msg1 += `✅ ${rw.wins} ناجحة  ❌ ${rw.losses} خاسرة  ⏳ ${rw.pending} معلقة\n`;
+      msg1 += `🎯 نسبة النجاح: <b>${rw.winRate}%</b>\n`;
+      msg1 += `💰 متوسط الربح: <b>+${rw.avgWin}%</b>\n`;
+      msg1 += `📉 متوسط الخسارة: <b>${rw.avgLoss}%</b>\n`;
+      msg1 += `🧮 التوقع الرياضي: <b>${rw.exp >= 0 ? '+' : ''}${rw.exp}%</b>\n`;
+      if (rw.openWR !== null) msg1 += `──────────────\n🌅 الافتتاح: ${rw.openWR}% (${rw.openCount})\n🌇 المنتصف: ${rw.midWR}% (${rw.midCount})\n`;
+      if (rw.best)  msg1 += `──────────────\n🏆 أفضل: <b>${rw.best.id}</b> +${rw.best.pnlPct}%\n`;
+      if (rw.worst) msg1 += `💀 أسوأ: <b>${rw.worst.id}</b> ${rw.worst.pnlPct}%\n`;
     }
 
-    const wV = w.exp >= 2 && w.winRate >= 60 ? '✅ الأداة ممتازة — استمر' :
-               w.exp >= 1 && w.winRate >= 50 ? '✅ الأداة مربحة — جيد' :
-               w.exp >= 0 && w.winRate >= 45 ? '⚠️ الأداة متعادلة — راجع المعادلات' :
-               w.winRate >= 40               ? '⚠️ أداء ضعيف — خفف المخاطرة' :
-                                               '❌ الأداة خاسرة — أوقف وراجع الكود';
-    msg += `\n${wV}\n\n━━━━━━━━━━━━━━━━\n\n`;
+    msg1 += `\n${getVerdict(rw.exp, rw.winRate)}\n`;
+    msg1 += `\n━━━━━━━━━━━━━━━━\n\n`;
+    msg1 += `📈 <b>الكلي (${ra.total} توصية)</b>\n──────────────\n`;
+    msg1 += `✅ ${ra.wins}  ❌ ${ra.losses}  ⏳ ${ra.pending}\n`;
+    msg1 += `🎯 نسبة النجاح: <b>${ra.winRate}%</b>\n`;
+    msg1 += `🧮 التوقع الرياضي: <b>${ra.exp >= 0 ? '+' : ''}${ra.exp}%</b>\n`;
+    msg1 += `\n${getVerdict(ra.exp, ra.winRate)}\n`;
+    msg1 += `━━━━━━━━━━━━━━━━\n\n💡 <b>ملاحظة:</b>\n`;
 
-    msg += `📈 <b>الأداء الكلي (${a.total} توصية)</b>\n──────────────\n`;
-    msg += `✅ ${a.wins}  ❌ ${a.losses}  ⏳ ${a.pending}\n`;
-    msg += `🎯 نسبة النجاح: <b>${a.winRate}%</b>\n`;
-    msg += `🧮 التوقع الرياضي: <b>${a.exp >= 0 ? '+' : ''}${a.exp}%</b>\n`;
-
-    const aV = a.exp >= 2 && a.winRate >= 60 ? '✅ الأداة ممتازة — استمر' :
-               a.exp >= 1 && a.winRate >= 50 ? '✅ الأداة مربحة — جيد' :
-               a.exp >= 0 && a.winRate >= 45 ? '⚠️ الأداة متعادلة — راجع المعادلات' :
-               a.winRate >= 40               ? '⚠️ أداء ضعيف — خفف المخاطرة' :
-                                               '❌ الأداة خاسرة — أوقف وراجع الكود';
-    msg += `\n${aV}\n━━━━━━━━━━━━━━━━\n\n💡 <b>ملاحظة:</b>\n`;
-
-    if (w.winRate < 40 && (w.wins + w.losses) >= 3)
-      msg += `• نسبة نجاح منخفضة — راجع شرط confidence في calcRecs\n• جرب رفعه من 60% إلى 70%\n`;
-    else if (w.avgLoss < -5 && w.losses > 0)
-      msg += `• متوسط الخسارة مرتفع — راجع معادلة ATR للوقف\n• جرب تضييق الوقف من ATR×2 إلى ATR×1.5\n`;
-    else if (w.openWR !== null && w.midWR !== null && w.midWR < w.openWR - 20)
-      msg += `• توصيات المنتصف أضعف — فكر في تشديد شروطها\n`;
-    else if (w.winRate >= 60)
-      msg += `• أداء ممتاز 🎯 استمر بنفس المعادلات\n`;
+    if (rw.winRate < 40 && (rw.wins + rw.losses) >= 3)
+      msg1 += `• نسبة نجاح منخفضة — راجع confidence في calcRecs\n• جرب رفعه من 60% إلى 70%\n`;
+    else if (rw.avgLoss < -5 && rw.losses > 0)
+      msg1 += `• خسائر كبيرة — راجع معادلة ATR للوقف\n• جرب ATR×1.5 بدل ATR×2\n`;
+    else if (rw.openWR !== null && rw.midWR !== null && rw.midWR < rw.openWR - 20)
+      msg1 += `• المنتصف أضعف من الافتتاح — شدد شروطه\n`;
+    else if (rw.winRate >= 60)
+      msg1 += `• أداء ممتاز 🎯 استمر بنفس المعادلات\n`;
     else
-      msg += `• أداء طبيعي — تحتاج 20+ صفقة للتقييم الموثوق\n`;
+      msg1 += `• أداء طبيعي — تحتاج 20+ صفقة للتقييم الموثوق\n`;
 
-    await tgSend(msg);
-    res.status(200).json({ ok: true, total: history.length });
+    await tgSend(msg1);
+
+    // ════════════════════════════════
+    // رسالة 2 — المجازفة
+    // ════════════════════════════════
+    if (sa.total > 0) {
+      let msg2 = `⚖️ <b>تقرير المجازفة — تريدر برو X</b>\n`;
+      msg2    += `━━━━━━━━━━━━━━━━\n\n`;
+
+      msg2 += `🗓 <b>هذا الأسبوع (${sw.total} فرصة)</b>\n──────────────\n`;
+      if (!sw.wins && !sw.losses) {
+        msg2 += `⏳ لا توجد نتائج بعد\n`;
+      } else {
+        msg2 += `✅ ${sw.wins} ناجحة  ❌ ${sw.losses} خاسرة  ⏳ ${sw.pending} معلقة\n`;
+        msg2 += `🎯 نسبة النجاح: <b>${sw.winRate}%</b>\n`;
+        msg2 += `💰 متوسط الربح: <b>+${sw.avgWin}%</b>\n`;
+        msg2 += `📉 متوسط الخسارة: <b>${sw.avgLoss}%</b>\n`;
+        if (sw.avgRR) msg2 += `📐 متوسط R/R: <b>1:${sw.avgRR}</b>\n`;
+        if (sw.avgLP) msg2 += `⚠️ متوسط المخاطرة: <b>${sw.avgLP}%</b> لكل صفقة\n`;
+        msg2 += `🧮 التوقع الرياضي: <b>${sw.exp >= 0 ? '+' : ''}${sw.exp}%</b>\n`;
+        if (sw.best)  msg2 += `──────────────\n🏆 أفضل: <b>${sw.best.id}</b> +${sw.best.pnlPct}%\n`;
+        if (sw.worst) msg2 += `💀 أسوأ: <b>${sw.worst.id}</b> ${sw.worst.pnlPct}%\n`;
+      }
+
+      msg2 += `\n${getVerdict(sw.exp, sw.winRate, true)}\n`;
+      msg2 += `\n━━━━━━━━━━━━━━━━\n\n`;
+      msg2 += `📈 <b>الكلي (${sa.total} فرصة)</b>\n──────────────\n`;
+      msg2 += `✅ ${sa.wins}  ❌ ${sa.losses}  ⏳ ${sa.pending}\n`;
+      msg2 += `🎯 نسبة النجاح: <b>${sa.winRate}%</b>\n`;
+      if (sa.avgRR) msg2 += `📐 متوسط R/R: <b>1:${sa.avgRR}</b>\n`;
+      msg2 += `🧮 التوقع الرياضي: <b>${sa.exp >= 0 ? '+' : ''}${sa.exp}%</b>\n`;
+      msg2 += `\n${getVerdict(sa.exp, sa.winRate, true)}\n`;
+      msg2 += `━━━━━━━━━━━━━━━━\n\n💡 <b>ملاحظة المجازفة:</b>\n`;
+
+      if (sa.winRate < 40 && sa.total >= 5)
+        msg2 += `• نسبة نجاح منخفضة — جرب رفع score من 40 إلى 50\n`;
+      else if (sa.avgLP && sa.avgLP > 8)
+        msg2 += `• وقف الخسارة واسع — جرب ATR×1.5 بدل ATR×2\n`;
+      else if (sa.avgRR && sa.avgRR < 2.5)
+        msg2 += `• R/R منخفض — جرب رفع الحد من 2 إلى 2.5\n`;
+      else if (sa.winRate >= 55)
+        msg2 += `• أداء ممتاز للمجازفة 🚀 استمر\n`;
+      else
+        msg2 += `• تحتاج 10+ صفقة للتقييم الموثوق\n`;
+
+      await tgSend(msg2);
+    }
+
+    console.log('[Report] أُرسل — توصيات:', recAll.length, '| مجازفة:', specAll.length);
+    res.status(200).json({ ok: true, rec: recAll.length, spec: specAll.length });
+
   } catch (e) {
     console.error('report:', e.message);
     await tgSend(`⚠️ خطأ في التقرير: ${e.message}`);
-    res.status(200).json({ ok: false });
+    res.status(200).json({ ok: false, error: e.message });
   }
 };
