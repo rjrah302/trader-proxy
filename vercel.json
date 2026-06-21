@@ -6,7 +6,6 @@
     "api/stocks.js":   { "maxDuration": 15 }
   },
   "crons": [
-    { "path": "/api/monitor", "schedule": "*/10 * * * 1-5" },
-    { "path": "/api/report",  "schedule": "0 20 * * 5" }
+    { "path": "/api/report", "schedule": "0 20 * * 5" }
   ]
 }
