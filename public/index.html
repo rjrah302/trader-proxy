@@ -408,7 +408,6 @@ const STOCKS = [
   // 🌍 عالمي
   {id:"BABA",  name:"Alibaba",       sector:"تجارة صينية",     cat:"large",  beta:1.6},
   {id:"SE",    name:"Sea Limited",   sector:"تجارة/ألعاب",     cat:"mid",    beta:1.7},
-  {id:"GRAB",  name:"Grab",          sector:"نقل/فينتك",       cat:"small",  beta:1.5},
   {id:"ABNB",  name:"Airbnb",        sector:"سياحة/إيجار",     cat:"mid",    beta:1.6},
   {id:"DASH",  name:"DoorDash",      sector:"توصيل",           cat:"mid",    beta:1.7},
   // 🎮 ترفيه
@@ -419,20 +418,22 @@ const STOCKS = [
   {id:"Z",     name:"Zillow",        sector:"عقارات رقمية",    cat:"mid",    beta:1.6},
   {id:"RDFN",  name:"Redfin",        sector:"عقارات رقمية",    cat:"small",  beta:1.9},
   // 📡 اتصالات
-  {id:"NOK",   name:"Nokia",         sector:"اتصالات",         cat:"small",  beta:0.9},
-  {id:"SATS",  name:"EchoStar",      sector:"أقمار صناعية",    cat:"small",  beta:1.3},
   {id:"LUMN",  name:"Lumen Tech",    sector:"شبكات",           cat:"small",  beta:1.7},
   {id:"DISH",  name:"DISH Network",  sector:"إذاعة/5G",        cat:"small",  beta:1.6},
   // 🌐 متنوع
-  {id:"QXO",   name:"QXO Inc",       sector:"مواد بناء",       cat:"small",  beta:1.4},
   {id:"EXPI",  name:"eXp World",     sector:"عقارات",          cat:"small",  beta:1.7},
   {id:"PENN",  name:"PENN Entert.",  sector:"كازينو/رياضة",    cat:"small",  beta:1.8},
-  {id:"GROY",  name:"Gold Royalty",  sector:"ذهب",             cat:"small",  beta:1.6},
   {id:"CLOV",  name:"Clover Health", sector:"تأمين رقمي",      cat:"small",  beta:2.0},
-  {id:"TTEC",  name:"TTEC Holdings", sector:"خدمات AI",        cat:"small",  beta:1.5},
   {id:"HROW",  name:"Harrow Health", sector:"دواء عيون",       cat:"small",  beta:1.7},
-  {id:"DNUT",  name:"Krispy Kreme",  sector:"مطاعم",           cat:"small",  beta:1.2},
   {id:"VNET",  name:"21Vianet",      sector:"سحابة صين",       cat:"small",  beta:1.8},
+  // 🚀 إضافات جديدة — تقلب عالٍ
+  {id:"ASTS",  name:"AST SpaceMobile", sector:"فضاء/اتصالات",   cat:"future", beta:3.1},
+  {id:"ACHR",  name:"Archer Aviation", sector:"طيران كهربائي",  cat:"future", beta:2.6},
+  {id:"RXRX",  name:"Recursion Bio",   sector:"AI دواء",        cat:"future", beta:2.9},
+  {id:"WOLF",  name:"Wolfspeed",       sector:"شرائح SiC",      cat:"future", beta:2.8},
+  {id:"COIN",  name:"Coinbase",        sector:"كريبتو",         cat:"future", beta:3.5},
+  {id:"MARA",  name:"Marathon Digital",sector:"تعدين بيتكوين",  cat:"future", beta:3.8},
+  {id:"CLSK",  name:"CleanSpark",      sector:"تعدين بيتكوين",  cat:"future", beta:3.2},
 ];
 
 // إزالة مكررات
@@ -1724,11 +1725,11 @@ function calcSpeculative() {
       if(ind.rsi!=null && ind.rsi>78) { score-=10; warnings.push('RSI مرتفع '+fmt(ind.rsi)+'% — تشبع شراء'); }
 
       score = Math.max(0, score);
-      if(score < 40) return null;
+      if(score < 50) return null;
 
       // ══ حساب وقف الخسارة والهدف — الأهم في المجازفة
       // وقف الخسارة: أسفل الدعم مباشرة أو 2×ATR
-      const atrStop  = atrPct * 2;   // أوسع من التوصية العادية
+      const atrStop  = atrPct * 1.5; // مضبوط للمجازفة — خسارة محدودة
       const rawStop  = ind.support && ind.support < price
         ? Math.min(ind.support * 0.985, price*(1-atrStop/100))  // أسفل الدعم بـ 1.5%
         : price*(1-atrStop/100);
@@ -2262,7 +2263,6 @@ function recordSpecToHistory(specs) {
   const history = loadHistory();
   const now     = new Date();
   const today   = now.toDateString();
-
   specs.forEach(r => {
     const exists = history.some(h =>
       h.id === r.id && h.type === 'spec' &&
@@ -2271,7 +2271,7 @@ function recordSpecToHistory(specs) {
     if(exists) return;
     history.push({
       id:          r.id,
-      type:        'spec',              // ← مجازفة
+      type:        'spec',
       name:        r.name,
       sector:      r.sector,
       session:     'مجازفة',
@@ -2347,12 +2347,8 @@ function calcHistoryStats(history) {
 // ── واجهة عرض التاريخ
 function renderHistoryTab() {
   const allHistory = updateHistoryResults();
-
-  // ── فلتر النوع: توصيات أو مجازفة
   const history = allHistory.filter(h => (h.type || 'rec') === state.histType);
   const stats   = calcHistoryStats(history);
-
-  // ── فلتر الجلسة
   const filtered = state.histFilter === 'all' ? history
     : history.filter(h => h.session === state.histFilter);
   const recent = [...filtered].reverse();
@@ -2476,23 +2472,17 @@ function renderHistoryTab() {
     // ─ تبديل بين التوصيات والمجازفة
     el('div', {style:{display:'flex', gap:'6px', marginBottom:'10px'}}, [
       el('button', {
-        style:{
-          flex:'1', fontSize:'12px', fontWeight:'800', padding:'8px',
-          borderRadius:'10px',
+        style:{flex:'1', fontSize:'12px', fontWeight:'800', padding:'8px', borderRadius:'10px',
           color: state.histType==='rec' ? '#050810' : C.text2,
           background: state.histType==='rec' ? C.blue : 'rgba(255,255,255,.05)',
-          border: state.histType==='rec' ? 'none' : '1px solid #1a2340',
-        },
+          border: state.histType==='rec' ? 'none' : '1px solid #1a2340'},
         onClick: () => { state.histType='rec'; state.histFilter='all'; render(); },
       }, ['📊 التوصيات']),
       el('button', {
-        style:{
-          flex:'1', fontSize:'12px', fontWeight:'800', padding:'8px',
-          borderRadius:'10px',
+        style:{flex:'1', fontSize:'12px', fontWeight:'800', padding:'8px', borderRadius:'10px',
           color: state.histType==='spec' ? '#050810' : C.text2,
           background: state.histType==='spec' ? C.purple : 'rgba(255,255,255,.05)',
-          border: state.histType==='spec' ? 'none' : '1px solid #1a2340',
-        },
+          border: state.histType==='spec' ? 'none' : '1px solid #1a2340'},
         onClick: () => { state.histType='spec'; state.histFilter='all'; render(); },
       }, ['🎲 المجازفة']),
     ]),
