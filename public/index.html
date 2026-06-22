@@ -2241,22 +2241,26 @@ async function loadData(full=false) {
 
     _indicatorsLoading = false;
 
-    // ── حساب ثانٍ بعد الأخبار — فقط لو السوق مفتوح
+    // ── حساب ثانٍ بعد الأخبار — التوصيات فقط لو السوق مفتوح
     if(isMarketOpen()) {
       calcRecs();
       calcSpeculative();
-      await calcHunterFull();
       startHunterLoop();
     }
+    // الصائد يعمل دائماً — يحلل البيانات التاريخية بغض النظر عن السوق
+    await calcHunterFull();
+    render();
     console.log('[loadData] اكتمل — توصيات:', state.recs?.length, '| مجازفة:', state.speculativeRecs?.length, '| صائد:', state.hunterRecs?.length);
 
   } else if(neverLoaded && !_indicatorsLoading) {
-    // السوق مغلق لكن نحمّل المؤشرات للعرض فقط (بدون توصيات)
+    // السوق مغلق لكن نحمّل المؤشرات للعرض + الصائد
     _indicatorsLoading = true;
     render();
     await fetchIndicators();
     _indicatorsLoading = false;
-    // لا calcRecs هنا — السوق مغلق
+    // الصائد يعمل حتى لو السوق مغلق
+    await calcHunterFull();
+    render();
 
   } else if(state.indicatorsDone) {
     // المؤشرات جاهزة — فقط حدّث الأسعار
