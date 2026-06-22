@@ -708,8 +708,6 @@ async function handleCallback(callbackId, data, cid) {
   if (action === 'prices7' || action === 'prices30') {
     const isMonth = action === 'prices30';
     await tgSend(`⏳ جاري جلب أسعار <b>${sym}</b>...`);
-    // async في الخلفية — لا يقطع بعد 10 ثانية
-    (async () => {
     const d = await getStock(sym);
     if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات`); return; }
     const count = isMonth ? 30 : 7;
@@ -730,7 +728,6 @@ async function handleCallback(callbackId, data, cid) {
     const curChg = +(d.quote.changePercentage || 0).toFixed(2);
     m += `💰 الآن: <b>$${cur?.toFixed(2)}</b> ${curChg >= 0 ? '▲' : '▼'} ${curChg >= 0 ? '+' : ''}${curChg}%`;
     await tgSend(m);
-    })().catch(e => console.error('prices bg:', e.message));
     return;
   }
 
