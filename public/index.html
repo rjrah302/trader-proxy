@@ -1865,7 +1865,7 @@ async function loadData(full=false) {
   // ❌ لا نحسّب توصيات خارج وقت السوق
   const session     = getSessionInfo();
   const neverLoaded = !state.indicatorsDone && !_indicatorsLoading;
-  const shouldLoad  = (isMarketOpen() || full) && !state.indicatorsDone && !_indicatorsLoading;
+  const shouldLoad  = isMarketOpen() && !state.indicatorsDone && !_indicatorsLoading;
 
   if(shouldLoad) {
     _indicatorsLoading = true;
@@ -1874,7 +1874,7 @@ async function loadData(full=false) {
     await fetchIndicators();
 
     // ── حساب فقط لو السوق لا يزال مفتوحاً (لم يُغلق أثناء التحميل)
-    if(isMarketOpen() || full) {
+    if(isMarketOpen()) {
       calcRecs();
       calcSpeculative();
     }
@@ -1889,7 +1889,7 @@ async function loadData(full=false) {
     _indicatorsLoading = false;
 
     // ── حساب ثانٍ بعد الأخبار — فقط لو السوق مفتوح
-    if(isMarketOpen() || full) {
+    if(isMarketOpen()) {
       calcRecs();
       calcSpeculative();
     }
@@ -5235,6 +5235,18 @@ function shouldRecalc() {
   }
   return !_recsLockedToday;
 }
+
+// ── reset المؤشرات عند فتح السوق (إذا حُمّلت وهو مغلق)
+let _marketWasClosed = !isMarketOpen();
+setInterval(() => {
+  const nowOpen = isMarketOpen();
+  if(nowOpen && _marketWasClosed && !_recsLockedToday && !_indicatorsLoading) {
+    console.log('[Market Open] السوق فتح — إعادة تحميل المؤشرات...');
+    state.indicatorsDone = false;
+    loadData(false);
+  }
+  _marketWasClosed = !nowOpen;
+}, 15000);
 
 // ── تحديث الأسعار واتجاه السوق كل 30 ثانية (بدون إعادة حساب التوصيات)
 setInterval(async () => {
