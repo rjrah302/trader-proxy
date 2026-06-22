@@ -117,8 +117,10 @@ async function getStock(sym) {
     const quote    = Array.isArray(q) ? q[0] : null;
     const history  = Array.isArray(h) ? h : [];
     const closes   = history.map(d => d.close).reverse();
-    const dates    = history.map(d => d.date).reverse(); // ← تواريخ
-    return { quote, closes, dates };
+    const highs    = history.map(d => d.high  || d.close).reverse();
+    const lows     = history.map(d => d.low   || d.close).reverse();
+    const dates    = history.map(d => d.date).reverse();
+    return { quote, closes, highs, lows, dates };
   } catch (e) { return null; }
 }
 
@@ -190,12 +192,35 @@ function calcWeeklyTrend(closes) {
   return weeks[weeks.length - 1] > weeks[weeks.length - 2] ? 'bullish' : 'bearish';
 }
 
-function calcSupRes(closes, price) {
+function calcSupRes(closes, highs, lows, price) {
   if (!closes || closes.length < 20) return { support: null, resistance: null };
-  const last20     = closes.slice(-20);
-  const support    = +Math.min(...last20).toFixed(2);
-  const resistance = +Math.max(...last20).toFixed(2);
-  return { support, resistance };
+
+  // نفس خوارزمية الأداة — قمم وقيعان حقيقية مع clusters
+  const h = highs && highs.length >= closes.length ? highs : closes;
+  const l = lows  && lows.length  >= closes.length ? lows  : closes;
+
+  const tolerance = price * 0.015;
+  const levels = [];
+
+  for (let j = 1; j < h.length - 1; j++) {
+    if (h[j] >= h[j-1] && h[j] >= h[j+1]) levels.push({ price: h[j], type: 'resistance' });
+    if (l[j] <= l[j-1] && l[j] <= l[j+1]) levels.push({ price: l[j], type: 'support' });
+  }
+
+  const clusters = [];
+  levels.forEach(lv => {
+    const ex = clusters.find(c => Math.abs(c.price - lv.price) <= tolerance);
+    if (ex) { ex.touches++; ex.price = (ex.price + lv.price) / 2; }
+    else clusters.push({ price: lv.price, type: lv.type, touches: 1 });
+  });
+
+  const strong     = clusters.filter(c => c.touches >= 2);
+  const resistance = strong.filter(c => c.price > price).sort((a, b) => a.price - b.price)[0]?.price
+    ?? +Math.max(...h.slice(-20)).toFixed(2);
+  const support    = strong.filter(c => c.price < price).sort((a, b) => b.price - a.price)[0]?.price
+    ?? +Math.min(...l.slice(-60)).toFixed(2); // ← 60 يوم للـ fallback
+
+  return { support: +support.toFixed(2), resistance: +resistance.toFixed(2) };
 }
 
 function calcATR(closes) {
@@ -218,7 +243,7 @@ function calcGreenCandles(closes) {
 }
 
 // ── تحليل شامل لسهم
-function analyzeStock(sym, quote, closes, prevAnalysis = null) {
+function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, lows = null) {
   if (!quote || !closes.length) return null;
 
   const price  = quote.price;
@@ -226,7 +251,7 @@ function analyzeStock(sym, quote, closes, prevAnalysis = null) {
   const rsi    = calcRSI(closes);
   const macd   = calcMACD(closes);
   const weekly = calcWeeklyTrend(closes);
-  const levels = calcSupRes(closes, price);
+  const levels = calcSupRes(closes, highs || closes, lows || closes, price);
   const atrPct = calcATR(closes);
   const green  = calcGreenCandles(closes);
 
@@ -567,7 +592,7 @@ async function runMonitor() {
       if (!d?.quote) continue;
 
       const prev = prevState[sym] || null;
-      const a    = analyzeStock(sym, d.quote, d.closes, prev);
+      const a    = analyzeStock(sym, d.quote, d.closes, prev, d.highs, d.lows);
       if (!a) continue;
 
       newState[sym] = {
@@ -592,7 +617,7 @@ async function runMonitor() {
       if (!d?.quote) continue;
 
       const prev = prevState[sym] || null;
-      const a    = analyzeStock(sym, d.quote, d.closes, prev);
+      const a    = analyzeStock(sym, d.quote, d.closes, prev, d.highs, d.lows);
       if (!a) continue;
 
       newState[sym] = {
@@ -1077,7 +1102,7 @@ async function handleMessage(text, cid) {
       await tgSend(`⏳ جاري تحليل <b>${sym2}</b>...`);
       const d = await getStock(sym2);
       if (!d?.quote) { await tgSend(`⚠️ ${sym2} — لم أجد بيانات`); sess[cid] = {}; return; }
-      const a = analyzeStock(sym2, d.quote, d.closes);
+      const a = analyzeStock(sym2, d.quote, d.closes, null, d.highs, d.lows);
       if (!a) { await tgSend(`⚠️ ${sym2} — بيانات غير كافية`); sess[cid] = {}; return; }
       sess[cid] = { step: 'ask_bought', sym: sym2, price: d.quote.price, analysis: a };
       const buttons = [
