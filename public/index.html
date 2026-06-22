@@ -246,14 +246,31 @@ function getSessionInfo() {
         dot:    true,
         canRec: true,   // يمكن التوصية
       };
-    case 'closed':
+    case 'closed': {
+      const m = getNowMins();
+      const day = new Date().getDay();
+      const isWeekend = day === 0 || day === 6;
+      let closedSub;
+      if (isWeekend) {
+        closedSub = 'عطلة أسبوعية';
+      } else if (m >= t.close) {
+        // بعد إغلاق السوق (11:00م فما فوق)
+        closedSub = `يفتح ${t.isSummer?'4:30م':'5:30م'} ${tz}`;
+      } else if (m < t.preOpen) {
+        // بعد منتصف الليل وقبل Pre-Market
+        closedSub = `يفتح ${t.isSummer?'4:30م':'5:30م'} ${tz}`;
+      } else {
+        // عطلة رسمية
+        closedSub = 'عطلة رسمية — السوق مغلق اليوم';
+      }
       return {
         label:  'السوق مغلق',
-        sub:    'عطلة أسبوعية أو رسمية',
+        sub:    closedSub,
         color:  '#ff2d7a',
         dot:    false,
         canRec: false,
       };
+    }
     case 'pre':
       return {
         label:  'ما قبل الافتتاح',
