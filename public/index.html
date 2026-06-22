@@ -966,7 +966,7 @@ async function fetchIndicators() {
         const resistance = strong.filter(c=>c.price>cur).sort((a,b)=>a.price-b.price)[0]?.price
           ?? Math.max(...highs.slice(-20));
         const support    = strong.filter(c=>c.price<cur).sort((a,b)=>b.price-a.price)[0]?.price
-          ?? Math.min(...lows.slice(-20));
+          ?? Math.min(...lows.slice(-60));  // ← 60 يوم للـ fallback لتجنب السعر الحالي
         const nearSupport    = support && cur>support ? cur<=support*1.03 : false;
         const nearResistance = resistance && cur<resistance ? cur>=resistance*0.98 : false;
 
@@ -1236,23 +1236,8 @@ function calcSignal(stock) {
     else         { sell++; }
   }
 
-  // 8. ATR Risk/Reward + MACD Histogram — محسّن
-  let riskReward = 0;
-  if(atrPct!=null) {
-    // ATR ديناميكي حسب تقلب السهم
-    const atrMult = atrPct < 2 ? 1.5 : atrPct < 4 ? 2.0 : 2.5;
-    const atrStop2   = atrPct * atrMult;
-    const resValid2  = resistance!=null && resistance > price*1.02;
-    const targetPrice = resValid2
-      ? resistance
-      : price * (1 + Math.max(atrPct*3, 3)/100);
-    const distToTarget = (targetPrice - price) / price * 100;
-    riskReward = atrStop2 > 0 ? distToTarget / atrStop2 : 0;
-    if(riskReward>=3.0) { buy+=3; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة جداً'); }
-    else if(riskReward>=2.0) { buy+=2; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة'); }
-    else if(riskReward>=1.5) { buy++; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x جيدة'); }
-    else if(riskReward<1)    { sell++; }
-  }
+  // 8. ATR R/R — يُحسب لاحقاً بعد الوقف والهدف الدقيقين
+  let riskReward = 0; // سيُحسب بعد حساب stopLoss و target
 
   // ── MACD Histogram — الأهم (يتجاوز MACD البسيط)
   if(ind.macdHist!=null) {
@@ -1260,7 +1245,7 @@ function calcSignal(stock) {
     const histDir = ind.macdHistDir;
     if(hist > 0 && histDir === 'expanding')       { buy+=2;  reasons.push('MACD Hist +'+fmt(hist,2)+' ↑ زخم شراء متصاعد'); }
     else if(hist > 0 && histDir === 'contracting'){ buy++;   reasons.push('MACD Hist +'+fmt(hist,2)+' ↗ زخم يضعف'); }
-    else if(hist < 0 && histDir === 'expanding')  { sell+=3; } // زخم بيعي متصاعد — عقوبة قوية
+    else if(hist < 0 && histDir === 'expanding')  { sell+=2; } // زخم بيعي متصاعد
     else if(hist < 0 && histDir === 'contracting'){ sell++;  } // زخم بيعي يضعف
   }
 
@@ -1380,6 +1365,12 @@ function calcSignal(stock) {
   // ══ R/R النهائي — يُحسب من الهدف الصحيح والوقف
   const lossPct    = (price-stopLoss)/price*100;
   riskReward       = lossPct > 0 ? profitPct/lossPct : 0;
+
+  // ✅ تأثير R/R على نقاط الشراء (مرة واحدة فقط هنا)
+  if(riskReward>=3.0) { buy+=3; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة جداً'); }
+  else if(riskReward>=2.0) { buy+=2; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة'); }
+  else if(riskReward>=1.5) { buy++;  reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x جيدة'); }
+  else if(riskReward<1)    { sell++; }
 
   // ══ جودة الصفقة — معادلة محسّنة
   let tradeQuality = 0;
