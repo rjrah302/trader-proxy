@@ -36,6 +36,49 @@ async function tgSend(text, chatId = TG_CHAT_ID) {
   } catch (e) { console.error('tgSend:', e.message); }
 }
 
+// إرسال رسالة مع أزرار Inline
+async function tgSendButtons(text, buttons, chatId = TG_CHAT_ID) {
+  try {
+    await fetch(`${TG_API}/sendMessage`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        chat_id:      chatId,
+        text,
+        parse_mode:   'HTML',
+        reply_markup: { inline_keyboard: buttons },
+      }),
+    });
+  } catch (e) { console.error('tgSendButtons:', e.message); }
+}
+
+// تعديل رسالة موجودة (لإزالة الأزرار بعد الضغط)
+async function tgEditButtons(chatId, messageId, text) {
+  try {
+    await fetch(`${TG_API}/editMessageText`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        chat_id:    chatId,
+        message_id: messageId,
+        text,
+        parse_mode: 'HTML',
+      }),
+    });
+  } catch (e) {}
+}
+
+// الرد على callback_query
+async function tgAnswerCallback(callbackId, text = '') {
+  try {
+    await fetch(`${TG_API}/answerCallbackQuery`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ callback_query_id: callbackId, text }),
+    });
+  } catch (e) {}
+}
+
 // ================================================================
 // ═══════════════════ FIREBASE HELPERS ═══════════════════════════
 // ================================================================
@@ -814,7 +857,19 @@ async function handleMessage(text, cid) {
     if (!a) { await tgSend(`⚠️ ${sym} — بيانات غير كافية`); return; }
 
     sess[cid] = { step: 'ask_bought', sym, price: q.price, analysis: a };
-    await tgSend(buildAnalysisMsg(sym, name, a));
+
+    // أزرار Inline تحت التحليل
+    const buttons = [
+      [{ text: '✅ اشتريت', callback_data: `bought_${sym}` }],
+      [{ text: '👁 أضف للمراقبة', callback_data: `watch_${sym}` }],
+      [
+        { text: '📅 أسعار الأسبوع', callback_data: `prices7_${sym}` },
+        { text: '📆 أسعار الشهر',   callback_data: `prices30_${sym}` },
+      ],
+      [{ text: '🚪 خروج', callback_data: `exit_${sym}` }],
+    ];
+
+    await tgSendButtons(buildAnalysisMsg(sym, name, a), buttons);
     return;
   }
 
@@ -855,6 +910,18 @@ module.exports = async function handler(req, res) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+
+    // ── callback_query (ضغط زر)
+    if (body?.callback_query) {
+      const cb  = body.callback_query;
+      const cid = String(cb.message?.chat?.id);
+      if (cid === TG_CHAT_ID) {
+        await handleCallback(cb.id, cb.data, cid);
+      }
+      res.status(200).json({ ok: true });
+      return;
+    }
+
     const msg  = body?.message;
     if (!msg) { res.status(200).json({ ok: true }); return; }
 
