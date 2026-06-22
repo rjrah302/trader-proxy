@@ -545,6 +545,79 @@ const sess = {};
 // ================================================================
 // ═══════════════════ MESSAGE HANDLER ════════════════════════════
 // ================================================================
+
+// ================================================================
+// ═══════════════════ CALLBACK HANDLER ═══════════════════════════
+// ================================================================
+async function handleCallback(callbackId, data, cid) {
+  await tgAnswerCallback(callbackId);
+
+  const parts  = data.split('_');
+  const action = parts[0];
+  const sym    = parts.slice(1).join('_').toUpperCase();
+  const s      = sess[cid] || {};
+
+  // اشتريت
+  if (action === 'bought') {
+    sess[cid] = { ...s, step: 'ask_price' };
+    await tgSend(`بكم اشتريت <b>${sym}</b>؟\n(اكتب 0 للسعر الحالي $${s.price?.toFixed(2)})`);
+    return;
+  }
+
+  // أضف للمراقبة
+  if (action === 'watch') {
+    const wData = await fbGet('watchlist');
+    const list  = wData.symbols || [];
+    if (!list.includes(sym)) { list.push(sym); await fbSet('watchlist', { symbols: list }); }
+    const tips = [];
+    if (s.analysis?.rsi > 60)             tips.push('انتظر RSI يهبط دون 50');
+    if (s.analysis?.rsi < 40)             tips.push('RSI منخفض — فرصة قريبة');
+    if (s.analysis?.macdHist < 0)         tips.push('انتظر MACD يتحول إيجابياً');
+    if (s.analysis?.weekly === 'bearish') tips.push('الأسبوعي هابط — تحلى بالصبر');
+    if (!tips.length)                      tips.push('راقب كسر المقاومة كإشارة دخول');
+    let m = `👁 <b>${sym} أضيف للمراقبة</b>\n──────────────\n`;
+    tips.forEach(t => { m += `• ${t}\n`; });
+    m += `──────────────\n⏰ سأنبهك عند تغير مهم 👀`;
+    await tgSend(m);
+    sess[cid] = {};
+    return;
+  }
+
+  // أسعار أسبوع أو شهر
+  if (action === 'prices7' || action === 'prices30') {
+    const isMonth = action === 'prices30';
+    await tgSend(`⏳ جاري جلب أسعار <b>${sym}</b>...`);
+    const d = await getStock(sym);
+    if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات`); return; }
+    const count = isMonth ? 30 : 7;
+    const lastN = d.dates.slice(-count);
+    const clsN  = d.closes.slice(-count);
+    const days  = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+    let m = `📅 <b>${sym}</b> — آخر ${isMonth ? '30 يوم' : '7 أيام'}\n──────────────\n`;
+    for (let i = 0; i < lastN.length; i++) {
+      const date    = new Date(lastN[i]);
+      const dayName = days[date.getDay()];
+      const price   = clsN[i];
+      const prev    = i > 0 ? clsN[i-1] : price;
+      const chg     = +((price - prev) / prev * 100).toFixed(2);
+      const icon    = chg > 0 ? '▲' : chg < 0 ? '▼' : '➡️';
+      m += `${dayName} ${lastN[i]}\n$${price.toFixed(2)} ${icon} ${chg >= 0 ? '+' : ''}${chg}%\n──────────────\n`;
+    }
+    const cur    = d.quote.price;
+    const curChg = +(d.quote.changePercentage || 0).toFixed(2);
+    m += `💰 الآن: <b>$${cur?.toFixed(2)}</b> ${curChg >= 0 ? '▲' : '▼'} ${curChg >= 0 ? '+' : ''}${curChg}%`;
+    await tgSend(m);
+    return;
+  }
+
+  // خروج
+  if (action === 'exit') {
+    sess[cid] = {};
+    await tgSend(`🚪 تم الخروج`);
+    return;
+  }
+}
+
 async function handleMessage(text, cid) {
   const s   = sess[cid] || {};
   const low = text.toLowerCase().trim();
