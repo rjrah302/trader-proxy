@@ -2311,7 +2311,8 @@ function updateHistoryResults() {
   history.forEach(h => {
     if(h.result !== 'pending') return;
     const cur = state.prices[h.id]?.price;
-    if(!cur || !h.recPrice) return;
+    if(!cur || !(h.recPrice || h.price)) return;
+    if(!h.recPrice && h.price) h.recPrice = h.price; // دعم السجل القديم
     const pnlPct = ((cur - h.recPrice)/h.recPrice*100);
     const daysSince = (Date.now()-new Date(h.recDate))/(1000*60*60*24);
 
@@ -2577,7 +2578,7 @@ function renderHistoryTab() {
                   (h.resultDate?' → '+fmtDate(h.resultDate):''),
                 ]),
                 el('div', {style:{fontSize:'9px', color:C.text2, marginTop:'1px'}}, [
-                  h.signal+' '+h.confidence+'% ثقة'+
+                  (h.signal||'')+(h.confidence!=null?' '+h.confidence+'% ثقة':'')+
                   (h.spyChange!=null?' • SPY '+(h.spyChange>=0?'+':'')+h.spyChange+'%':''),
                 ]),
               ]),
