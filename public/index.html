@@ -254,6 +254,14 @@ function getSessionInfo() {
         dot:    false,
         canRec: false,
       };
+    case 'pre':
+      return {
+        label:  'ما قبل الافتتاح',
+        sub:    `يفتح ${t.isSummer?'4:30م':'5:30م'} ${tz}`,
+        color:  '#ffe033',
+        dot:    false,
+        canRec: false,
+      };
     case 'short':
       return {
         label:  'السوق — نصف يوم',
@@ -261,13 +269,6 @@ function getSessionInfo() {
         color:  '#ffa500',
         dot:    true,
         canRec: true,
-      };
-      return {
-        label:  'ما قبل الافتتاح',
-        sub:    `يفتح ${t.isSummer?'4:30م':'5:30م'} ${tz}`,
-        color:  '#ffe033',
-        dot:    false,
-        canRec: false,
       };
     case 'after':
       return {
@@ -337,7 +338,7 @@ const STOCKS = [
   {id:"BLK",   name:"BlackRock",     sector:"إدارة أصول",      cat:"large",  beta:1.1},
   {id:"AXP",   name:"Amex",          sector:"مدفوعات",         cat:"large",  beta:1.1},
   {id:"SQ",    name:"Block",         sector:"فينتك",           cat:"mid",    beta:1.9},
-  {id:"COIN",  name:"Coinbase",      sector:"كريبتو",          cat:"mid",    beta:2.3},
+
   {id:"COF",   name:"Capital One",   sector:"بنوك",            cat:"large",  beta:1.4},
   {id:"NU",    name:"Nubank",        sector:"فينتك",           cat:"mid",    beta:1.6},
   // 💊 صحة
@@ -388,7 +389,6 @@ const STOCKS = [
   {id:"PLUG",  name:"Plug Power",    sector:"هيدروجين",        cat:"small",  beta:2.2},
   {id:"AAL",   name:"American Air",  sector:"طيران",           cat:"small",  beta:1.6},
   {id:"LYFT",  name:"Lyft",          sector:"نقل",             cat:"small",  beta:1.9},
-  {id:"LAZR",  name:"Luminar Tech",  sector:"LiDAR",           cat:"small",  beta:2.5},
   {id:"CELH",  name:"Celsius",       sector:"مشروبات",         cat:"mid",    beta:1.9},
   // ⚡ طاقة إضافية
   {id:"ENPH",  name:"Enphase",       sector:"طاقة شمسية",      cat:"mid",    beta:1.8},
@@ -416,16 +416,9 @@ const STOCKS = [
   // 🏠 عقارات رقمية
   {id:"OPEN",  name:"Opendoor",      sector:"عقارات رقمية",    cat:"small",  beta:2.2},
   {id:"Z",     name:"Zillow",        sector:"عقارات رقمية",    cat:"mid",    beta:1.6},
-  {id:"RDFN",  name:"Redfin",        sector:"عقارات رقمية",    cat:"small",  beta:1.9},
   // 📡 اتصالات
   {id:"LUMN",  name:"Lumen Tech",    sector:"شبكات",           cat:"small",  beta:1.7},
-  {id:"DISH",  name:"DISH Network",  sector:"إذاعة/5G",        cat:"small",  beta:1.6},
   // 🌐 متنوع
-  {id:"EXPI",  name:"eXp World",     sector:"عقارات",          cat:"small",  beta:1.7},
-  {id:"PENN",  name:"PENN Entert.",  sector:"كازينو/رياضة",    cat:"small",  beta:1.8},
-  {id:"CLOV",  name:"Clover Health", sector:"تأمين رقمي",      cat:"small",  beta:2.0},
-  {id:"HROW",  name:"Harrow Health", sector:"دواء عيون",       cat:"small",  beta:1.7},
-  {id:"VNET",  name:"21Vianet",      sector:"سحابة صين",       cat:"small",  beta:1.8},
   // 🚀 إضافات جديدة — تقلب عالٍ
   {id:"ASTS",  name:"AST SpaceMobile", sector:"فضاء/اتصالات",   cat:"future", beta:3.1},
   {id:"ACHR",  name:"Archer Aviation", sector:"طيران كهربائي",  cat:"future", beta:2.6},
@@ -434,6 +427,16 @@ const STOCKS = [
   {id:"COIN",  name:"Coinbase",        sector:"كريبتو",         cat:"future", beta:3.5},
   {id:"MARA",  name:"Marathon Digital",sector:"تعدين بيتكوين",  cat:"future", beta:3.8},
   {id:"CLSK",  name:"CleanSpark",      sector:"تعدين بيتكوين",  cat:"future", beta:3.2},
+  // ✅ إضافات محدّثة 2026
+  {id:"SMCI",  name:"Super Micro",     sector:"خوادم AI",        cat:"mid",    beta:2.2},
+  {id:"SOUN",  name:"SoundHound AI",   sector:"AI صوتي",         cat:"future", beta:2.2},
+  {id:"RDDT",  name:"Reddit",          sector:"تواصل/AI",        cat:"mid",    beta:1.9},
+  {id:"CVNA",  name:"Carvana",         sector:"تجارة سيارات",    cat:"mid",    beta:2.1},
+  {id:"GEV",   name:"GE Vernova",      sector:"طاقة AI",         cat:"large",  beta:1.6},
+  {id:"FICO",  name:"Fair Isaac",      sector:"AI بيانات",       cat:"large",  beta:1.4},
+  {id:"ANET",  name:"Arista Networks", sector:"شبكات AI",        cat:"large",  beta:1.3},
+  {id:"TTD",   name:"The Trade Desk",  sector:"إعلانات AI",      cat:"mid",    beta:1.6},
+  {id:"AXON",  name:"Axon Enterprise", sector:"أمن/تقنية",       cat:"mid",    beta:1.5},
 ];
 
 // إزالة مكررات
@@ -468,8 +471,9 @@ const state = {
   indicatorsDone:    false,
 
   // التوصيات
-  recs:           null,   // 5 توصيات اليوم
-  speculativeRecs:null,   // توصيات المجازفة
+  recs:           null,
+  speculativeRecs:null,
+  hunterRecs:     null,   // صائد الارتداد
   recsTime:       null,
   sessionOneIds:  (() => {
     try {
@@ -752,13 +756,13 @@ async function fetchIndicators() {
 
     await Promise.all(batch.map(async sym => {
       try {
-        // بيانات تاريخية 200 يوم — Premium plan: نجرب 3 endpoints بالترتيب
-        let closes = [], highs = [], lows = [];
+        // بيانات تاريخية 300 يوم — لضمان المؤشرات الأسبوعية (MA50 أسبوعي يحتاج 250+ يوم)
+        let closes = [], highs = [], lows = [], opens = [];
         const endpoints = [
           // 1. الـ stable endpoint الجديد (الأفضل في Premium)
-          `${FMP_BASE}/stable/historical-price-eod/full?symbol=${sym}&limit=200&apikey=${API_KEY}`,
+          `${FMP_BASE}/stable/historical-price-eod/full?symbol=${sym}&limit=300&apikey=${API_KEY}`,
           // 2. v3 الكلاسيكي — متاح في Premium دائماً
-          `${FMP_BASE}/api/v3/historical-price-full/${sym}?timeseries=200&apikey=${API_KEY}`,
+          `${FMP_BASE}/api/v3/historical-price-full/${sym}?timeseries=300&apikey=${API_KEY}`,
           // 3. v3 بدون timeseries — fallback أخير
           `${FMP_BASE}/api/v3/historical-price-full/${sym}?apikey=${API_KEY}`,
         ];
@@ -772,9 +776,11 @@ async function fetchIndicators() {
             const d    = await r.json();
             const hist = d?.historical || (Array.isArray(d) ? d : []);
             if(hist.length >= 20) {
-              closes  = hist.map(h=>+(h.close||h.adjClose||0)).filter(v=>v>0).reverse();
-              highs   = hist.map(h=>+(h.high||h.close||0)).filter(v=>v>0).reverse();
-              lows    = hist.map(h=>+(h.low||h.close||0)).filter(v=>v>0).reverse();
+              const validHist = hist.filter(h => (+h.adjClose||+h.close) && +h.high && +h.low && +h.open);
+              closes  = validHist.map(h=>+(h.adjClose||h.close)).reverse();
+              highs   = validHist.map(h=>+h.high).reverse();
+              lows    = validHist.map(h=>+h.low).reverse();
+              opens   = validHist.map(h=>+h.open).reverse();
               // ✅ استخراج volumes لحساب avgVolume
               const vols = hist.map(h=>+(h.volume||0)).filter(v=>v>0).reverse();
               if(vols.length >= 10 && !state.prices[sym]?.avgVolume) {
@@ -854,7 +860,13 @@ async function fetchIndicators() {
               const prevSignal = calcEMA(macdArr.slice(0,-1), 9);
               const prevHist   = prevSignal!=null ? prevMacd - prevSignal : null;
               if(prevHist!=null && macdHist!=null) {
-                macdHistDir = macdHist > prevHist ? 'expanding' : 'contracting';
+                const sameSign = (macdHist >= 0) === (prevHist >= 0);
+                if(!sameSign) {
+                  macdHistDir = 'crossing';
+                } else {
+                  const absDelta = Math.abs(macdHist) - Math.abs(prevHist);
+                  macdHistDir = absDelta > 0 ? 'expanding' : 'contracting';
+                }
               }
             }
           }
@@ -977,10 +989,11 @@ async function fetchIndicators() {
           bb_upper, bb_lower,
           support, resistance, nearSupport, nearResistance,
           atrPct, stochRsi,
-          dataLen: closes.length,        // ✅ العدد الحقيقي للأيام (للـ badge)
+          dataLen: closes.length,
           closes: closes.slice(-30),
           highs:  highs.slice(-30),
           lows:   lows.slice(-30),
+          opens:  opens.slice(-30),
         };
 
         if(rsi!=null)          dc.rsi.real++;
@@ -1014,14 +1027,18 @@ async function fetchIndicators() {
 }
 
 
-// ── 3. أخبار محسّنة — جمل مركّبة + ملخص + وزن التاريخ
+// ── 3. أخبار محسّنة — جميع الأسهم على دفعات
 async function fetchNews() {
   try {
-    const topSyms = ALL_STOCKS.slice(0,30).map(s=>s.id).join(',');
-    const res  = await fetch(`${FMP_BASE}/stable/news/stock?symbols=${topSyms}&limit=100&apikey=${API_KEY}`);
-    const data = await res.json();
     state.news = {};
-    if(!Array.isArray(data)) return;
+    // نقسم الـ 127 سهم على دفعات بدل أول 30 فقط
+    const BATCH = 30;
+    for(let i = 0; i < ALL_STOCKS.length; i += BATCH) {
+      const batchSyms = ALL_STOCKS.slice(i, i + BATCH).map(s => s.id).join(',');
+      try {
+        const res  = await fetch(`${FMP_BASE}/stable/news/stock?symbols=${batchSyms}&limit=100&apikey=${API_KEY}`);
+        const data = await res.json();
+        if(!Array.isArray(data)) continue;
 
     // ── كلمات ومصطلحات مركّبة مع أوزانها
     const NEG_PHRASES = [
@@ -1075,33 +1092,34 @@ async function fetchNews() {
 
     const now = Date.now();
 
-    data.forEach(n => {
-      const sym = n.symbol;
-      if(!sym) return;
-      if(!state.news[sym]) state.news[sym] = {pos:0, neg:0, items:[]};
+        data.forEach(n => {
+          const sym = n.symbol;
+          if(!sym) return;
+          if(!state.news[sym]) state.news[sym] = {pos:0, neg:0, items:[]};
 
-      // ── وزن التاريخ: اليوم=2، الأمس=1.5، يومين=1، أقدم=0.5
-      const ageHours = (now - new Date(n.publishedDate||n.date||now)) / 36e5;
-      const dateW    = ageHours < 24 ? 2 : ageHours < 48 ? 1.5 : ageHours < 96 ? 1 : 0.5;
+          const ageHours = (now - new Date(n.publishedDate||n.date||now)) / 36e5;
+          const dateW    = ageHours < 24 ? 2 : ageHours < 48 ? 1.5 : ageHours < 96 ? 1 : 0.5;
 
-      // ── نص الخبر: عنوان + ملخص
-      const text = ((n.title||'') + ' ' + (n.text||n.summary||n.content||'')).toLowerCase();
+          const text = ((n.title||'') + ' ' + (n.text||n.summary||n.content||'')).toLowerCase();
 
-      let itemScore = 0;
+          let itemScore = 0;
 
-      // حساب النقاط السلبية
-      NEG_PHRASES.forEach(({re, w}) => {
-        if(re.test(text)) itemScore -= w * dateW;
-      });
+          NEG_PHRASES.forEach(({re, w}) => {
+            if(re.test(text)) itemScore -= w * dateW;
+          });
 
-      // حساب النقاط الإيجابية
-      POS_PHRASES.forEach(({re, w}) => {
-        if(re.test(text)) itemScore += w * dateW;
-      });
+          POS_PHRASES.forEach(({re, w}) => {
+            if(re.test(text)) itemScore += w * dateW;
+          });
 
-      if(itemScore > 0) state.news[sym].pos += itemScore;
-      else if(itemScore < 0) state.news[sym].neg += Math.abs(itemScore);
-    });
+          if(itemScore > 0) state.news[sym].pos += itemScore;
+          else if(itemScore < 0) state.news[sym].neg += Math.abs(itemScore);
+        });
+
+      } catch(e) { console.warn('[News batch]', e.message); }
+      // تأخير بين الدفعات لتجنب rate limit
+      if(i + BATCH < ALL_STOCKS.length) await new Promise(r => setTimeout(r, 500));
+    }
 
     // ── تحويل النقاط لأعداد صحيحة
     Object.keys(state.news).forEach(sym => {
@@ -1236,8 +1254,36 @@ function calcSignal(stock) {
     else         { sell++; }
   }
 
-  // 8. ATR R/R — يُحسب لاحقاً بعد الوقف والهدف الدقيقين
-  let riskReward = 0; // سيُحسب بعد حساب stopLoss و target
+  // 8. ATR R/R — يُحسب الآن قبل netScore حتى تعكسه الإشارة
+  // ══ هدف الربح ووقف الخسارة — ATR ديناميكي
+  const atrMultFinal = atrPct ? (atrPct < 2 ? 1.5 : atrPct < 4 ? 2.0 : 2.5) : 1.5;
+  const atrStop  = atrPct ? Math.min(atrPct*atrMultFinal, 15) : 2;
+  const atrBasedStop  = price*(1-atrStop/100);
+  const supBasedStop  = support ? support*0.99 : null;
+  const stopLoss = Math.max(
+    supBasedStop && supBasedStop > atrBasedStop ? supBasedStop : atrBasedStop,
+    price*0.75
+  );
+  const minTarget    = price * 1.03;
+  const atrTarget    = price * (1 + Math.max(atrStop*2, 3)/100);
+  const atrRealist   = price + (atrPct ? price*atrPct/100*3.5 : price*0.08);
+  const resValid     = resistance && resistance > price*1.02 && resistance > minTarget;
+  const resTarget    = resValid ? resistance : null;
+  const isNearRes    = resistance && price >= resistance*0.98;
+  const target       = isNearRes
+    ? resistance * 1.05
+    : resTarget
+      ? Math.min(resTarget, atrRealist > minTarget ? atrRealist : resTarget)
+      : Math.max(atrTarget, minTarget);
+  const profitPct    = (target-price)/price*100;
+  const lossPct      = (price-stopLoss)/price*100;
+  const riskReward   = lossPct > 0 ? profitPct/lossPct : 0;
+
+  // ✅ تأثير R/R على نقاط الشراء — الآن يُضاف قبل حساب netScore
+  if(riskReward>=3.0) { buy+=3; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة جداً'); }
+  else if(riskReward>=2.0) { buy+=2; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة'); }
+  else if(riskReward>=1.5) { buy++;  reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x جيدة'); }
+  else if(riskReward<1)    { sell++; }
 
   // ── MACD Histogram — الأهم (يتجاوز MACD البسيط)
   if(ind.macdHist!=null) {
@@ -1245,8 +1291,10 @@ function calcSignal(stock) {
     const histDir = ind.macdHistDir;
     if(hist > 0 && histDir === 'expanding')       { buy+=2;  reasons.push('MACD Hist +'+fmt(hist,2)+' ↑ زخم شراء متصاعد'); }
     else if(hist > 0 && histDir === 'contracting'){ buy++;   reasons.push('MACD Hist +'+fmt(hist,2)+' ↗ زخم يضعف'); }
+    else if(hist > 0 && histDir === 'crossing')   { buy+=2;  reasons.push('MACD Hist عبر الصفر للأعلى ↑ انعكاس'); }
+    else if(hist < 0 && histDir === 'contracting'){ buy++;   reasons.push('MACD Hist '+fmt(hist,2)+' ↗ زخم بيعي يتقلص'); }
+    else if(hist < 0 && histDir === 'crossing')   { sell++;  } // عبر الصفر للأسفل
     else if(hist < 0 && histDir === 'expanding')  { sell+=2; } // زخم بيعي متصاعد
-    else if(hist < 0 && histDir === 'contracting'){ sell++;  } // زخم بيعي يضعف
   }
 
   // ── MACD أسبوعي — حماية من الهبوط الكبير
@@ -1264,7 +1312,7 @@ function calcSignal(stock) {
   }
 
   // 10. الشموع اليابانية — إشارات إضافية
-  const candlePatterns = detectCandlePatterns(ind.closes, ind.highs, ind.lows);
+  const candlePatterns = detectCandlePatterns(ind.closes, ind.highs, ind.lows, ind.opens);
   candlePatterns.forEach(p2 => {
     if(p2.signal === 'bullish') {
       buy  += p2.strength >= 5 ? 2 : 1;
@@ -1342,43 +1390,6 @@ function calcSignal(stock) {
   // عقوبة: أخبار سلبية تخفض الثقة
   if(news.neg>=4) confidence = Math.max(10, confidence-15);
   else if(news.neg>=2) confidence = Math.max(10, confidence-8);
-
-  // ══ هدف الربح ووقف الخسارة
-  // ══ هدف الربح ووقف الخسارة — ATR ديناميكي
-  const atrMultFinal = atrPct ? (atrPct < 2 ? 1.5 : atrPct < 4 ? 2.0 : 2.5) : 1.5;
-  const atrStop  = atrPct ? Math.min(atrPct*atrMultFinal, 15) : 2;
-  // ✅ تعديل: الوقف تحت الدعم الحقيقي إذا كان أفضل من ATR
-  const atrBasedStop  = price*(1-atrStop/100);
-  const supBasedStop  = support ? support*0.99 : null;
-  const stopLoss = Math.max(
-    supBasedStop && supBasedStop > atrBasedStop ? supBasedStop : atrBasedStop,
-    price*0.75
-  );
-
-  // ✅ الهدف: إذا السعر قريب من المقاومة — الهدف بعد المقاومة مو قبلها
-  const minTarget    = price * 1.03;
-  const atrTarget    = price * (1 + Math.max(atrStop*2, 3)/100);
-  const atrRealist   = price + (atrPct ? price*atrPct/100*3.5 : price*0.08);
-  const resValid     = resistance && resistance > price*1.02 && resistance > minTarget;
-  const resTarget    = resValid ? resistance : null;
-  // إذا السعر قريب من المقاومة (98%+) → الهدف بعد المقاومة مباشرة
-  const isNearRes    = resistance && price >= resistance*0.98;
-  const target       = isNearRes
-    ? resistance * 1.05   // هدف 5% فوق المقاومة (بعد كسرها)
-    : resTarget
-      ? Math.min(resTarget, atrRealist > minTarget ? atrRealist : resTarget)
-      : Math.max(atrTarget, minTarget);
-  const profitPct    = (target-price)/price*100;
-
-  // ══ R/R النهائي — يُحسب من الهدف الصحيح والوقف
-  const lossPct    = (price-stopLoss)/price*100;
-  riskReward       = lossPct > 0 ? profitPct/lossPct : 0;
-
-  // ✅ تأثير R/R على نقاط الشراء (مرة واحدة فقط هنا)
-  if(riskReward>=3.0) { buy+=3; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة جداً'); }
-  else if(riskReward>=2.0) { buy+=2; reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x ممتازة'); }
-  else if(riskReward>=1.5) { buy++;  reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x جيدة'); }
-  else if(riskReward<1)    { sell++; }
 
   // ══ جودة الصفقة — معادلة محسّنة
   let tradeQuality = 0;
@@ -1681,20 +1692,24 @@ function calcSpeculative() {
         const hist    = ind.macdHist;
         const histDir = ind.macdHistDir;
         if(hist > 0 && histDir === 'expanding') {
-          // ✅ زخم شراء متصاعد — الأنسب للمجازفة
           score+=18;
           reasons.push('MACD Hist +'+fmt(hist,2)+' ↑ — زخم شراء متصاعد');
+        } else if(hist > 0 && histDir === 'crossing') {
+          score+=16;
+          reasons.push('MACD Hist عبر الصفر للأعلى — انعكاس زخم');
         } else if(hist > 0 && histDir === 'contracting') {
-          // زخم موجب لكن يضعف — مقبول مع تحذير
           score+=6;
           warnings.push('MACD Hist يضيق — الزخم يتراجع');
-        } else if(hist < 0 && histDir === 'expanding') {
-          // ❌ زخم بيعي متصاعد — حجب فوري في المجازفة
-          return null;
         } else if(hist < 0 && histDir === 'contracting') {
-          // زخم سالب لكن يضعف — عقوبة فقط
-          score-=8;
-          warnings.push('MACD Hist سالب — انتظر تحول الزخم');
+          // زخم بيعي يتقلص — فرصة محتملة لا عقوبة كاملة
+          score-=4;
+          warnings.push('MACD Hist سالب يتقلص — انتظر تأكيد التحول');
+        } else if(hist < 0 && histDir === 'crossing') {
+          // عبر الصفر للأسفل — خطر
+          return null;
+        } else if(hist < 0 && histDir === 'expanding') {
+          // زخم بيعي متصاعد — حجب فوري
+          return null;
         }
       } else if(ind.macd!=null) {
         // fallback للـ MACD البسيط إذا لا يوجد Histogram
@@ -1717,7 +1732,7 @@ function calcSpeculative() {
       else if(volR>=1.5){ score+=5; }
 
       // ── 6. شموع — تأكيد بصري (المطرقة والابتلاع مضاعفة في المجازفة)
-      const candles = detectCandlePatterns(ind.closes, ind.highs, ind.lows);
+      const candles = detectCandlePatterns(ind.closes, ind.highs, ind.lows, ind.opens);
       const topCandle = candles[0] || null;
       candles.forEach(cp => {
         if(cp.signal==='bullish') {
@@ -1750,13 +1765,28 @@ function calcSpeculative() {
       const stopLoss = Math.max(rawStop, price*0.65); // حد أقصى -35%
       const lossPct  = (price-stopLoss)/price*100;
 
-      // الهدف: المقاومة أو 3x-4x وقف الخسارة
-      const minTarget = price * (1 + lossPct*3/100);  // 3:1 R/R على الأقل
-      // ✅ المقاومة تُستخدم فقط إذا أعلى من السعر بـ 5%+ (للمجازفة تحتاج هدف حقيقي)
-      const resValidSpec = ind.resistance && ind.resistance > price*1.05 && ind.resistance > minTarget;
-      const target    = resValidSpec
-        ? ind.resistance
-        : price * (1 + lossPct*3.5/100);  // هدف 3.5:1
+      // الهدف: مشتق من بنية السوق الحقيقية لا من ضرب الوقف
+      // 1. المقاومة المؤكدة (أولوية قصوى)
+      const resValidSpec = ind.resistance && ind.resistance > price*1.05;
+      // 2. امتداد ATR × 2.5 ضمن أفق 3-5 أيام (واقعي للمجازفة)
+      const atrExtTarget = price * (1 + (ind.atrPct||3) * 2.5 / 100);
+      // 3. الحد الأدنى المقبول (3:1 R/R من الوقف)
+      const minRRTarget  = price * (1 + lossPct*3/100);
+
+      // نختار الهدف: المقاومة إذا كانت أعلى من الحد الأدنى، وإلا ATR extension
+      let target;
+      if(resValidSpec && ind.resistance > minRRTarget) {
+        target = ind.resistance; // هدف حقيقي من المقاومة
+      } else if(atrExtTarget > minRRTarget) {
+        target = atrExtTarget;   // هدف من ATR واقعي
+      } else {
+        return null; // لا يوجد هدف حقيقي — نرفض السهم
+      }
+
+      // إذا المقاومة بين السعر والهدف — لا نتجاوزها بدون كسر مؤكد
+      if(!resValidSpec && ind.resistance && ind.resistance > price && ind.resistance < target) {
+        target = ind.resistance * 0.97; // نقف قبل المقاومة بهامش أمان
+      }
 
       const profitPct  = (target-price)/price*100;
       const riskReward = lossPct>0 ? profitPct/lossPct : 0;
@@ -1814,6 +1844,301 @@ function calcSpeculative() {
   state.speculativeRecs = candidates;
   if(candidates.length && isMarketOpen()) recordSpecToHistory(candidates);
   return candidates;
+}
+
+// ================================================================
+// ═══════════════════ HUNTER ENGINE — صائد الارتداد ══════════════
+// ================================================================
+
+// ── جلب بيانات 5 دقائق وحساب VWAP + EMA + Higher Low + RVOL
+async function fetchHunterData(sym) {
+  try {
+    const url = `${FMP_BASE}/stable/historical-chart/5min?symbol=${sym}&apikey=${API_KEY}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length < 6) return null;
+
+    // شموع اليوم فقط — نستخدم توقيت نيويورك (السوق الأمريكي)
+    const nyDate = new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'});
+    const bars = data.filter(b => b.date && b.date.startsWith(nyDate)).reverse();
+    if (bars.length < 6) return null;
+
+    const closes = bars.map(b => +b.close);
+    const highs  = bars.map(b => +b.high);
+    const lows   = bars.map(b => +b.low);
+    const vols   = bars.map(b => +b.volume || 0);
+
+    // ── VWAP
+    let sumPV = 0, sumV = 0;
+    bars.forEach(b => {
+      const tp = ((+b.high) + (+b.low) + (+b.close)) / 3;
+      const v  = +b.volume || 0;
+      sumPV += tp * v; sumV += v;
+    });
+    const vwap = sumV > 0 ? sumPV / sumV : null;
+
+    // ── EMA9 و EMA21 على الإغلاقات
+    const calcEMALocal = (arr, period) => {
+      if (arr.length < period) return null;
+      const k = 2 / (period + 1);
+      let ema = arr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      for (let i = period; i < arr.length; i++) ema = arr[i] * k + ema * (1 - k);
+      return ema;
+    };
+    const ema9  = calcEMALocal(closes, 9);
+    const ema21 = calcEMALocal(closes, 21);
+
+    // ── Higher Low: آخر قاعين محليين
+    let higherLow = false;
+    const localLows = [];
+    for (let i = 1; i < lows.length - 1; i++) {
+      if (lows[i] < lows[i-1] && lows[i] < lows[i+1]) localLows.push(lows[i]);
+    }
+    if (localLows.length >= 2) {
+      higherLow = localLows[localLows.length-1] > localLows[localLows.length-2];
+    }
+
+    // ── اختراق قمة آخر 15 دقيقة (3 شموع)
+    const last3Highs = highs.slice(-4, -1);
+    const breakout15 = last3Highs.length >= 3 &&
+      closes[closes.length-1] > Math.max(...last3Highs);
+
+    // ── RVOL حسب وقت الجلسة
+    const avgVol = state.prices[sym]?.avgVolume || 0;
+    const todayVol = vols.reduce((a, b) => a + b, 0);
+    const sessionBars = 78; // عدد شموع 5 دقائق في يوم كامل
+    const expectedVol = avgVol > 0 ? avgVol * (bars.length / sessionBars) : 0;
+    const rvol = expectedVol > 0 ? todayVol / expectedVol : 0;
+
+    // ── القوة النسبية vs SPY (30 دقيقة = 6 شموع)
+    const last6 = closes.slice(-6);
+    const stockReturn30 = last6.length >= 2
+      ? (last6[last6.length-1] - last6[0]) / last6[0] * 100 : 0;
+    const rs30 = stockReturn30 - (state.spyChange || 0);
+
+    // ── MACD Histogram على 5 دقائق
+    const macd5Hist = ema9 != null && ema21 != null ? ema9 - ema21 : null;
+
+    // ── السعر الحالي vs VWAP
+    const currentPrice = closes[closes.length-1];
+    const aboveVwap = vwap && currentPrice > vwap;
+
+    return {
+      vwap, ema9, ema21, higherLow, breakout15,
+      rvol, rs30, stockReturn30, macd5Hist,
+      aboveVwap, currentPrice, bars
+    };
+  } catch(e) { return null; }
+}
+
+// ── حساب HunterScore لسهم واحد
+async function calcHunterScore(stock) {
+  const p   = state.prices[stock.id];
+  const ind = state.indicators[stock.id];
+  if (!p?.price || !ind) return null;
+
+  const price = p.price;
+  const { rsi, stochRsi, bb_lower, support, macdHist, macdHistDir, atrPct } = ind;
+
+  const intra = await fetchHunterData(stock.id);
+
+  let score = 0;
+  const checks = {};
+
+  // ══ المحور 1: إنهاك البيع (25 نقطة)
+  // RSI < 30 ثم بدأ يرتفع
+  const rsiExhaust = rsi != null && rsi < 30;
+  checks.rsiExhaust = rsiExhaust;
+  if (rsiExhaust) score += 7;
+
+  // Stoch RSI يعبر للأعلى تحت 20
+  const stochCross = stochRsi != null && stochRsi < 20;
+  checks.stochCross = stochCross;
+  if (stochCross) score += 5;
+
+  // السعر خرج تحت BB ثم عاد داخله
+  const bbReversal = bb_lower != null && price > bb_lower * 0.99 && price <= bb_lower * 1.02;
+  checks.bbReversal = bbReversal;
+  if (bbReversal) score += 5;
+
+  // RVOL >= 2
+  const rvolOk = intra && intra.rvol >= 2;
+  checks.rvolOk = rvolOk;
+  if (rvolOk) score += 4;
+
+  // السعر عند دعم موثوق ضمن ATR واحد
+  const atrVal = atrPct || 3;
+  const nearSup = support && Math.abs(price - support) / price * 100 <= atrVal;
+  checks.nearSup = nearSup;
+  if (nearSup) score += 4;
+
+  // ══ المحور 2: تأكيد الارتداد (35 نقطة)
+  // استعادة VWAP
+  const aboveVwap = intra?.aboveVwap || false;
+  checks.aboveVwap = aboveVwap;
+  if (aboveVwap) score += 8;
+
+  // EMA9 > EMA21 على 5 دقائق
+  const emaOk = intra?.ema9 != null && intra?.ema21 != null && intra.ema9 > intra.ema21;
+  checks.emaOk = emaOk;
+  if (emaOk) score += 6;
+
+  // Higher Low على شموع 5 دقائق
+  checks.higherLow = intra?.higherLow || false;
+  if (checks.higherLow) score += 7;
+
+  // اختراق قمة آخر 15 دقيقة
+  checks.breakout15 = intra?.breakout15 || false;
+  if (checks.breakout15) score += 7;
+
+  // MACD Histogram 5 دقائق موجب
+  const macd5Ok = intra?.macd5Hist != null && intra.macd5Hist > 0;
+  checks.macd5Ok = macd5Ok;
+  if (macd5Ok) score += 5;
+
+  // MACD اليومي يتحسن (contracting سالب أو expanding موجب أو crossing)
+  const macdDayOk = macdHist != null && (
+    (macdHist > 0) ||
+    (macdHist < 0 && macdHistDir === 'contracting') ||
+    (macdHistDir === 'crossing')
+  );
+  checks.macdDayOk = macdDayOk;
+  if (macdDayOk) score += 2;
+
+  // ══ المحور 3: القوة النسبية vs SPY (20 نقطة)
+  const rs30 = intra?.rs30 || 0;
+  const stockRet = intra?.stockReturn30 || 0;
+  let rsScore = 0;
+  if (rs30 >= 2)       rsScore += 10;
+  else if (rs30 >= 1)  rsScore += 7;
+  else if (rs30 > 0)   rsScore += 4;
+  // السهم أخضر والسوق أحمر
+  if (stockRet > 0 && (state.spyChange || 0) < 0) rsScore += 6;
+  // السهم يحافظ على قاعه والسوق يصنع قيعاناً جديدة
+  if (checks.higherLow && state.marketTrend === 'bearish') rsScore += 4;
+  checks.rsScore = Math.min(rsScore, 20);
+  score += checks.rsScore;
+
+  // ══ المحور 4: الحجم والسيولة (10 نقاط)
+  // RVOL مع اختراق = تأكيد أقوى (لا تكرار — المحور 1 يحسب RVOL وحده)
+  if (checks.breakout15 && intra?.rvol >= 1.5) score += 5; // اختراق بحجم
+  else if (rvolOk) score += 3; // حجم مرتفع بدون اختراق
+  if (p.avgVolume > 500000) score += 3; // سيولة كافية للتنفيذ
+  if (p.avgVolume > 2000000) score += 2; // سيولة ممتازة
+
+  // ══ المحور 5: جودة الصفقة R/R (10 نقاط)
+  // الوقف: تحت آخر قاع صاعد − 0.2 × ATR
+  const atrAbs  = price * atrVal / 100;
+  const stopLoss = (support || price * 0.97) - (0.2 * atrAbs);
+  const lossPct  = (price - stopLoss) / price * 100;
+
+  // الهدف: VWAP أو مقاومة لحظية
+  const targetPrice = intra?.vwap && intra.vwap > price
+    ? intra.vwap
+    : ind.resistance && ind.resistance > price * 1.02
+      ? ind.resistance
+      : price * (1 + atrVal * 2 / 100);
+
+  const profitPct = (targetPrice - price) / price * 100;
+  const rr = lossPct > 0 ? profitPct / lossPct : 0;
+
+  let rrScore = 0;
+  if (rr >= 2)       { rrScore += 6; }
+  else if (rr >= 1.5){ rrScore += 4; }
+  if (lossPct < atrVal * 1.5) rrScore += 2; // وقف ضيق
+  if (!ind.resistance || ind.resistance > price * 1.03) rrScore += 2; // مساحة للحركة
+  score += Math.min(rrScore, 10);
+
+  // رفض إذا R/R أقل من 1.5
+  if (rr < 1.5) return null;
+  // رفض إذا score أقل من 55
+  if (score < 55) return null;
+
+  checks.rr = rr;
+
+  return {
+    id: stock.id, name: stock.name, sector: stock.sector,
+    price, change: p.change || 0,
+    score: Math.min(score, 100), checks,
+    rsi, stochRsi, support,
+    vwap: intra?.vwap || null,
+    ema9: intra?.ema9 || null,
+    ema21: intra?.ema21 || null,
+    rvol: intra?.rvol || 0,
+    rs30, stockReturn30: intra?.stockReturn30 || 0,
+    stopLoss, targetPrice, profitPct, lossPct, rr,
+    atrPct: atrVal,
+    marketTrend: state.marketTrend,
+  };
+}
+
+// ── قائمة المرشحين المختصرة للتحديث السريع
+function getHunterCandidates() {
+  return ALL_STOCKS.filter(s => {
+    const ind = state.indicators[s.id];
+    const p   = state.prices[s.id];
+    if (!ind || !p) return false;
+    // أسهم ظهرت سابقاً في النتائج
+    if ((state.hunterRecs||[]).some(r => r.id === s.id)) return true;
+    // أسهم عندها RSI منخفض = مرشحة للارتداد
+    if (ind.rsi != null && ind.rsi < 40) return true;
+    // أسهم عند الدعم
+    if (ind.nearSupport) return true;
+    return false;
+  });
+}
+
+// ── الدورة الكاملة: كل الأسهم (افتتاح + منتصف)
+async function calcHunterFull() {
+  if (!state.indicatorsDone) return;
+  console.log('[Hunter] دورة كاملة...');
+  const BATCH = 5;
+  const results = [];
+  for (let i = 0; i < ALL_STOCKS.length; i += BATCH) {
+    const batch = ALL_STOCKS.slice(i, i + BATCH);
+    const res = await Promise.all(batch.map(s => calcHunterScore(s)));
+    res.forEach(r => { if (r) results.push(r); });
+    if (i + BATCH < ALL_STOCKS.length) await new Promise(r => setTimeout(r, 400));
+  }
+  results.sort((a, b) => b.score - a.score);
+  state.hunterRecs = results;
+  console.log('[Hunter] كاملة:', results.length, 'فرصة');
+}
+
+// ── الدورة السريعة: المرشحون فقط (كل 30 دقيقة)
+async function calcHunterQuick() {
+  if (!state.indicatorsDone || !isMarketOpen()) return;
+  const candidates = getHunterCandidates();
+  if (candidates.length === 0) return;
+  console.log('[Hunter] سريعة:', candidates.length, 'مرشح...');
+  const results = [];
+  for (let i = 0; i < candidates.length; i += 5) {
+    const batch = candidates.slice(i, i + 5);
+    const res = await Promise.all(batch.map(s => calcHunterScore(s)));
+    res.forEach(r => { if (r) results.push(r); });
+    if (i + 5 < candidates.length) await new Promise(r => setTimeout(r, 300));
+  }
+  // ندمج النتائج الجديدة مع القديمة — الجديدة تحل محل القديمة
+  const oldResults = (state.hunterRecs || []).filter(
+    r => !candidates.some(c => c.id === r.id)
+  );
+  const merged = [...results, ...oldResults];
+  merged.sort((a, b) => b.score - a.score);
+  state.hunterRecs = merged;
+  render();
+}
+
+// ── بدء الـ loop كل 30 دقيقة
+let _hunterInterval = null;
+function startHunterLoop() {
+  if (_hunterInterval) clearInterval(_hunterInterval);
+  _hunterInterval = setInterval(async () => {
+    if (isMarketOpen()) await calcHunterQuick();
+  }, 30 * 60 * 1000);
 }
 
 // ================================================================
@@ -1896,8 +2221,10 @@ async function loadData(full=false) {
     if(isMarketOpen()) {
       calcRecs();
       calcSpeculative();
+      await calcHunterFull();
+      startHunterLoop();
     }
-    console.log('[loadData] اكتمل — توصيات:', state.recs?.length, '| مجازفة:', state.speculativeRecs?.length);
+    console.log('[loadData] اكتمل — توصيات:', state.recs?.length, '| مجازفة:', state.speculativeRecs?.length, '| صائد:', state.hunterRecs?.length);
 
   } else if(neverLoaded && !_indicatorsLoading) {
     // السوق مغلق لكن نحمّل المؤشرات للعرض فقط (بدون توصيات)
@@ -1935,25 +2262,21 @@ const C = {
 // ═══════════════════ CANDLESTICK ENGINE (v23) ════════════════════
 // ================================================================
 
-// ── كشف 12 نمط شمعة يابانية حقيقي مع highs/lows
-function detectCandlePatterns(closes, highs, lows) {
+// ── كشف 12 نمط شمعة يابانية حقيقي مع OHLC كامل
+function detectCandlePatterns(closes, highs, lows, opens) {
   if (!closes || closes.length < 3) return [];
+  if (!opens || opens.length !== closes.length) return []; // نوقف الحساب إذا open مفقود
 
   const n   = closes.length;
   const patterns = [];
 
-  // بيانات آخر 3 شمعات
-  // شمعة اليوم
-  const C0 = closes[n-1], H0 = (highs||closes)[n-1], L0 = (lows||closes)[n-1];
-  const O0 = closes[n-2]; // افتراض: open = close السابق
-  // شمعة أمس
-  const C1 = closes[n-2], H1 = (highs||closes)[n-2], L1 = (lows||closes)[n-2];
-  const O1 = closes[n-3] || C1;
-  // شمعة قبل أمس
+  // بيانات آخر 3 شمعات — open حقيقي من البيانات
+  const C0 = closes[n-1], H0 = highs[n-1], L0 = lows[n-1], O0 = opens[n-1];
+  const C1 = closes[n-2], H1 = highs[n-2], L1 = lows[n-2], O1 = opens[n-2];
   const C2 = n>=4 ? closes[n-3] : C1;
-  const H2 = n>=4 ? (highs||closes)[n-3] : H1;
-  const L2 = n>=4 ? (lows||closes)[n-3] : L1;
-  const O2 = n>=4 ? closes[n-4] || C2 : O1;
+  const H2 = n>=4 ? highs[n-3]  : H1;
+  const L2 = n>=4 ? lows[n-3]   : L1;
+  const O2 = n>=4 ? opens[n-3]  : O1;
 
   const body0 = Math.abs(C0-O0), range0 = H0-L0 || 0.0001;
   const body1 = Math.abs(C1-O1), range1 = H1-L1 || 0.0001;
@@ -2069,18 +2392,19 @@ function calcRelativeStrength(stockChange, spyChange) {
   return { diff: +diff.toFixed(2), label, color, score };
 }
 
-// ── رسم الشموع اليابانية (محسّن مع highs/lows الحقيقية)
-function renderCandleChart(closes, highs, lows) {
+// ── رسم الشموع اليابانية مع OHLC كامل
+function renderCandleChart(closes, highs, lows, opens) {
   if (!closes || closes.length < 5) return null;
 
   const rawC = closes.slice(-16);
-  const rawH = highs  ? highs.slice(-16) : rawC;
-  const rawL = lows   ? lows.slice(-16)  : rawC;
+  const rawH = highs ? highs.slice(-16) : rawC;
+  const rawL = lows  ? lows.slice(-16)  : rawC;
+  const rawO = opens ? opens.slice(-16) : rawC.map((c,i) => i===0 ? c : rawC[i-1]);
   const n    = rawC.length;
 
-  // بيانات كل شمعة
+  // بيانات كل شمعة — open حقيقي
   const candles = rawC.map((c, i) => {
-    const o  = i === 0 ? c : rawC[i-1];
+    const o  = rawO[i] || (i === 0 ? c : rawC[i-1]);
     const h  = rawH[i] || Math.max(c, o);
     const l  = rawL[i] || Math.min(c, o);
     return { o, c, h, l, bull: c >= o };
@@ -2913,6 +3237,7 @@ function renderBottomNav() {
   const tabs = [
     {id:'rec',     icon:'ti-target',     label:'توصيات'},
     {id:'spec',    icon:'ti-dice',       label:'مجازفة'},
+    {id:'hunter',  icon:'ti-crosshair',  label:'صائد'},
     {id:'market',  icon:'ti-chart-bar',  label:'السوق'},
     {id:'port',    icon:'ti-briefcase',  label:'محفظة'},
     {id:'history', icon:'ti-history',    label:'سجل'},
@@ -3061,6 +3386,7 @@ function renderContent() {
   const views = {
     rec:     renderRecTab,
     spec:    renderSpecTab,
+    hunter:  renderHunterTab,
     market:  renderMarketTab,
     port:    renderPortTab,
     history: renderHistoryTab,
@@ -3420,7 +3746,7 @@ function renderRecCard(r, idx) {
 
     // ── 6. شموع يابانية + القوة النسبية
     r.closes && r.closes.length >= 5
-      ? renderCandleChart(r.closes, r.highs, r.lows)
+      ? renderCandleChart(r.closes, r.highs, r.lows, r.opens)
       : null,
     renderRelativeStrength(r.change),
     // ⚠️ تحذير MACD سلبي — تنبيه واضح
@@ -3868,7 +4194,8 @@ function renderSpecCard(s, idx) {
       ? renderCandleChart(
           state.indicators[s.id].closes,
           state.indicators[s.id].highs,
-          state.indicators[s.id].lows)
+          state.indicators[s.id].lows,
+          state.indicators[s.id].opens)
       : null,
 
     // ── 7. الأرقام الحاسمة: دعم / مقاومة / هدف / وقف
@@ -4077,6 +4404,179 @@ function renderSpecCard(s, idx) {
 // ================================================================
 // ═══════════════════ MARKET TAB ═════════════════════════════════
 // ================================================================
+// ================================================================
+// ═══════════════════ HUNTER TAB — صائد الارتداد ═════════════════
+// ================================================================
+
+function renderHunterTab() {
+  if (_indicatorsLoading) {
+    return el('div', {style:{padding:'40px 16px', textAlign:'center'}}, [
+      el('div', {style:{fontSize:'12px', color:C.blue}}, ['⏳ جاري تحميل المؤشرات...']),
+    ]);
+  }
+  if (!state.indicatorsDone) {
+    return el('div', {style:{padding:'40px 16px', textAlign:'center'}}, [
+      el('div', {style:{fontSize:'40px', marginBottom:'12px'}}, ['🎯']),
+      el('div', {style:{fontSize:'13px', color:C.text2}}, ['سيبدأ الصائد بعد تحميل المؤشرات']),
+    ]);
+  }
+
+  const hunters = state.hunterRecs || [];
+  const trendColor = state.marketTrend==='bearish'?C.pink:state.marketTrend==='bullish'?C.green:C.yellow;
+  const trendLabel = state.marketTrend==='bearish'?'السوق هابط 🔻':state.marketTrend==='bullish'?'السوق صاعد ✅':'السوق محايد ⚠️';
+
+  return el('div', {style:{padding:'12px 16px'}}, [
+
+    // ── رأس التبويب
+    el('div', {style:{marginBottom:'12px'}}, [
+      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}, [
+        el('div', {style:{fontSize:'13px', fontWeight:'700', color:'#ff6b35'}}, [
+          '🎯 صائد الارتداد — '+hunters.length+' فرصة'
+        ]),
+        el('div', {style:{fontSize:'10px', fontWeight:'700', color:trendColor}}, [trendLabel]),
+      ]),
+
+      // SPY + QQQ
+      state.spyChange !== null && el('div', {style:{
+        display:'flex', gap:'8px', fontSize:'10px',
+        background:'#060b14', borderRadius:'8px', padding:'5px 8px', marginBottom:'6px',
+      }}, [
+        el('span', {style:{color:C.text2}}, ['مؤشر السوق:']),
+        el('span', {style:{color:state.spyChange>=0?C.green:C.pink, fontWeight:'700'}}, ['SPY '+(state.spyChange>=0?'+':'')+fmt(state.spyChange)+'%']),
+        el('span', {style:{color:state.qqqChange>=0?C.green:C.pink, fontWeight:'700'}}, ['QQQ '+(state.qqqChange>=0?'+':'')+fmt(state.qqqChange)+'%']),
+      ]),
+
+      // وصف
+      el('div', {style:{
+        fontSize:'10px', color:'#ff6b35',
+        background:'rgba(255,107,53,.06)', borderRadius:'6px',
+        padding:'5px 8px', border:'1px solid rgba(255,107,53,.2)',
+      }}, ['🎯 يصطاد الارتداد في أي حالة سوق — يتحدث كل 30 دقيقة + مرتين كاملتين يومياً']),
+    ]),
+
+    // ── القائمة
+    hunters.length === 0
+      ? el('div', {style:{textAlign:'center', padding:'40px 0', color:C.text2, fontSize:'12px'}}, [
+          state.hunterRecs === null
+            ? '⏳ جاري البحث عن فرص الارتداد...'
+            : 'لا توجد فرص ارتداد تستوفي الشروط الآن'
+        ])
+      : el('div', {}, hunters.map((h, i) => renderHunterCard(h, i))),
+  ]);
+}
+
+function renderHunterCard(h, idx) {
+  const isSelected = state.selected === h.id + '_hunter';
+  const scoreColor = h.score >= 80 ? C.green : h.score >= 70 ? C.blue : h.score >= 60 ? C.yellow : C.orange;
+  const trendBadge = h.marketTrend === 'bearish'
+    ? el('span', {style:{fontSize:'9px', color:C.pink, background:'rgba(255,45,122,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['سوق هابط'])
+    : h.marketTrend === 'bullish'
+      ? el('span', {style:{fontSize:'9px', color:C.green, background:'rgba(0,255,136,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['سوق صاعد'])
+      : null;
+
+  const checkRow = (ok, label) => el('div', {style:{
+    display:'flex', alignItems:'center', gap:'6px',
+    fontSize:'10px', color: ok ? C.green : C.text3, marginBottom:'2px',
+  }}, [el('span', {}, [ok ? '✅' : '❌']), el('span', {}, [label])]);
+
+  return el('div', {style:{
+    background:'#060b14',
+    border:`1px solid ${isSelected ? '#ff6b35' : scoreColor+'22'}`,
+    borderRadius:'12px', marginBottom:'8px', overflow:'hidden', cursor:'pointer',
+  }, onClick:()=>{ state.selected = isSelected ? null : h.id+'_hunter'; render(); }}, [
+
+    el('div', {style:{padding:'10px 12px'}}, [
+
+      // ── رأس البطاقة
+      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}, [
+        el('div', {}, [
+          el('div', {style:{display:'flex', alignItems:'center', gap:'6px'}}, [
+            el('div', {style:{fontSize:'13px', fontWeight:'800', color:C.text}}, [h.name]),
+            trendBadge,
+          ]),
+          el('div', {style:{fontSize:'10px', color:C.text3}}, [h.id+' · '+h.sector]),
+        ]),
+        el('div', {style:{textAlign:'left'}}, [
+          el('div', {style:{fontSize:'20px', fontWeight:'900', color:scoreColor}}, [h.score+'']),
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['/ 100']),
+        ]),
+      ]),
+
+      // شريط Score
+      el('div', {style:{height:'4px', background:'#1a2340', borderRadius:'4px', marginBottom:'8px'}}, [
+        el('div', {style:{height:'100%', width:Math.min(h.score,100)+'%', background:scoreColor, borderRadius:'4px'}}),
+      ]),
+
+      // السعر + VWAP + RS
+      el('div', {style:{display:'flex', gap:'8px', fontSize:'10px', marginBottom:'6px', flexWrap:'wrap'}}, [
+        el('div', {style:{color:C.text, fontWeight:'700'}}, ['$'+fmt(h.price, 2)]),
+        h.change !== 0 && el('div', {style:{color:h.change>0?C.green:C.pink, fontWeight:'700'}}, [(h.change>0?'+':'')+fmt(h.change,2)+'%']),
+        h.vwap && el('div', {style:{color:h.checks.aboveVwap?C.green:C.text3}}, [
+          'VWAP $'+fmt(h.vwap,2)+' '+(h.checks.aboveVwap?'▲':'▼')
+        ]),
+        h.rvol > 0 && el('div', {style:{color:h.rvol>=2?C.green:C.text2}}, ['RVOL ×'+fmt(h.rvol,1)]),
+        h.rs30 !== 0 && el('div', {style:{color:h.rs30>0?C.green:C.pink}}, [
+          'RS30m '+(h.rs30>0?'+':'')+fmt(h.rs30,1)+'%'
+        ]),
+      ]),
+
+      // دخول / وقف / هدف
+      el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'4px', marginBottom:'6px'}}, [
+        el('div', {style:{background:'rgba(255,107,53,.08)', borderRadius:'6px', padding:'5px', textAlign:'center'}}, [
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['دخول']),
+          el('div', {style:{fontSize:'11px', fontWeight:'700', color:'#ff6b35'}}, ['$'+fmt(h.price,2)]),
+        ]),
+        el('div', {style:{background:'rgba(255,45,122,.08)', borderRadius:'6px', padding:'5px', textAlign:'center'}}, [
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['وقف']),
+          el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.pink}}, ['$'+fmt(h.stopLoss,2)]),
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['-'+fmt(h.lossPct,1)+'%']),
+        ]),
+        el('div', {style:{background:'rgba(0,255,136,.08)', borderRadius:'6px', padding:'5px', textAlign:'center'}}, [
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['هدف']),
+          el('div', {style:{fontSize:'11px', fontWeight:'700', color:C.green}}, ['$'+fmt(h.targetPrice,2)]),
+          el('div', {style:{fontSize:'9px', color:C.green}}, ['+'+fmt(h.profitPct,1)+'%']),
+        ]),
+      ]),
+
+      // R/R + RSI
+      el('div', {style:{display:'flex', justifyContent:'space-between', fontSize:'10px', color:C.text2}}, [
+        el('span', {}, ['R/R: ', el('span', {style:{color:h.rr>=2?C.green:h.rr>=1.5?C.blue:C.yellow, fontWeight:'700'}}, [fmt(h.rr,1)+'x'])]),
+        el('span', {style:{color:C.text3}}, ['RSI '+fmt(h.rsi,0)+' · StochRSI '+fmt(h.stochRsi,0)]),
+      ]),
+    ]),
+
+    // ── تفاصيل عند الضغط
+    isSelected && el('div', {style:{borderTop:'1px solid #1a2340', padding:'10px 12px'}}, [
+      el('div', {style:{fontSize:'10px', fontWeight:'700', color:C.text2, marginBottom:'8px'}}, ['الشروط المتحققة:']),
+
+      el('div', {style:{marginBottom:'6px'}}, [
+        el('div', {style:{fontSize:'9px', color:'#ff6b35', marginBottom:'3px'}}, ['إنهاك البيع (25 نقطة):']),
+        checkRow(h.checks.rsiExhaust, 'RSI '+fmt(h.rsi,0)+'% — تشبع بيع شديد'),
+        checkRow(h.checks.stochCross, 'Stoch RSI '+fmt(h.stochRsi,0)+'% — يعبر للأعلى'),
+        checkRow(h.checks.bbReversal, 'السعر عاد داخل Bollinger'),
+        checkRow(h.checks.rvolOk,     'حجم مرتفع ×'+fmt(h.rvol,1)),
+        checkRow(h.checks.nearSup,    'عند الدعم $'+fmt(h.support,2)),
+      ]),
+
+      el('div', {style:{marginBottom:'6px'}}, [
+        el('div', {style:{fontSize:'9px', color:'#ff6b35', marginBottom:'3px'}}, ['تأكيد الارتداد (35 نقطة):']),
+        checkRow(h.checks.aboveVwap,  'فوق VWAP $'+fmt(h.vwap,2)),
+        checkRow(h.checks.emaOk,      'EMA9 '+fmt(h.ema9,2)+' > EMA21 '+fmt(h.ema21,2)),
+        checkRow(h.checks.higherLow,  'Higher Low على 5 دقائق'),
+        checkRow(h.checks.breakout15, 'اختراق قمة آخر 15 دقيقة'),
+        checkRow(h.checks.macd5Ok,    'MACD 5 دقائق موجب'),
+        checkRow(h.checks.macdDayOk,  'MACD اليومي يتحسن'),
+      ]),
+
+      el('div', {}, [
+        el('div', {style:{fontSize:'9px', color:'#ff6b35', marginBottom:'3px'}}, ['القوة النسبية:']),
+        el('div', {style:{fontSize:'10px', color:h.rs30>0?C.green:C.pink}}, [
+          'RS30m: '+(h.rs30>0?'+':'')+fmt(h.rs30,1)+'% vs SPY | عائد السهم: '+(h.stockReturn30>0?'+':'')+fmt(h.stockReturn30,1)+'%'
+        ]),
+      ]),
+    ]),
+  ]);
+}
 
 function renderMarketTab() {
   const priced = ALL_STOCKS
@@ -4417,7 +4917,7 @@ function renderTraderCard(s, ind, volR, chg, priceObj) {
 
   // 3. الشمعة الأخيرة
   if(ind.closes?.length >= 3) {
-    const candles = detectCandlePatterns(ind.closes, ind.highs, ind.lows);
+    const candles = detectCandlePatterns(ind.closes, ind.highs, ind.lows, ind.opens);
     const top = candles[0];
     if(top) {
       const col  = top.signal==='bullish'?C.green:top.signal==='bearish'?C.pink:C.yellow;
@@ -5305,7 +5805,7 @@ setInterval(async () => {
     // calcRecs ستقارن التوصيات الجديدة مع sessionOneIds المحفوظة أعلاه
     calcRecs();
     calcSpeculative();
-    // ✅ تسجيل جلسة المنتصف صراحةً بعد calcRecs
+    await calcHunterFull();
     if(state.recs?.length > 0 && isMarketOpen()) {
       recordRecsToHistory(state.recs, 'منتصف');
     }
