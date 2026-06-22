@@ -616,6 +616,98 @@ async function handleCallback(callbackId, data, cid) {
     await tgSend(`🚪 تم الخروج`);
     return;
   }
+
+  // ── القائمة الرئيسية
+  if (action === 'menu') {
+    // تحليل سهم
+    if (sym === 'ANALYZE') {
+      sess[cid] = { step: 'waiting_sym' };
+      await tgSend('📊 اكتب رمز السهم:\nمثال: <code>NVDA</code>');
+      return;
+    }
+
+    // محفظتي
+    if (sym === 'PORTFOLIO') {
+      const data   = await fbGet('portfolio');
+      const port   = (data.trades || []).filter(t => !t.closed);
+      if (!port.length) { await tgSend('📂 محفظتك فارغة'); return; }
+      const stocks = await getMultipleStocks(port.map(t => t.symbol));
+      let m = '💼 <b>محفظتك الآن:</b>\n──────────────\n';
+      let totalPnl = 0;
+      for (const t of port) {
+        const cur = stocks[t.symbol]?.quote?.price || t.entry;
+        const pnl = +((cur - t.entry) / t.entry * 100).toFixed(2);
+        totalPnl += pnl;
+        const toTarget = t.target ? +((t.target - cur) / cur * 100).toFixed(1) : null;
+        m += `${pnl >= 0 ? '✅' : '❌'} <b>${t.symbol}</b> $${t.entry} → $${cur?.toFixed(2)} (${pnl >= 0 ? '+' : ''}${pnl}%)`;
+        if (toTarget != null) m += ` | للهدف: ${toTarget > 0 ? '+' : ''}${toTarget}%`;
+        m += '\n';
+      }
+      m += `──────────────
+متوسط P&L: ${totalPnl >= 0 ? '+' : ''}${+(totalPnl / port.length).toFixed(2)}%`;
+      await tgSend(m);
+      return;
+    }
+
+    // مراقبتي
+    if (sym === 'WATCHLIST') {
+      const data   = await fbGet('watchlist');
+      const list   = data.symbols || [];
+      if (!list.length) { await tgSend('👁 قائمة المراقبة فارغة'); return; }
+      const stocks = await getMultipleStocks(list);
+      let m = '👁 <b>قائمة المراقبة:</b>\n──────────────\n';
+      for (const s of list) {
+        const q = stocks[s]?.quote;
+        if (q) {
+          const chg = +(q.changePercentage || 0).toFixed(2);
+          m += `• <b>${s}</b> $${q.price?.toFixed(2)} ${chg >= 0 ? '▲' : '▼'} ${chg >= 0 ? '+' : ''}${chg}%
+`;
+        } else { m += `• <b>${s}</b>
+`; }
+      }
+      m += `──────────────
+يراقبها البوت يومياً 👀`;
+      await tgSend(m);
+      return;
+    }
+
+    // تقرير الأداة
+    if (sym === 'REPORT') {
+      await tgSend('⏳ جاري تحضير تقرير الأداة...');
+      const base = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : 'https://trader-proxy-36nj.vercel.app';
+      try {
+        await fetch(`${base}/api/report`);
+      } catch(e) {}
+      return;
+    }
+
+    // مساعدة
+    if (sym === 'HELP') {
+      await tgSend(
+        `❓ <b>المساعدة</b>
+──────────────
+` +
+        `📊 تحليل سهم: اكتب رمزه مثل <code>NVDA</code>
+` +
+        `💼 محفظتي: اكتب <code>محفظتي</code>
+` +
+        `👁 مراقبتي: اكتب <code>مراقبتي</code>
+` +
+        `📈 تقرير: اكتب <code>تقرير</code>
+` +
+        `🚪 إغلاق صفقة: <code>خرجت AAPL</code>
+` +
+        `🗑 حذف من المراقبة: <code>حذف AAPL</code>
+` +
+        `──────────────
+` +
+        `اكتب <code>1</code> للقائمة الرئيسية`
+      );
+      return;
+    }
+  }
 }
 
 async function handleMessage(text, cid) {
@@ -799,6 +891,33 @@ async function handleMessage(text, cid) {
       const list = (data.symbols || []).filter(s => s !== sym);
       await fbSet('watchlist', { symbols: list });
       await tgSend(`🗑 <b>${sym}</b> حُذف من قائمة المراقبة`);
+    }
+    return;
+  }
+
+  // ── انتظار رمز السهم من القائمة
+  if (s.step === 'waiting_sym') {
+    const sym2 = text.toUpperCase().replace(/[^A-Z.]/g, '');
+    if (sym2.length >= 1 && sym2.length <= 5) {
+      sess[cid] = { step: 'ask_bought', sym: sym2 };
+      await tgSend(`⏳ جاري تحليل <b>${sym2}</b>...`);
+      const d = await getStock(sym2);
+      if (!d?.quote) { await tgSend(`⚠️ ${sym2} — لم أجد بيانات`); sess[cid] = {}; return; }
+      const a = analyzeStock(sym2, d.quote, d.closes);
+      if (!a) { await tgSend(`⚠️ ${sym2} — بيانات غير كافية`); sess[cid] = {}; return; }
+      sess[cid] = { step: 'ask_bought', sym: sym2, price: d.quote.price, analysis: a };
+      const buttons = [
+        [{ text: '✅ اشتريت',          callback_data: `bought_${sym2}` }],
+        [{ text: '👁 أضف للمراقبة',   callback_data: `watch_${sym2}` }],
+        [
+          { text: '📅 أسعار الأسبوع', callback_data: `prices7_${sym2}` },
+          { text: '📆 أسعار الشهر',   callback_data: `prices30_${sym2}` },
+        ],
+        [{ text: '🚪 خروج',            callback_data: `exit_${sym2}` }],
+      ];
+      await tgSendButtons(buildAnalysisMsg(sym2, d.quote.name || sym2, a), buttons);
+    } else {
+      await tgSend('⚠️ رمز غير صحيح — اكتب مثل: <code>NVDA</code>');
     }
     return;
   }
