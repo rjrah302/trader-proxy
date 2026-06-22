@@ -1357,14 +1357,24 @@ function calcSignal(stock) {
   // ══ هدف الربح ووقف الخسارة — ATR ديناميكي
   const atrMultFinal = atrPct ? (atrPct < 2 ? 1.5 : atrPct < 4 ? 2.0 : 2.5) : 1.5;
   const atrStop  = atrPct ? Math.min(atrPct*atrMultFinal, 15) : 2;
-  const stopLoss = Math.max(price*(1-atrStop/100), price*0.75);
+  // ✅ تعديل: الوقف تحت الدعم الحقيقي إذا كان أفضل من ATR
+  const atrBasedStop  = price*(1-atrStop/100);
+  const supBasedStop  = support ? support*0.99 : null;
+  const stopLoss = Math.max(
+    supBasedStop && supBasedStop > atrBasedStop ? supBasedStop : atrBasedStop,
+    price*0.75
+  );
 
-  // ✅ الهدف يجب أن يكون فوق السعر الحالي بـ 3%+ على الأقل
-  const minTarget    = price * 1.03;                          // حد أدنى +3%
+  // ✅ تعديل: الهدف الأقرب من (المقاومة أو ATR×3.5) — لزيادة احتمال الوصول
+  const minTarget    = price * 1.03;                             // حد أدنى +3%
   const atrTarget    = price * (1 + Math.max(atrStop*2, 3)/100); // ATR-based هدف
-  // المقاومة تُستخدم فقط إذا كانت أعلى من السعر بـ 2%+ وأعلى من الحد الأدنى
+  const atrRealist   = price + (atrPct ? price*atrPct/100*3.5 : price*0.08); // ATR×3.5
   const resValid     = resistance && resistance > price*1.02 && resistance > minTarget;
-  const target       = resValid ? resistance : Math.max(atrTarget, minTarget);
+  const resTarget    = resValid ? resistance : null;
+  // الأقرب من المقاومة أو ATR×3.5 — يجعل الهدف واقعياً
+  const target       = resTarget
+    ? Math.min(resTarget, atrRealist > minTarget ? atrRealist : resTarget)
+    : Math.max(atrTarget, minTarget);
   const profitPct    = (target-price)/price*100;
 
   // ══ R/R النهائي — يُحسب من الهدف الصحيح والوقف
@@ -3505,7 +3515,11 @@ function renderRecCard(r, idx) {
     // ── مدة الصفقة المتوقعة
     (() => {
       if(!r.atrPct || !r.profitPct) return null;
-      const days = Math.ceil(r.profitPct / r.atrPct);
+      // ✅ تعديل: مدة تأخذ MACD والأسبوعي بعين الاعتبار
+      const momentum1 = r.macdHist>0 && r.macdHistDir==='expanding' ? 1.3 :
+                        r.macdHist>0 ? 1.0 : 0.7;
+      const trend1    = r.weeklyTrend==='bullish' ? 1.2 : 0.8;
+      const days = Math.max(1, Math.ceil(r.profitPct / (r.atrPct * momentum1 * trend1)));
       const type = days <= 1 ? {label:'🔥 يومي', color:C.pink,    desc:'قد تصل الهدف اليوم — راقب كل ساعة'}
                  : days <= 3 ? {label:'⚡ قصير',  color:C.orange,  desc:'1-3 أيام تداول — راقب يومياً'}
                  : days <= 7 ? {label:'📅 أسبوعي',color:C.blue,    desc:'3-7 أيام — اصبر ولا تتسرع في الخروج'}
@@ -3984,7 +3998,11 @@ function renderSpecCard(s, idx) {
       // ── مدة الصفقة المتوقعة للمجازفة
       (() => {
         if(!s.atrPct || !s.profitPct) return null;
-        const days = Math.ceil(s.profitPct / s.atrPct);
+        // ✅ تعديل: مدة تأخذ MACD والأسبوعي
+        const momentum2 = s.macdHist>0 && s.macdHistDir==='expanding' ? 1.3 :
+                          s.macdHist>0 ? 1.0 : 0.7;
+        const trend2    = s.weeklyTrend==='bullish' ? 1.2 : 0.8;
+        const days = Math.max(1, Math.ceil(s.profitPct / (s.atrPct * momentum2 * trend2)));
         const type = days <= 1 ? {label:'🔥 يومي',  color:C.pink,   desc:'حركة سريعة — راقب كل ساعة'}
                    : days <= 3 ? {label:'⚡ قصير',   color:C.orange, desc:'1-3 أيام — الأنسب للمجازفة'}
                    : days <= 7 ? {label:'📅 أسبوعي', color:C.blue,   desc:'3-7 أيام — اصبر على المركز'}
