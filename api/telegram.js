@@ -798,8 +798,7 @@ async function handleCallback(callbackId, data, cid) {
     // تقرير الأداة
     if (sym === 'REPORT') {
       await tgSend('⏳ جاري تحضير تقرير الأداة...');
-      // لا await — يرسل في الخلفية بعد الرد على تيليجرام
-      generateReport().catch(e => console.error('report bg:', e.message));
+      await generateReport();
       return;
     }
 
@@ -871,7 +870,7 @@ async function handleCallback(callbackId, data, cid) {
     }
     if (sym === 'REPORT') {
       await tgSend('⏳ جاري تحضير تقرير الأداة...');
-      generateReport().catch(e => console.error('report bg:', e.message));
+      await generateReport();
       return;
     }
     if (sym === 'HELP') {
