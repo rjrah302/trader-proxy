@@ -622,6 +622,13 @@ async function fetchPrices() {
   state.dataCheck.prices.total = ALL_STOCKS.length;
   state._priceError = null;
 
+  // ── تنظيف cache القديم إذا تغير عدد الأسهم
+  try {
+    const cachedKeys = Object.keys(state.prices);
+    const currentIds = new Set(ALL_STOCKS.map(s => s.id));
+    cachedKeys.forEach(k => { if (!currentIds.has(k)) delete state.prices[k]; });
+  } catch(e) {}
+
   const symbols = ALL_STOCKS.map(s=>s.id);
   const BATCH   = 50;
   let proxyOk   = false;
@@ -676,7 +683,7 @@ async function fetchPrices() {
       data.forEach(q => { if(storeProxy(q)) { proxyOk = true; got++; } });
       console.log('[Proxy] batch '+(i/BATCH+1)+': '+got+'/'+data.length);
       if(proxyOk) {
-        state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.isReal).length;
+        state.dataCheck.prices.real = ALL_STOCKS.filter(s => state.prices[s.id]?.isReal).length;
         render();
       }
     } catch(e) { proxyErrors.push(e.message||'network'); console.warn('[Proxy] err:', e.message); }
@@ -710,7 +717,7 @@ async function fetchPrices() {
       data.forEach(q => { if(storeFMP(q)) { fmpOk = true; got++; } });
       console.log('[FMP] batch '+(i/BATCH+1)+': '+got+'/'+data.length);
       if(fmpOk) {
-        state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.isReal).length;
+        state.dataCheck.prices.real = ALL_STOCKS.filter(s => state.prices[s.id]?.isReal).length;
         render();
       }
     } catch(e) { fmpErrors.push(e.message||'network'); console.warn('[FMP] err:', e.message); }
@@ -748,7 +755,7 @@ async function fetchPrices() {
     } catch(e) {}
   }
 
-  state.dataCheck.prices.real = Object.values(state.prices).filter(p=>p.price>0 && p.isReal).length;
+  state.dataCheck.prices.real = ALL_STOCKS.filter(s => state.prices[s.id]?.price > 0 && state.prices[s.id]?.isReal).length;
   state.loadingPrices = false;
   console.log('[Prices] النتيجة: '+state.dataCheck.prices.real+'/'+state.dataCheck.prices.total+' | proxy:'+proxyOk+' fmp:'+fmpOk);
 }
