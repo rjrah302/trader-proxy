@@ -708,6 +708,65 @@ async function handleCallback(callbackId, data, cid) {
       return;
     }
   }
+
+  // ── القائمة الرئيسية
+  if (action === 'menu') {
+    if (sym === 'ANALYZE') {
+      sess[cid] = { step: 'waiting_sym' };
+      await tgSend('📊 اكتب رمز السهم:\nمثال: <code>NVDA</code>');
+      return;
+    }
+    if (sym === 'PORTFOLIO') {
+      const pd   = await fbGet('portfolio');
+      const pp   = (pd.trades || []).filter(t => !t.closed);
+      if (!pp.length) { await tgSend('📂 محفظتك فارغة'); return; }
+      const pst  = await getMultipleStocks(pp.map(t => t.symbol));
+      let pm = '💼 <b>محفظتك الآن:</b>\n──────────────\n';
+      let ptotal = 0;
+      for (const t of pp) {
+        const pc  = pst[t.symbol]?.quote?.price || t.entry;
+        const pp2 = +((pc - t.entry) / t.entry * 100).toFixed(2);
+        ptotal += pp2;
+        pm += `${pp2 >= 0 ? '✅' : '❌'} <b>${t.symbol}</b> $${t.entry} → $${pc?.toFixed(2)} (${pp2 >= 0 ? '+' : ''}${pp2}%)\n`;
+      }
+      pm += `──────────────\nمتوسط P&L: ${+(ptotal / pp.length).toFixed(2)}%`;
+      await tgSend(pm);
+      return;
+    }
+    if (sym === 'WATCHLIST') {
+      const wd  = await fbGet('watchlist');
+      const wl  = wd.symbols || [];
+      if (!wl.length) { await tgSend('👁 قائمة المراقبة فارغة'); return; }
+      const wst = await getMultipleStocks(wl);
+      let wm = '👁 <b>قائمة المراقبة:</b>\n──────────────\n';
+      for (const ws of wl) {
+        const wq = wst[ws]?.quote;
+        if (wq) {
+          const wc = +(wq.changePercentage || 0).toFixed(2);
+          wm += `• <b>${ws}</b> $${wq.price?.toFixed(2)} ${wc >= 0 ? '▲' : '▼'} ${wc >= 0 ? '+' : ''}${wc}%\n`;
+        } else { wm += `• <b>${ws}</b>\n`; }
+      }
+      await tgSend(wm);
+      return;
+    }
+    if (sym === 'REPORT') {
+      await tgSend('⏳ جاري تحضير تقرير الأداة...');
+      try { await fetch('https://trader-proxy-36nj.vercel.app/api/report'); } catch(e) {}
+      return;
+    }
+    if (sym === 'HELP') {
+      await tgSend(
+        '❓ <b>المساعدة</b>\n──────────────\n' +
+        'تحليل سهم: اكتب رمزه مثل <code>NVDA</code>\n' +
+        'محفظتي: اكتب <code>محفظتي</code>\n' +
+        'مراقبتي: اكتب <code>مراقبتي</code>\n' +
+        'تقرير: اكتب <code>تقرير</code>\n' +
+        'إغلاق: <code>خرجت AAPL</code>\n──────────────\n' +
+        'اكتب <code>1</code> للقائمة'
+      );
+      return;
+    }
+  }
 }
 
 async function handleMessage(text, cid) {
@@ -715,18 +774,17 @@ async function handleMessage(text, cid) {
   const low = text.toLowerCase().trim();
 
   // ── /start أو تحية
-  if (text === '/start' || text === 'مرحبا' || text === 'هلا' || text === '/help') {
+  if (text === '/start' || text === 'مرحبا' || text === 'هلا' || text === '/help' || text === '1') {
     sess[cid] = {};
-    await tgSend(
-      `🦅 <b>RamiMarketX — مرحباً رامي!</b>\n` +
-      `──────────────\n` +
-      `📊 تحليل سهم: <code>NVDA</code>\n` +
-      `💼 محفظتك: <code>محفظتي</code>\n` +
-      `👁 المراقبة: <code>مراقبتي</code>\n` +
-      `📈 أداء الأداة: <code>تقرير</code>\n` +
-      `🚪 خروج من سهم: <code>خرجت AAPL</code>\n` +
-      `──────────────\n` +
-      `البوت يراقب محفظتك ومراقبتك تلقائياً كل 10 دقائق 👀`
+    await tgSendButtons(
+      `🦅 <b>RamiMarketX — مرحباً رامي!</b>\nاختر من القائمة:`,
+      [
+        [{ text: '📊 تحليل سهم',     callback_data: 'menu_analyze'   }],
+        [{ text: '💼 محفظتي',         callback_data: 'menu_portfolio' }],
+        [{ text: '👁 مراقبتي',        callback_data: 'menu_watchlist' }],
+        [{ text: '📈 تقرير الأداة',   callback_data: 'menu_report'    }],
+        [{ text: '❓ مساعدة',          callback_data: 'menu_help'      }],
+      ]
     );
     return;
   }
