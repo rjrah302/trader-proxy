@@ -116,12 +116,13 @@ async function getStock(sym) {
     ]);
     const quote   = Array.isArray(q) ? q[0] : null;
     const history = Array.isArray(h) ? h : [];
-    // نفس منطق الأداة — نفلتر صفوف كاملة OHLC فقط
-    const valid   = history.filter(d => (+d.adjClose||+d.close) && +d.high && +d.low && +d.open);
+    // نفلتر صفوف تحتوي على close وhigh وlow على الأقل
+    const valid   = history.filter(d => (+d.adjClose||+d.close) && +d.high && +d.low);
     const closes  = valid.map(d => +(d.adjClose||d.close)).reverse();
     const highs   = valid.map(d => +d.high).reverse();
     const lows    = valid.map(d => +d.low).reverse();
-    const opens   = valid.map(d => +d.open).reverse();
+    // open اختياري — إذا مفقود نستخدم close السابق
+    const opens   = valid.map((d, i) => +d.open || +(valid[i-1]?.adjClose||valid[i-1]?.close) || +(d.adjClose||d.close)).reverse();
     const dates   = valid.map(d => d.date).reverse();
     return { quote, closes, highs, lows, opens, dates };
   } catch (e) { return null; }
@@ -1128,14 +1129,17 @@ async function handleMessage(text, cid) {
     let m = `🎯 <b>صائد الارتداد — ${results.length} فرصة</b>\n──────────────\n`;
     for (const r of results.slice(0, 5)) {
       const chgIcon = r.a.change >= 0 ? '▲' : '▼';
-      m += `\n<b>${r.sym}</b> ${r.name}\n`;
-      m += `$${r.a.price} ${chgIcon} ${r.a.change}% | Score: ${r.score}\n`;
-      m += `RSI: ${r.a.rsi} | Stoch: ${r.a.stochRsi || '—'}\n`;
-      m += `🛑 $${r.st.stopLoss} | 🎯 $${r.st.target} | R/R: ${r.st.rr}x\n`;
-      m += `MACD: ${r.a.macdHist > 0 ? '✅' : r.a.macdDir === 'contracting' ? '⚠️↗' : '❌'}\n`;
+      const macdIcon = r.a.macdHist > 0 ? '✅ موجب' : r.a.macdDir === 'contracting' ? '⚠️ يتقلص' : r.a.macdDir === 'crossing' ? '⚡ عبر الصفر' : '❌ هابط';
+      m += `\n<b>${r.sym}</b> — ${r.name}\n`;
+      m += `💰 $${r.a.price} ${chgIcon} ${r.a.change >= 0 ? '+' : ''}${r.a.change}% | درجة: ${r.score}/100\n`;
+      m += `📊 RSI: ${r.a.rsi} | ستوكاستيك: ${r.a.stochRsi || '—'}\n`;
+      m += `📉 MACD: ${macdIcon}\n`;
+      m += `🛑 وقف: $${r.st.stopLoss} (-${r.st.lossPct}%)\n`;
+      m += `🎯 هدف: $${r.st.target} (+${r.st.profitPct}%)\n`;
+      m += `📐 مخاطرة/مكافأة: ${r.st.rr}x\n`;
       m += `──────────────\n`;
     }
-    m += `\nاكتب رمز السهم للتحليل الكامل`;
+    m += `\n✏️ اكتب رمز السهم للتحليل الكامل`;
     await tgSend(m);
     return;
   }
@@ -1449,12 +1453,19 @@ async function handleMessage(text, cid) {
   if (sym.length >= 1 && sym.length <= 5) {
     await tgSend(`⏳ جاري تحليل <b>${sym}</b>...`);
     const d = await getStock(sym);
-    if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات. تحقق من الرمز`); return; }
+    if (!d?.quote) { await tgSend(`⚠️ <b>${sym}</b> — لم أجد بيانات\n\nتحقق من الرمز أو جرب سهماً آخر\nمثال: <code>NVDA</code> أو <code>AAPL</code>`); return; }
 
     const q    = d.quote;
     const name = q.name || sym;
     const a    = analyzeStock(sym, q, d.closes, null, d.highs, d.lows, d.opens);
-    if (!a) { await tgSend(`⚠️ ${sym} — بيانات غير كافية`); return; }
+    if (!a) {
+      await tgSend(
+        `⚠️ <b>${sym}</b> — بيانات غير كافية للتحليل\n` +
+        `السعر: $${q.price?.toFixed(2)}\n` +
+        `التاريخ المتاح: ${d.closes.length} يوم (نحتاج 35+ يوم)`
+      );
+      return;
+    }
 
     sess[cid] = { step: 'ask_bought', sym, price: q.price, analysis: a };
 
