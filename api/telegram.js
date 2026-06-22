@@ -313,7 +313,11 @@ function buildAnalysisMsg(sym, name, a, levels) {
   const stopLoss = a.support ? +(a.support * 0.985).toFixed(2) : null;
   const target   = a.resistance || +(a.price * 1.08).toFixed(2);
   const atr      = a.atrPct;
-  const days     = atr ? Math.max(1, Math.ceil(((target - a.price) / a.price * 100) / atr)) : 3;
+  // ✅ تعديل: مدة تأخذ MACD والأسبوعي
+  const momentum = a.macdHist>0 && a.macdDir==='expanding' ? 1.3 :
+                   a.macdHist>0 ? 1.0 : 0.7;
+  const trend    = a.weekly==='bullish' ? 1.2 : 0.8;
+  const days     = atr ? Math.max(1, Math.ceil(((target - a.price) / a.price * 100) / (atr * momentum * trend))) : 3;
 
   let m = `📊 <b>${name || sym} (${sym})</b>\n`;
   m    += `💰 <b>$${a.price}</b> ${a.change >= 0 ? '📈' : '📉'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
