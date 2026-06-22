@@ -1278,6 +1278,11 @@ function calcSignal(stock) {
   const isCooldown = (state.cooldownStocks||[]).includes(stock.id);
   if(isCooldown) sell+=4;
 
+  // ✅ حجب: RSI مرتفع + قريب من المقاومة = خطر انعكاس
+  if(rsi!=null && rsi > 70 && nearResistance) { sell+=4; }
+  // ✅ تحذير: RSI مرتفع وحده
+  else if(rsi!=null && rsi > 72) { sell+=2; }
+
   // ══ عقوبات
   if(earn<=5)       { sell+=3; }
   else if(earn<=10) { sell+=1; }
@@ -1350,16 +1355,19 @@ function calcSignal(stock) {
     price*0.75
   );
 
-  // ✅ تعديل: الهدف الأقرب من (المقاومة أو ATR×3.5) — لزيادة احتمال الوصول
-  const minTarget    = price * 1.03;                             // حد أدنى +3%
-  const atrTarget    = price * (1 + Math.max(atrStop*2, 3)/100); // ATR-based هدف
-  const atrRealist   = price + (atrPct ? price*atrPct/100*3.5 : price*0.08); // ATR×3.5
+  // ✅ الهدف: إذا السعر قريب من المقاومة — الهدف بعد المقاومة مو قبلها
+  const minTarget    = price * 1.03;
+  const atrTarget    = price * (1 + Math.max(atrStop*2, 3)/100);
+  const atrRealist   = price + (atrPct ? price*atrPct/100*3.5 : price*0.08);
   const resValid     = resistance && resistance > price*1.02 && resistance > minTarget;
   const resTarget    = resValid ? resistance : null;
-  // الأقرب من المقاومة أو ATR×3.5 — يجعل الهدف واقعياً
-  const target       = resTarget
-    ? Math.min(resTarget, atrRealist > minTarget ? atrRealist : resTarget)
-    : Math.max(atrTarget, minTarget);
+  // إذا السعر قريب من المقاومة (98%+) → الهدف بعد المقاومة مباشرة
+  const isNearRes    = resistance && price >= resistance*0.98;
+  const target       = isNearRes
+    ? resistance * 1.05   // هدف 5% فوق المقاومة (بعد كسرها)
+    : resTarget
+      ? Math.min(resTarget, atrRealist > minTarget ? atrRealist : resTarget)
+      : Math.max(atrTarget, minTarget);
   const profitPct    = (target-price)/price*100;
 
   // ══ R/R النهائي — يُحسب من الهدف الصحيح والوقف
@@ -1396,7 +1404,12 @@ function calcSignal(stock) {
 
   let entryTiming, entryColor, entryNote;
 
-  if(nearSupport) {
+  if(nearResistance) {
+    // ✅ قريب من المقاومة — لا تدخل
+    entryTiming = 'انتظر';
+    entryColor  = C.yellow;
+    entryNote   = 'السعر قريب من المقاومة — انتظر كسرها أو تراجع';
+  } else if(nearSupport) {
     // السعر قريب من الدعم (أفضل توقيت)
     entryTiming = 'ادخل الآن';
     entryColor  = C.green;
