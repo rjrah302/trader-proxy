@@ -277,6 +277,11 @@ function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, low
   if (green >= 4) { buy++;   signals.push(green+' شموع خضراء من 5'); }
   else if (green <= 1) { sell++; risks.push('شموع حمراء متتالية'); }
 
+  // ✅ حجب: RSI مرتفع + قريب من المقاومة
+  const nearRes = levels.resistance && price >= levels.resistance * 0.98;
+  if (rsi !== null && rsi > 70 && nearRes) { sell += 4; risks.push('RSI مرتفع + قريب من المقاومة ⛔'); }
+  else if (rsi !== null && rsi > 72)       { sell += 2; risks.push('RSI مرتفع جداً ⚠️'); }
+
   const score   = buy - sell;
   let verdict, vIcon;
   if      (score >= 3) { verdict = 'إشارة شراء قوية';        vIcon = '✅'; }
@@ -336,7 +341,11 @@ function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, low
 // رسالة تحليل سهم كامل (عند الطلب)
 function buildAnalysisMsg(sym, name, a, levels) {
   const stopLoss = a.support ? +(a.support * 0.985).toFixed(2) : null;
-  const target   = a.resistance || +(a.price * 1.08).toFixed(2);
+  // ✅ إذا قريب من المقاومة → الهدف 5% فوقها (بعد كسرها)
+  const isNearRes = a.resistance && a.price >= a.resistance * 0.98;
+  const target    = isNearRes
+    ? +(a.resistance * 1.05).toFixed(2)
+    : a.resistance || +(a.price * 1.08).toFixed(2);
   const atr      = a.atrPct;
   // ✅ تعديل: مدة تأخذ MACD والأسبوعي
   const momentum = a.macdHist>0 && a.macdDir==='expanding' ? 1.3 :
@@ -363,6 +372,7 @@ function buildAnalysisMsg(sym, name, a, levels) {
   m += `──────────────\n`;
   if (a.support)    m += `🟢 دعم: <b>$${a.support}</b>\n`;
   if (a.resistance) m += `🔴 مقاومة: <b>$${a.resistance}</b>\n`;
+  if (isNearRes)    m += `⚠️ السعر قريب من المقاومة — انتظر كسرها\n`;
   if (stopLoss)     m += `🛑 وقف مقترح: <b>$${stopLoss}</b>\n`;
   m += `⏱️ مدة الاحتفاظ: <b>${days <= 1 ? '🔥 يومي' : days <= 3 ? `⚡ ${days} أيام` : `📅 ${days} أيام`}</b>\n`;
   m += `──────────────\n`;
