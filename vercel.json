@@ -1,8 +1,8 @@
 {
   "functions": {
-    "api/telegram.js": { "maxDuration": 30 },
+    "api/telegram.js": { "maxDuration": 60 },
     "api/monitor.js":  { "maxDuration": 30 },
-    "api/report.js":   { "maxDuration": 30 },
+    "api/report.js":   { "maxDuration": 60 },
     "api/stocks.js":   { "maxDuration": 15 }
   },
   "crons": [
