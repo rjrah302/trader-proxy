@@ -415,6 +415,123 @@ function buildPortfolioUpdateMsg(sym, a, trade) {
   return m;
 }
 
+
+// ================================================================
+// ═══════════════════ REPORT GENERATOR ═══════════════════════════
+// ================================================================
+async function generateReport() {
+  try {
+    let history = await fbGetHistory();
+    if (!history.length) {
+      await tgSend('📊 لا يوجد سجل توصيات بعد\nافتح الأداة في يوم تداول وانتظر توليد التوصيات');
+      return;
+    }
+
+    const recAll  = history.filter(h => (h.type || 'rec') === 'rec');
+    const specAll = history.filter(h => h.type === 'spec');
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recWeek    = recAll.filter(h  => new Date(h.recDate) >= oneWeekAgo);
+    const specWeek   = specAll.filter(h => new Date(h.recDate) >= oneWeekAgo);
+
+    function calcStats(recs) {
+      const closed  = recs.filter(h => h.result !== 'pending');
+      const wins    = closed.filter(h => h.result === 'win');
+      const losses  = closed.filter(h => h.result === 'loss');
+      const winRate = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
+      const avgWin  = wins.length   ? +(wins.reduce((s, h) => s + (h.pnlPct || 0), 0) / wins.length).toFixed(2)   : 0;
+      const avgLoss = losses.length ? +(losses.reduce((s, h) => s + (h.pnlPct || 0), 0) / losses.length).toFixed(2) : 0;
+      const exp     = closed.length ? +((winRate / 100 * avgWin) + ((1 - winRate / 100) * avgLoss)).toFixed(2) : 0;
+      const best    = [...wins].sort((a, b) => (b.pnlPct || 0) - (a.pnlPct || 0))[0];
+      const worst   = [...losses].sort((a, b) => (a.pnlPct || 0) - (b.pnlPct || 0))[0];
+      const openR   = closed.filter(h => h.session === 'افتتاح');
+      const midR    = closed.filter(h => h.session === 'منتصف');
+      const openWR  = openR.length ? Math.round(openR.filter(h => h.result === 'win').length / openR.length * 100) : null;
+      const midWR   = midR.length  ? Math.round(midR.filter(h => h.result === 'win').length  / midR.length  * 100) : null;
+      const withRR  = recs.filter(h => h.riskReward);
+      const avgRR   = withRR.length ? +(withRR.reduce((s, h) => s + h.riskReward, 0) / withRR.length).toFixed(2) : null;
+      return {
+        total: recs.length, wins: wins.length, losses: losses.length,
+        pending: recs.filter(h => h.result === 'pending').length,
+        winRate, avgWin, avgLoss, exp, best, worst, avgRR,
+        openWR, midWR, openCount: openR.length, midCount: midR.length,
+      };
+    }
+
+    function getVerdict(exp, winRate, isSpec = false) {
+      if (isSpec) {
+        if (exp >= 3 && winRate >= 55) return '✅ المجازفة مربحة جداً — استمر';
+        if (exp >= 1 && winRate >= 45) return '⚠️ المجازفة متعادلة — راجع الشروط';
+        return '❌ المجازفة خاسرة — شدد الشروط';
+      }
+      if (exp >= 2 && winRate >= 60) return '✅ الأداة ممتازة — استمر';
+      if (exp >= 1 && winRate >= 50) return '✅ الأداة مربحة — جيد';
+      if (exp >= 0 && winRate >= 45) return '⚠️ الأداة متعادلة — راجع المعادلات';
+      if (winRate >= 40)             return '⚠️ أداء ضعيف — خفف المخاطرة';
+      return '❌ الأداة خاسرة — أوقف وراجع الكود';
+    }
+
+    const rw = calcStats(recWeek);
+    const ra = calcStats(recAll);
+    const sw = calcStats(specWeek);
+    const sa = calcStats(specAll);
+
+    const dateStr = new Date().toLocaleDateString('ar-SA', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    // رسالة 1 — التوصيات
+    let msg1 = `📊 <b>التوصيات</b>\n📅 ${dateStr}\n━━━━━━━━━━━━━━━━\n\n`;
+    msg1 += `🗓 <b>هذا الأسبوع (${rw.total} توصية)</b>\n──────────────\n`;
+    if (!rw.wins && !rw.losses) {
+      msg1 += `⏳ لا توجد نتائج مغلقة بعد\n`;
+    } else {
+      msg1 += `✅ ${rw.wins} ناجحة  ❌ ${rw.losses} خاسرة  ⏳ ${rw.pending} معلقة\n`;
+      msg1 += `🎯 نسبة النجاح: <b>${rw.winRate}%</b>\n`;
+      msg1 += `💰 متوسط الربح: <b>+${rw.avgWin}%</b>\n`;
+      msg1 += `📉 متوسط الخسارة: <b>${rw.avgLoss}%</b>\n`;
+      msg1 += `🧮 التوقع الرياضي: <b>${rw.exp >= 0 ? '+' : ''}${rw.exp}%</b>\n`;
+      if (rw.openWR !== null) msg1 += `──────────────\n🌅 الافتتاح: ${rw.openWR}% (${rw.openCount})\n`;
+      if (rw.midWR  !== null) msg1 += `🌇 المنتصف: ${rw.midWR}% (${rw.midCount})\n`;
+      if (rw.best)  msg1 += `──────────────\n🏆 أفضل: <b>${rw.best.id}</b> +${rw.best.pnlPct}%\n`;
+      if (rw.worst) msg1 += `💀 أسوأ: <b>${rw.worst.id}</b> ${rw.worst.pnlPct}%\n`;
+    }
+    msg1 += `\n${getVerdict(rw.exp, rw.winRate)}\n\n━━━━━━━━━━━━━━━━\n\n`;
+    msg1 += `📈 <b>الكلي (${ra.total} توصية)</b>\n──────────────\n`;
+    msg1 += `✅ ${ra.wins}  ❌ ${ra.losses}  ⏳ ${ra.pending}\n`;
+    msg1 += `🎯 نسبة النجاح: <b>${ra.winRate}%</b>\n`;
+    msg1 += `🧮 التوقع الرياضي: <b>${ra.exp >= 0 ? '+' : ''}${ra.exp}%</b>\n`;
+    msg1 += `\n${getVerdict(ra.exp, ra.winRate)}`;
+    await tgSend(msg1);
+
+    // رسالة 2 — المجازفة
+    if (sa.total > 0) {
+      let msg2 = `🎲 <b>المجازفة</b>\n━━━━━━━━━━━━━━━━\n\n`;
+      msg2 += `🗓 <b>هذا الأسبوع (${sw.total} فرصة)</b>\n──────────────\n`;
+      if (!sw.wins && !sw.losses) {
+        msg2 += `⏳ لا توجد نتائج بعد\n`;
+      } else {
+        msg2 += `✅ ${sw.wins} ناجحة  ❌ ${sw.losses} خاسرة  ⏳ ${sw.pending} معلقة\n`;
+        msg2 += `🎯 نسبة النجاح: <b>${sw.winRate}%</b>\n`;
+        msg2 += `💰 متوسط الربح: <b>+${sw.avgWin}%</b>\n`;
+        msg2 += `🧮 التوقع الرياضي: <b>${sw.exp >= 0 ? '+' : ''}${sw.exp}%</b>\n`;
+        if (sw.avgRR) msg2 += `📐 متوسط R/R: <b>1:${sw.avgRR}</b>\n`;
+        if (sw.best)  msg2 += `──────────────\n🏆 أفضل: <b>${sw.best.id}</b> +${sw.best.pnlPct}%\n`;
+      }
+      msg2 += `\n${getVerdict(sw.exp, sw.winRate, true)}\n\n━━━━━━━━━━━━━━━━\n\n`;
+      msg2 += `📈 <b>الكلي (${sa.total} فرصة)</b>\n──────────────\n`;
+      msg2 += `✅ ${sa.wins}  ❌ ${sa.losses}  ⏳ ${sa.pending}\n`;
+      msg2 += `🎯 نسبة النجاح: <b>${sa.winRate}%</b>\n`;
+      if (sa.avgRR) msg2 += `📐 متوسط R/R: <b>1:${sa.avgRR}</b>\n`;
+      msg2 += `\n${getVerdict(sa.exp, sa.winRate, true)}`;
+      await tgSend(msg2);
+    }
+
+  } catch(e) {
+    console.error('generateReport:', e.message);
+    await tgSend(`⚠️ خطأ في التقرير: ${e.message}`);
+  }
+}
+
 // ================================================================
 // ═══════════════════ MONITOR (كل 10 دقائق) ══════════════════════
 // ================================================================
@@ -755,7 +872,7 @@ async function handleCallback(callbackId, data, cid) {
     }
     if (sym === 'REPORT') {
       await tgSend('⏳ جاري تحضير تقرير الأداة...');
-      try { await fetch('https://trader-proxy-36nj.vercel.app/api/report'); } catch(e) {}
+      await generateReport();
       return;
     }
     if (sym === 'HELP') {
