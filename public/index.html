@@ -2210,6 +2210,15 @@ async function calcHunterNight() {
 // ── الدورة الكاملة: كل الأسهم (افتتاح + منتصف)
 async function calcHunterFull() {
   if (!state.indicatorsDone) return;
+
+  // إذا السوق هابط — نستخدم الوضع الليلي بدل intraday
+  // لأن الصائد في السوق الهابط يبحث عن مقاومين لا ارتدادات عشوائية
+  if (state.marketTrend === 'bearish') {
+    console.log('[Hunter] السوق هابط — وضع ليلي');
+    await calcHunterNight();
+    return;
+  }
+
   console.log('[Hunter] دورة كاملة...');
   const BATCH = 5;
   const results = [];
@@ -4549,7 +4558,11 @@ function renderHunterTab() {
     el('div', {style:{marginBottom:'12px'}}, [
       el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}, [
         el('div', {style:{fontSize:'13px', fontWeight:'700', color:'#ff6b35'}}, [
-          isNightMode ? '🌙 صائد الليل — '+hunters.length+' فرصة' : '🎯 صائد الارتداد — '+hunters.length+' فرصة'
+          state.marketTrend==='bearish'
+            ? '🎯 صائد المقاومين — '+hunters.length+' فرصة'
+            : isNightMode
+              ? '🌙 صائد الليل — '+hunters.length+' فرصة'
+              : '🎯 صائد الارتداد — '+hunters.length+' فرصة'
         ]),
         el('div', {style:{fontSize:'10px', fontWeight:'700', color:trendColor}}, [trendLabel]),
       ]),
@@ -4563,6 +4576,14 @@ function renderHunterTab() {
         el('span', {style:{color:state.spyChange>=0?C.green:C.pink, fontWeight:'700'}}, ['SPY '+(state.spyChange>=0?'+':'')+fmt(state.spyChange)+'%']),
         el('span', {style:{color:state.qqqChange>=0?C.green:C.pink, fontWeight:'700'}}, ['QQQ '+(state.qqqChange>=0?'+':'')+fmt(state.qqqChange)+'%']),
       ]),
+
+      // تنبيه السوق الهابط
+      state.marketTrend === 'bearish' && el('div', {style:{
+        fontSize:'10px', color:C.pink,
+        background:'rgba(255,45,122,.06)', borderRadius:'6px',
+        padding:'5px 8px', border:'1px solid rgba(255,45,122,.2)',
+        marginBottom:'6px',
+      }}, ['🔻 السوق هابط — الصائد يبحث عن أسهم تقاوم الهبوط فقط']),
 
       // تحذير الوضع الليلي
       isNightMode && el('div', {style:{
