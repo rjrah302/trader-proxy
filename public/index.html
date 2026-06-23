@@ -490,7 +490,7 @@ const state = {
   // التوصيات
   recs:           null,
   speculativeRecs:null,
-  hunterRecs:     null,   // صائد الارتداد
+  hunterRecs:     [],    // صائد الارتداد
   recsTime:       null,
   sessionOneIds:  (() => {
     try {
@@ -1660,7 +1660,7 @@ function calcSpeculative() {
 
       // ══ شرط 1: السعر — متوسط إلى صغير ($3 - $80)
       // المجازفة الحقيقية = سهم رخيص يتضاعف، مش سهم غالٍ
-      if(price > 80 || price < 3) return null;
+      if(price > 100 || price < 3) return null;
 
       // ══ شرط 2: تقلب كافٍ (beta أو ATR)
       // ATR% يعكس التقلب الفعلي أفضل من beta
@@ -2283,6 +2283,11 @@ async function loadData(full=false) {
 
   // تحميل الأسعار + اتجاه السوق دائماً
   await Promise.all([fetchPrices(), fetchMarketTrend()]);
+
+  // إذا السوق هابط — شغّل الصائد الليلي فوراً بدون انتظار المؤشرات
+  if (state.marketTrend === 'bearish' && state.indicatorsDone) {
+    await calcHunterNight();
+  }
   render();
 
   // إذا التوصيات مقفلة (محفوظة من اليوم) — فقط حدّث الأسعار بدون إعادة حساب
@@ -4604,8 +4609,8 @@ function renderHunterTab() {
     // ── القائمة
     hunters.length === 0
       ? el('div', {style:{textAlign:'center', padding:'40px 0', color:C.text2, fontSize:'12px'}}, [
-          state.hunterRecs === null
-            ? '⏳ جاري البحث عن فرص الارتداد...'
+          !state.indicatorsDone
+            ? '⏳ جاري تحميل المؤشرات...'
             : 'لا توجد فرص ارتداد تستوفي الشروط الآن'
         ])
       : el('div', {}, hunters.map((h, i) => renderHunterCard(h, i))),
