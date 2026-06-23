@@ -1559,7 +1559,14 @@ function calcRecs() {
     // شرط 9: السعر فوق MA50 على الأقل
     .filter(s => s.ma50==null || s.price >= s.ma50*0.97)
     // شرط 10: ✅ بيانات كافية — 100 يوم على الأقل
-    .filter(s => (state.indicators[s.id]?.dataLen || state.indicators[s.id]?.closes?.length || 0) >= 100);;
+    .filter(s => (state.indicators[s.id]?.dataLen || state.indicators[s.id]?.closes?.length || 0) >= 100)
+    // شرط 11: سيولة كافية — 500 ألف سهم يومياً على الأقل
+    .filter(s => {
+      const p   = state.prices[s.id];
+      const pro = state.profiles[s.id];
+      const avg = p?.avgVolume || pro?.avgVolume || 0;
+      return avg === 0 || avg >= 500000; // لو ما في بيانات حجم → يمر
+    });
 
   // ترتيب: قوة × 0.4 + ثقة × 0.3 + جودة × 0.2 + توقيت × 0.1
   // FIX: conviction = 10 بدل 20 — لا يطغى على قوة السهم الحقيقية
@@ -1682,9 +1689,12 @@ function calcSpeculative() {
       const earnDays    = state.earnings[s.id]??999;
       const dataQuality = ind.dataLen || ind.closes?.length || 0; // ✅ العدد الحقيقي
 
-      // ══ شرط 1: السعر — متوسط إلى صغير ($3 - $80)
-      // المجازفة الحقيقية = سهم رخيص يتضاعف، مش سهم غالٍ
+      // ══ شرط 1: السعر — متوسط إلى صغير ($3 - $100)
       if(price > 100 || price < 3) return null;
+
+      // ══ شرط 1.5: سيولة كافية — مليون سهم يومياً على الأقل
+      const avgVolSpec = p.avgVolume || pro?.avgVolume || 0;
+      if(avgVolSpec > 0 && avgVolSpec < 1000000) return null;
 
       // ══ شرط 2: تقلب كافٍ (beta أو ATR)
       // ATR% يعكس التقلب الفعلي أفضل من beta
