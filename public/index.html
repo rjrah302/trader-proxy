@@ -395,15 +395,12 @@ const STOCKS = [
   {id:"RKLB",  name:"Rocket Lab",    sector:"فضاء",            cat:"future", beta:2.2},
   {id:"IONQ",  name:"IonQ",          sector:"كمبيوتر كمي",     cat:"future", beta:2.5},
   {id:"JOBY",  name:"Joby Aviation", sector:"طيران كهربائي",   cat:"future", beta:2.3},
-  {id:"LUNR",  name:"Intuitive M.",  sector:"فضاء",            cat:"future", beta:2.8},
   {id:"RIVN",  name:"Rivian",        sector:"EV",              cat:"future", beta:2.4},
   {id:"QBTS",  name:"D-Wave",        sector:"كمبيوتر كمي",     cat:"future", beta:2.6},
   {id:"ARRY",  name:"Array Tech",    sector:"طاقة شمسية",      cat:"future", beta:1.9},
   {id:"HOOD",  name:"Robinhood",     sector:"فينتك",           cat:"small",  beta:1.8},
   {id:"SOFI",  name:"SoFi",          sector:"فينتك",           cat:"small",  beta:1.7},
   {id:"SNAP",  name:"Snap",          sector:"تواصل",           cat:"small",  beta:2.1},
-  {id:"NIO",   name:"NIO",           sector:"EV صيني",         cat:"small",  beta:2.0},
-  {id:"PLUG",  name:"Plug Power",    sector:"هيدروجين",        cat:"small",  beta:2.2},
   {id:"AAL",   name:"American Air",  sector:"طيران",           cat:"small",  beta:1.6},
   {id:"LYFT",  name:"Lyft",          sector:"نقل",             cat:"small",  beta:1.9},
   {id:"CELH",  name:"Celsius",       sector:"مشروبات",         cat:"mid",    beta:1.9},
@@ -429,18 +426,14 @@ const STOCKS = [
   {id:"DASH",  name:"DoorDash",      sector:"توصيل",           cat:"mid",    beta:1.7},
   // 🎮 ترفيه
   {id:"RBLX",  name:"Roblox",        sector:"ألعاب/ميتافيرس",  cat:"mid",    beta:1.9},
-  {id:"U",     name:"Unity",         sector:"محركات ألعاب",    cat:"mid",    beta:1.8},
   // 🏠 عقارات رقمية
-  {id:"OPEN",  name:"Opendoor",      sector:"عقارات رقمية",    cat:"small",  beta:2.2},
   {id:"Z",     name:"Zillow",        sector:"عقارات رقمية",    cat:"mid",    beta:1.6},
   // 📡 اتصالات
-  {id:"LUMN",  name:"Lumen Tech",    sector:"شبكات",           cat:"small",  beta:1.7},
   // 🌐 متنوع
   // 🚀 إضافات جديدة — تقلب عالٍ
   {id:"ASTS",  name:"AST SpaceMobile", sector:"فضاء/اتصالات",   cat:"future", beta:3.1},
   {id:"ACHR",  name:"Archer Aviation", sector:"طيران كهربائي",  cat:"future", beta:2.6},
   {id:"RXRX",  name:"Recursion Bio",   sector:"AI دواء",        cat:"future", beta:2.9},
-  {id:"WOLF",  name:"Wolfspeed",       sector:"شرائح SiC",      cat:"future", beta:2.8},
   {id:"COIN",  name:"Coinbase",        sector:"كريبتو",         cat:"future", beta:3.5},
   {id:"MARA",  name:"Marathon Digital",sector:"تعدين بيتكوين",  cat:"future", beta:3.8},
   {id:"CLSK",  name:"CleanSpark",      sector:"تعدين بيتكوين",  cat:"future", beta:3.2},
@@ -454,6 +447,45 @@ const STOCKS = [
   {id:"ANET",  name:"Arista Networks", sector:"شبكات AI",        cat:"large",  beta:1.3},
   {id:"TTD",   name:"The Trade Desk",  sector:"إعلانات AI",      cat:"mid",    beta:1.6},
   {id:"AXON",  name:"Axon Enterprise", sector:"أمن/تقنية",       cat:"mid",    beta:1.5},
+  // 🆕 إضافات جديدة — شرائح AI
+  {id:"MRVL",  name:"Marvell Tech",    sector:"شرائح AI",        cat:"large",  beta:1.7},
+  {id:"MPWR",  name:"Monolithic Power",sector:"شرائح طاقة",      cat:"large",  beta:1.5},
+  {id:"KLAC",  name:"KLA Corp",        sector:"معدات شرائح",     cat:"large",  beta:1.4},
+  // 🆕 أمن سيبراني
+  {id:"OKTA",  name:"Okta",            sector:"أمن/هوية",        cat:"mid",    beta:1.5},
+  {id:"ZS",    name:"Zscaler",         sector:"أمن سيبراني",     cat:"large",  beta:1.6},
+  {id:"FTNT",  name:"Fortinet",        sector:"أمن سيبراني",     cat:"large",  beta:1.2},
+  // 🆕 سحابة وبرمجيات
+  {id:"HUBS",  name:"HubSpot",         sector:"CRM/AI",          cat:"large",  beta:1.4},
+  {id:"GTLB",  name:"GitLab",          sector:"DevOps/AI",       cat:"mid",    beta:1.6},
+  {id:"TEAM",  name:"Atlassian",       sector:"برمجيات",         cat:"large",  beta:1.3},
+  // 🆕 دفاع وفضاء
+  {id:"LMT",   name:"Lockheed Martin", sector:"دفاع/فضاء",       cat:"large",  beta:0.8},
+  {id:"NOC",   name:"Northrop",        sector:"دفاع/فضاء",       cat:"large",  beta:0.7},
+  {id:"RCAT",  name:"Red Cat",         sector:"درونز دفاعية",    cat:"future", beta:1.9},
+  // 🆕 بيوتك وصحة
+  {id:"ALNY",  name:"Alnylam Pharma",  sector:"بيوتك",           cat:"large",  beta:0.9},
+  {id:"ROIV",  name:"Roivant",         sector:"بيوتك",           cat:"mid",    beta:1.7},
+  // 🆕 كريبتو
+  {id:"RIOT",  name:"Riot Platforms",  sector:"تعدين بيتكوين",   cat:"future", beta:3.5},
+  // 🆕 استهلاك وتجزئة
+  {id:"LULU",  name:"Lululemon",       sector:"ملابس رياضية",    cat:"large",  beta:1.3},
+  {id:"AFRM",  name:"Affirm",          sector:"فينتك/BNPL",      cat:"mid",    beta:2.0},
+  // 🆕 طاقة وصناعة
+  {id:"WLDN",  name:"Willdan Group",   sector:"طاقة/بنية تحتية", cat:"small",  beta:1.5},
+  {id:"ACLS",  name:"Axcelis Tech",    sector:"معدات شرائح",     cat:"mid",    beta:1.6},
+  // 🆕 AI وبيانات
+  {id:"BBAI",  name:"BigBear.ai",      sector:"AI دفاعي",        cat:"future", beta:2.3},
+  {id:"KVYO",  name:"Klaviyo",         sector:"AI تسويق",        cat:"mid",    beta:1.6},
+  {id:"DOCS",  name:"Doximity",        sector:"صحة رقمية",       cat:"mid",    beta:1.2},
+  {id:"RH",    name:"RH",              sector:"أثاث فاخر",       cat:"mid",    beta:1.8},
+  {id:"FOUR",  name:"Shift4 Payments", sector:"فينتك/مدفوعات",   cat:"mid",    beta:1.5},
+  {id:"MNDY",  name:"Monday.com",      sector:"برمجيات AI",      cat:"mid",    beta:1.5},
+  {id:"IOT",   name:"Samsara",         sector:"IoT/AI",          cat:"mid",    beta:1.4},
+  {id:"DUOL",  name:"Duolingo",        sector:"تعليم/AI",        cat:"mid",    beta:1.6},
+  {id:"CAVA",  name:"Cava Group",      sector:"مطاعم",           cat:"mid",    beta:1.7},
+  {id:"NTRA",  name:"Natera",          sector:"تشخيص جيني",      cat:"mid",    beta:1.5},
+  {id:"ONON",  name:"On Holdings",     sector:"رياضة/ملابس",     cat:"mid",    beta:1.4},
 ];
 
 // إزالة مكررات
@@ -801,17 +833,20 @@ async function fetchIndicators() {
             const hist = d?.historical || (Array.isArray(d) ? d : []);
             if(hist.length >= 20) {
               const validHist = hist.filter(h => (+h.adjClose||+h.close) && +h.high && +h.low && +h.open);
-              closes  = validHist.map(h=>+(h.adjClose||h.close)).reverse();
-              highs   = validHist.map(h=>+h.high).reverse();
-              lows    = validHist.map(h=>+h.low).reverse();
-              opens   = validHist.map(h=>+h.open).reverse();
-              // ✅ استخراج volumes لحساب avgVolume
-              const vols = hist.map(h=>+(h.volume||0)).filter(v=>v>0).reverse();
-              if(vols.length >= 10 && !state.prices[sym]?.avgVolume) {
-                const avg = Math.round(vols.slice(-20).reduce((a,b)=>a+b,0) / Math.min(vols.length,20));
-                if(avg > 0 && state.prices[sym]) state.prices[sym].avgVolume = avg;
+              // نحفظ فقط إذا البيانات الجديدة أفضل من الموجودة
+              if(validHist.length > closes.length) {
+                closes  = validHist.map(h=>+(h.adjClose||h.close)).reverse();
+                highs   = validHist.map(h=>+h.high).reverse();
+                lows    = validHist.map(h=>+h.low).reverse();
+                opens   = validHist.map(h=>+h.open).reverse();
+                // ✅ استخراج volumes لحساب avgVolume
+                const vols = hist.map(h=>+(h.volume||0)).filter(v=>v>0).reverse();
+                if(vols.length >= 10 && !state.prices[sym]?.avgVolume) {
+                  const avg = Math.round(vols.slice(-20).reduce((a,b)=>a+b,0) / Math.min(vols.length,20));
+                  if(avg > 0 && state.prices[sym]) state.prices[sym].avgVolume = avg;
+                }
               }
-              if(closes.length >= 20) break;
+              if(closes.length >= 200) break; // وصلنا لـ 200 يوم — نكتفي
             }
           } catch(e) { continue; }
         }
