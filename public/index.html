@@ -2206,6 +2206,9 @@ async function calcHunterNight() {
   state.hunterRecs = results;
   console.log('[Hunter] 🌙 ليلية اكتملت:', results.length, 'فرصة');
 }
+
+// ── الدورة الكاملة: كل الأسهم (افتتاح + منتصف)
+async function calcHunterFull() {
   if (!state.indicatorsDone) return;
   console.log('[Hunter] دورة كاملة...');
   const BATCH = 5;
