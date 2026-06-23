@@ -942,9 +942,10 @@ async function fetchIndicators() {
         let atrPct = null;
         if(highs.length >= 15 && closes.length >= 15) {
           const trs = [];
-          const start = highs.length - 14;
+          const start = Math.max(1, highs.length - 14); // نضمن j >= 1 دائماً
           for(let j=start; j<highs.length; j++) {
-            const prev = closes[j-1]; // السعر السابق دائماً موجود لأن j >= start >= 1
+            const prev = closes[j-1];
+            if(!prev) continue; // حماية إضافية
             const tr = Math.max(
               highs[j] - lows[j],
               Math.abs(highs[j] - prev),
@@ -952,8 +953,10 @@ async function fetchIndicators() {
             );
             trs.push(tr);
           }
-          const atr = trs.reduce((a,b)=>a+b,0) / trs.length;
-          atrPct = cur>0 ? (atr/cur)*100 : null;
+          if(trs.length > 0) {
+            const atr = trs.reduce((a,b)=>a+b,0) / trs.length;
+            atrPct = cur>0 ? (atr/cur)*100 : null;
+          }
         }
 
         // ── Stochastic RSI — يحتاج على الأقل 28 يوم (14 للـ RSI + 14 للـ Stoch)
@@ -1039,7 +1042,7 @@ async function fetchIndicators() {
   }
 
   dc.volume.total = ALL_STOCKS.length;
-  dc.volume.real  = Object.values(state.prices).filter(p=>p.avgVolume>0).length;
+  dc.volume.real  = ALL_STOCKS.filter(s => state.prices[s.id]?.avgVolume > 0).length;
   state.indicatorsTime    = new Date().toISOString();
   try { localStorage.setItem('indicators_time', state.indicatorsTime); } catch(e) {}
   console.log('[Indicators] اكتمل: RSI='+dc.rsi.real+'/'+dc.rsi.total+' MACD='+dc.macd.real+' MA='+dc.ma.real);
@@ -1494,14 +1497,18 @@ function calcSignal(stock) {
     // نتحقق من _midDayDone أو من localStorage مباشرة (للحالة بعد إعادة التحميل)
     isConviction: (() => {
       const middayDone = _midDayDone || localStorage.getItem('recs_midday') === 'true';
-      const s1ids      = state.sessionOneIds || [];
-      return middayDone && s1ids.includes(stock.id);
+      if (!middayDone) return false;
+      // نقرأ من state أولاً ثم localStorage مباشرة كـ fallback
+      const s1ids = state.sessionOneIds ||
+        (() => { try { return JSON.parse(localStorage.getItem('s1_recs')||'[]'); } catch(e){ return []; } })();
+      return Array.isArray(s1ids) && s1ids.includes(stock.id);
     })(),
     beta: pro?.beta || stock.beta,
     activeBuy, watchOnly, blockEntry, isCooldown,
     closes: ind.closes || null,
     highs:  ind.highs  || null,
     lows:   ind.lows   || null,
+    opens:  ind.opens  || null,
     candlePatterns,
     relativeStrength: rs,
   };
@@ -1526,10 +1533,27 @@ function calcRecs() {
     .filter(s => s.profitPct >= 2)
     // شرط 5: نسبة مخاطرة/مكافأة 1:1 على الأقل — جديد
     .filter(s => s.riskReward >= 1.0)
-    // شرط 6: لا أرباح قريبة
-    .filter(s => s.earnings > 5)
+    // شرط 6: لا أرباح قريبة — أكثر صرامة للأسهم عالية التقلب
+    .filter(s => {
+      const beta = s.beta || 1;
+      if (beta >= 1.5) return s.earnings > 21; // بيوتك وتقنية — 3 أسابيع
+      if (beta >= 1.2) return s.earnings > 14; // متوسط التقلب — أسبوعان
+      return s.earnings > 5;                   // منخفض التقلب — 5 أيام
+    })
     // شرط 7: لا gap-up مبالغ
     .filter(s => (s.change||0) <= 8)
+    // شرط 7.5: لا سهم ممتد — ارتفع أكثر من 20/30% في 30 يوم الأخيرة
+    .filter(s => {
+      const ind = state.indicators[s.id];
+      const p   = state.prices[s.id];
+      if (!ind?.closes || ind.closes.length < 5 || !p?.price) return true;
+      // نستخدم أقدم سعر في ind.closes (يمثل ~30 يوم) مقارنة بالسعر الحالي
+      const price30dAgo = ind.closes[0]; // أقدم سعر محفوظ
+      const gain30d = price30dAgo > 0 ? (p.price - price30dAgo) / price30dAgo * 100 : 0;
+      // بيتا عالي — حد 20%، عادية — حد 30%
+      const limit = (s.beta || 1) >= 1.5 ? 20 : 30;
+      return gain30d <= limit;
+    })
     // شرط 8: توقيت الدخول مقبول — لا متأخر ولا انتظار
     .filter(s => s.entryTiming === 'ادخل الآن' || s.entryTiming === 'مقبول')
     // شرط 9: السعر فوق MA50 على الأقل
@@ -2054,7 +2078,15 @@ async function calcHunterScore(stock) {
   if (p.avgVolume > 500000) score += 3; // سيولة كافية للتنفيذ
   if (p.avgVolume > 2000000) score += 2; // سيولة ممتازة
 
-  // ══ المحور 5: جودة الصفقة R/R (10 نقاط)
+  // ══ مكافأة خاصة للسوق الهابط — أسهم تقاوم الهبوط
+  if (state.marketTrend === 'bearish') {
+    // السهم أخضر والسوق أحمر = مقاوم قوي
+    if ((p.change || 0) > 0) score += 15;
+    // السهم يهبط أقل من السوق
+    else if ((p.change || 0) > (state.spyChange || -5)) score += 8;
+    // Higher Low في السوق الهابط = إشارة قوية جداً
+    if (checks.higherLow) score += 10;
+  }
   // الوقف: تحت آخر قاع صاعد − 0.2 × ATR
   const atrAbs  = price * atrVal / 100;
   const stopLoss = (support || price * 0.97) - (0.2 * atrAbs);
@@ -2181,8 +2213,9 @@ async function calcHunterNight() {
     if (rr >= 2)        score += 10;
     else if (rr >= 1.5) score += 6;
 
-    // عتبة الليل أخف — 45 بدل 55
-    if (score < 45) continue;
+    // عتبة الليل — أخف في السوق الهابط لأن الشروط أصعب
+    const threshold = state.marketTrend === 'bearish' ? 35 : 45;
+    if (score < threshold) continue;
     if (rr < 1.5)   continue;
 
     results.push({
@@ -2210,15 +2243,6 @@ async function calcHunterNight() {
 // ── الدورة الكاملة: كل الأسهم (افتتاح + منتصف)
 async function calcHunterFull() {
   if (!state.indicatorsDone) return;
-
-  // إذا السوق هابط — نستخدم الوضع الليلي بدل intraday
-  // لأن الصائد في السوق الهابط يبحث عن مقاومين لا ارتدادات عشوائية
-  if (state.marketTrend === 'bearish') {
-    console.log('[Hunter] السوق هابط — وضع ليلي');
-    await calcHunterNight();
-    return;
-  }
-
   console.log('[Hunter] دورة كاملة...');
   const BATCH = 5;
   const results = [];
@@ -5934,8 +5958,8 @@ setInterval(async () => {
   const t = getMarketTimes();
   const m = getNowMins();
 
-  // 7:00م — تحديث المؤشرات وإعادة الحساب مرة ثانية وأخيرة
-  if(m >= t.midDay && m <= t.midDay+5 && !_midDayDone) {
+  // 7:00م — تحديث المؤشرات وإعادة الحساب مرة ثانية وأخيرة (نافذة 30 دقيقة)
+  if(m >= t.midDay && m <= t.midDay+30 && !_midDayDone) {
     _midDayDone      = true;
     _recsLockedToday = false;
 
