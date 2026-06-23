@@ -2116,8 +2116,96 @@ function getHunterCandidates() {
   });
 }
 
-// ── الدورة الكاملة: كل الأسهم (افتتاح + منتصف)
-async function calcHunterFull() {
+// ── وضع الصيد الليلي — بيانات يومية فقط بدون intraday
+async function calcHunterNight() {
+  if (!state.indicatorsDone) return;
+  console.log('[Hunter] 🌙 دورة ليلية...');
+
+  const results = [];
+
+  for (const stock of ALL_STOCKS) {
+    const p   = state.prices[stock.id];
+    const ind = state.indicators[stock.id];
+    if (!p?.price || !ind) continue;
+
+    const price = p.price;
+    const { rsi, stochRsi, bb_lower, support, resistance, macdHist, macdHistDir, atrPct } = ind;
+
+    let score = 0;
+    const checks = {};
+
+    // ══ إنهاك البيع (25 نقطة)
+    const rsiOk = rsi != null && rsi < 35;
+    checks.rsiExhaust = rsiOk;
+    if (rsiOk) score += 10;
+    else if (rsi != null && rsi < 40) score += 5;
+
+    const stochOk = stochRsi != null && stochRsi < 25;
+    checks.stochCross = stochOk;
+    if (stochOk) score += 5;
+
+    const bbOk = bb_lower != null && price <= bb_lower * 1.02;
+    checks.bbReversal = bbOk;
+    if (bbOk) score += 5;
+
+    const atrVal = atrPct || 3;
+    const nearSup = support && Math.abs(price - support) / price * 100 <= atrVal;
+    checks.nearSup = nearSup;
+    if (nearSup) score += 5;
+
+    // ══ MACD يتحسن (20 نقطة)
+    const macdOk = macdHist != null && (
+      (macdHist > 0 && macdHistDir === 'expanding') ||
+      (macdHistDir === 'crossing') ||
+      (macdHist < 0 && macdHistDir === 'contracting')
+    );
+    checks.macdDayOk = macdOk;
+    if (macdHist > 0 && macdHistDir === 'expanding') score += 20;
+    else if (macdHistDir === 'crossing')              score += 16;
+    else if (macdHist < 0 && macdHistDir === 'contracting') score += 10;
+
+    // ══ الاتجاه الأسبوعي (10 نقطة)
+    if (ind.weeklyTrend === 'bullish') score += 10;
+    else if (ind.weeklyTrend === 'bearish') score -= 5;
+
+    // ══ جودة الصفقة R/R (10 نقطة)
+    const atrAbs   = price * atrVal / 100;
+    const stopLoss = (support || price * 0.97) - (0.2 * atrAbs);
+    const lossPct  = (price - stopLoss) / price * 100;
+    const targetPrice = resistance && resistance > price * 1.02
+      ? resistance
+      : price * (1 + atrVal * 2 / 100);
+    const profitPct = (targetPrice - price) / price * 100;
+    const rr = lossPct > 0 ? +(profitPct / lossPct).toFixed(2) : 0;
+
+    if (rr >= 2)        score += 10;
+    else if (rr >= 1.5) score += 6;
+
+    // عتبة الليل أخف — 45 بدل 55
+    if (score < 45) continue;
+    if (rr < 1.5)   continue;
+
+    results.push({
+      id: stock.id, name: stock.name, sector: stock.sector,
+      price, change: p.change || 0,
+      score: Math.min(score, 100), checks,
+      rsi, stochRsi, support, resistance,
+      vwap: null, ema9: null, ema21: null,
+      rvol: 0, rs30: 0, stockReturn30: 0,
+      stopLoss: +stopLoss.toFixed(2),
+      targetPrice: +targetPrice.toFixed(2),
+      profitPct: +profitPct.toFixed(1),
+      lossPct: +lossPct.toFixed(1),
+      rr, atrPct: atrVal,
+      marketTrend: state.marketTrend,
+      isNight: true, // 🌙 علامة التحليل الليلي
+    });
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  state.hunterRecs = results;
+  console.log('[Hunter] 🌙 ليلية اكتملت:', results.length, 'فرصة');
+}
   if (!state.indicatorsDone) return;
   console.log('[Hunter] دورة كاملة...');
   const BATCH = 5;
@@ -2240,26 +2328,24 @@ async function loadData(full=false) {
     ]).catch(e => console.warn('[loadData] secondary fetch error:', e.message));
 
     _indicatorsLoading = false;
-
-    // ── حساب ثانٍ بعد الأخبار — التوصيات فقط لو السوق مفتوح
+    // الصائد — كامل لو مفتوح، ليلي لو مغلق
     if(isMarketOpen()) {
       calcRecs();
       calcSpeculative();
+      await calcHunterFull();
       startHunterLoop();
+    } else {
+      await calcHunterNight();
     }
-    // الصائد يعمل دائماً — يحلل البيانات التاريخية بغض النظر عن السوق
-    await calcHunterFull();
     render();
     console.log('[loadData] اكتمل — توصيات:', state.recs?.length, '| مجازفة:', state.speculativeRecs?.length, '| صائد:', state.hunterRecs?.length);
 
   } else if(neverLoaded && !_indicatorsLoading) {
-    // السوق مغلق لكن نحمّل المؤشرات للعرض + الصائد
     _indicatorsLoading = true;
     render();
     await fetchIndicators();
     _indicatorsLoading = false;
-    // الصائد يعمل حتى لو السوق مغلق
-    await calcHunterFull();
+    await calcHunterNight();
     render();
 
   } else if(state.indicatorsDone) {
@@ -4449,6 +4535,7 @@ function renderHunterTab() {
     ]);
   }
 
+  const isNightMode = !isMarketOpen();
   const hunters = state.hunterRecs || [];
   const trendColor = state.marketTrend==='bearish'?C.pink:state.marketTrend==='bullish'?C.green:C.yellow;
   const trendLabel = state.marketTrend==='bearish'?'السوق هابط 🔻':state.marketTrend==='bullish'?'السوق صاعد ✅':'السوق محايد ⚠️';
@@ -4459,7 +4546,7 @@ function renderHunterTab() {
     el('div', {style:{marginBottom:'12px'}}, [
       el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}, [
         el('div', {style:{fontSize:'13px', fontWeight:'700', color:'#ff6b35'}}, [
-          '🎯 صائد الارتداد — '+hunters.length+' فرصة'
+          isNightMode ? '🌙 صائد الليل — '+hunters.length+' فرصة' : '🎯 صائد الارتداد — '+hunters.length+' فرصة'
         ]),
         el('div', {style:{fontSize:'10px', fontWeight:'700', color:trendColor}}, [trendLabel]),
       ]),
@@ -4473,6 +4560,14 @@ function renderHunterTab() {
         el('span', {style:{color:state.spyChange>=0?C.green:C.pink, fontWeight:'700'}}, ['SPY '+(state.spyChange>=0?'+':'')+fmt(state.spyChange)+'%']),
         el('span', {style:{color:state.qqqChange>=0?C.green:C.pink, fontWeight:'700'}}, ['QQQ '+(state.qqqChange>=0?'+':'')+fmt(state.qqqChange)+'%']),
       ]),
+
+      // تحذير الوضع الليلي
+      isNightMode && el('div', {style:{
+        fontSize:'10px', color:'#aaa',
+        background:'rgba(255,255,255,.04)', borderRadius:'6px',
+        padding:'5px 8px', border:'1px solid rgba(255,255,255,.08)',
+        marginBottom:'6px',
+      }}, ['🌙 تحليل ليلي — بدون VWAP وintraday • يتحدث عند فتح السوق 4:30م']),
 
       // وصف
       el('div', {style:{
@@ -4521,6 +4616,7 @@ function renderHunterCard(h, idx) {
           el('div', {style:{display:'flex', alignItems:'center', gap:'6px'}}, [
             el('div', {style:{fontSize:'13px', fontWeight:'800', color:C.text}}, [h.name]),
             trendBadge,
+            h.isNight && el('span', {style:{fontSize:'9px', color:'#aaa', background:'rgba(255,255,255,.06)', borderRadius:'4px', padding:'1px 5px'}}, ['🌙 ليلي']),
           ]),
           el('div', {style:{fontSize:'10px', color:C.text3}}, [h.id+' · '+h.sector]),
         ]),
