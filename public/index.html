@@ -2266,6 +2266,10 @@ async function calcHunterScore(stock) {
   }
   // ══ مكافأة Gainer
   if (stock.isGainer) { score += 10; checks.isGainer = true; }
+
+  // ══ مكافأة: سهم هبط intraday ولكن مؤشراته جيدة (فرصة ارتداد سريع)
+  const intradayDip = (p.change || 0) < -3 && macdHist != null && macdHist > -0.5;
+  if (intradayDip) { score += 12; checks.intradayDip = true; }
   // الوقف: تحت آخر قاع صاعد − 0.2 × ATR
   const atrAbs  = price * atrVal / 100;
   const stopLoss = (support || price * 0.97) - (0.2 * atrAbs);
@@ -2291,10 +2295,10 @@ async function calcHunterScore(stock) {
   // رفض إذا R/R أقل من الحد — أخف في السوق الصاعد الهادئ
   const rrMin = state.marketTrend === 'bearish' ? 1.5 : 1.2;
   if (rr < rrMin) return null;
-  // رفض إذا score أقل من 55
-  if (score < 55) {
-    // debug: أعلى 5 أسهم نقاطاً
-    if (score > 30) console.log(`[Hunter] ${stock.id}: score=${score} rr=${rr.toFixed(1)} rsi=${rsi} rvol=${intra?.rvol?.toFixed(1)}`);
+  // عتبة النقاط — أخف ليلاً لأن المحور 2 (intraday) لا يعمل
+  const scoreMin = isMarketOpen() ? 55 : 35;
+  if (score < scoreMin) {
+    if (score > 25) console.log(`[Hunter] ${stock.id}: score=${score} rr=${rr.toFixed(1)} rsi=${rsi}`);
     return null;
   }
 
@@ -2368,41 +2372,42 @@ async function calcHunterNight() {
     let score = 0;
     const checks = {};
 
-    // ══ إنهاك البيع (25 نقطة)
+    // ══ إنهاك البيع (30 نقطة) — أثقل ليلاً
     const rsiOk = rsi != null && rsi < 35;
     checks.rsiExhaust = rsiOk;
-    if (rsiOk) score += 10;
-    else if (rsi != null && rsi < 40) score += 5;
+    if (rsiOk)                            score += 15; // RSI تشبع بيع → قوي جداً
+    else if (rsi != null && rsi < 45)     score += 8;  // RSI منخفض نسبياً
+    else if (rsi != null && rsi < 55)     score += 3;  // RSI متوسط
 
     const stochOk = stochRsi != null && stochRsi < 25;
     checks.stochCross = stochOk;
-    if (stochOk) score += 5;
+    if (stochOk)                          score += 8;
+    else if (stochRsi != null && stochRsi < 40) score += 3;
 
     const bbOk = bb_lower != null && price <= bb_lower * 1.02;
     checks.bbReversal = bbOk;
-    if (bbOk) score += 5;
+    if (bbOk) score += 7;
 
     const atrVal = atrPct || 3;
     const nearSup = support && Math.abs(price - support) / price * 100 <= atrVal;
     checks.nearSup = nearSup;
-    if (nearSup) score += 5;
+    if (nearSup) score += 5;  // عند الدعم — فرصة دخول
 
-    // ══ MACD يتحسن (20 نقطة)
-    const macdOk = macdHist != null && (
-      (macdHist > 0 && macdHistDir === 'expanding') ||
-      (macdHistDir === 'crossing') ||
-      (macdHist < 0 && macdHistDir === 'contracting')
-    );
-    checks.macdDayOk = macdOk;
-    if (macdHist > 0 && macdHistDir === 'expanding') score += 20;
-    else if (macdHistDir === 'crossing')              score += 16;
-    else if (macdHist < 0 && macdHistDir === 'contracting') score += 10;
+    // ══ MACD يومي (30 نقطة) — الأهم ليلاً
+    checks.macdDayOk = false;
+    if (macdHist != null) {
+      if (macdHist > 0 && macdHistDir === 'expanding')        { score += 30; checks.macdDayOk = true; }
+      else if (macdHistDir === 'crossing')                     { score += 25; checks.macdDayOk = true; }
+      else if (macdHist > 0)                                   { score += 18; checks.macdDayOk = true; }
+      else if (macdHist < 0 && macdHistDir === 'contracting')  { score += 12; checks.macdDayOk = true; }
+      else if (macdHist < 0 && macdHistDir === 'expanding')    { score -= 5;  } // هابط يتوسع = عقوبة
+    }
 
-    // ══ الاتجاه الأسبوعي (10 نقطة)
-    if (ind.weeklyTrend === 'bullish') score += 10;
-    else if (ind.weeklyTrend === 'bearish') score -= 5;
+    // ══ الاتجاه الأسبوعي (15 نقطة)
+    if (ind.weeklyTrend === 'bullish') score += 15;
+    else if (ind.weeklyTrend === 'bearish') score -= 8;
 
-    // ══ جودة الصفقة R/R (10 نقطة)
+    // ══ جودة الصفقة R/R (15 نقطة)
     const atrAbs   = price * atrVal / 100;
     const stopLoss = (support || price * 0.97) - (0.2 * atrAbs);
     const lossPct  = (price - stopLoss) / price * 100;
@@ -2412,13 +2417,14 @@ async function calcHunterNight() {
     const profitPct = (targetPrice - price) / price * 100;
     const rr = lossPct > 0 ? +(profitPct / lossPct).toFixed(2) : 0;
 
-    if (rr >= 2)        score += 10;
+    if (rr >= 2.5)      score += 15;
+    else if (rr >= 2)   score += 10;
     else if (rr >= 1.5) score += 6;
 
-    // عتبة الليل — أخف في السوق الهابط لأن الشروط أصعب
-    const threshold = state.marketTrend === 'bearish' ? 35 : 45;
+    // عتبة الليل — موحدة 40 نقطة
+    const threshold = state.marketTrend === 'bearish' ? 30 : 40;
     if (score < threshold) continue;
-    if (rr < 1.5)   continue;
+    if (rr < 1.3) continue; // R/R أدنى حد
 
     results.push({
       id: stock.id, name: stock.name, sector: stock.sector,
