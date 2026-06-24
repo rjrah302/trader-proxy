@@ -110,12 +110,37 @@ async function fbGetHistory() {
 // ================================================================
 async function getStock(sym) {
   try {
-    const [q, h] = await Promise.all([
-      fetch(`https://financialmodelingprep.com/stable/quote?symbol=${sym}&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
-      fetch(`https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=60&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
-    ]);
-    const quote    = Array.isArray(q) ? q[0] : null;
-    const history  = Array.isArray(h) ? h : [];
+    sym = String(sym || '').toUpperCase().trim().replace(/[^A-Z0-9.\-]/g, '');
+    const variants = [...new Set([sym, sym.replace('.', '-'), sym.replace('-', '.')])].filter(Boolean);
+
+    let quote = null;
+    let history = [];
+
+    for (const s of variants) {
+      try {
+        const q = await fetch(`https://financialmodelingprep.com/stable/quote?symbol=${encodeURIComponent(s)}&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json());
+        quote = Array.isArray(q) ? q[0] : (q?.symbol ? q : null);
+        if (quote?.price) break;
+      } catch(e) {}
+      try {
+        const q2 = await fetch(`https://financialmodelingprep.com/api/v3/quote/${encodeURIComponent(s)}?apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json());
+        quote = Array.isArray(q2) ? q2[0] : (q2?.symbol ? q2 : null);
+        if (quote?.price) break;
+      } catch(e) {}
+    }
+
+    const histSym = quote?.symbol || variants[0];
+    try {
+      const h = await fetch(`https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${encodeURIComponent(histSym)}&limit=120&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json());
+      history = Array.isArray(h) ? h : [];
+    } catch(e) {}
+    if (!history.length) {
+      try {
+        const h2 = await fetch(`https://financialmodelingprep.com/api/v3/historical-price-full/${encodeURIComponent(histSym)}?timeseries=120&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json());
+        history = Array.isArray(h2) ? h2 : (Array.isArray(h2?.historical) ? h2.historical : []);
+      } catch(e) {}
+    }
+
     const closes   = history.map(d => d.close).reverse();
     const highs    = history.map(d => d.high  || d.close).reverse();
     const lows     = history.map(d => d.low   || d.close).reverse();
@@ -748,6 +773,12 @@ async function handleCallback(callbackId, data, cid) {
     const count = isMonth ? 30 : 7;
     const lastN = d.dates.slice(-count);
     const clsN  = d.closes.slice(-count);
+    if (!lastN.length || !clsN.length) {
+      const cur = +d.quote.price;
+      const curChg = +(d.quote.changePercentage || 0).toFixed(2);
+      await tgSend(`💰 <b>${d.quote.name || sym} (${sym})</b>\nالسعر الحالي: <b>$${cur.toFixed(2)}</b> ${curChg >= 0 ? '▲' : '▼'} ${curChg >= 0 ? '+' : ''}${curChg}%\n⚠️ لا توجد بيانات تاريخية كافية لعرض ${isMonth ? 'الشهر' : 'الأسبوع'}.`);
+      return;
+    }
     const days  = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
     let m = `📅 <b>${sym}</b> — آخر ${isMonth ? '30 يوم' : '7 أيام'}\n──────────────\n`;
     for (let i = 0; i < lastN.length; i++) {
@@ -1048,14 +1079,18 @@ async function handleMessage(text, cid) {
 
   // ── انتظار رمز السهم من القائمة
   if (s.step === 'waiting_sym') {
-    const sym2 = text.toUpperCase().replace(/[^A-Z.]/g, '');
-    if (sym2.length >= 1 && sym2.length <= 5) {
+    const sym2 = text.toUpperCase().replace(/[^A-Z0-9.\-]/g, '');
+    if (sym2.length >= 1 && sym2.length <= 10) {
       sess[cid] = { step: 'ask_bought', sym: sym2 };
       await tgSend(`⏳ جاري تحليل <b>${sym2}</b>...`);
       const d = await getStock(sym2);
       if (!d?.quote) { await tgSend(`⚠️ ${sym2} — لم أجد بيانات`); sess[cid] = {}; return; }
       const a = analyzeStock(sym2, d.quote, d.closes, null, d.highs, d.lows);
-      if (!a) { await tgSend(`⚠️ ${sym2} — بيانات غير كافية`); sess[cid] = {}; return; }
+      if (!a) {
+        await tgSend(`💰 <b>${d.quote.name || sym2} (${sym2})</b>\nالسعر الحالي: <b>$${(+d.quote.price).toFixed(2)}</b>\n⚠️ لم تتوفر بيانات تاريخية كافية للتحليل الفني.`);
+        sess[cid] = {};
+        return;
+      }
       sess[cid] = { step: 'ask_bought', sym: sym2, price: d.quote.price, analysis: a };
       const buttons = [
         [{ text: '✅ اشتريت',          callback_data: `bought_${sym2}` }],
@@ -1145,7 +1180,7 @@ async function handleMessage(text, cid) {
   }
 
   // ── أسعار آخر أسبوع أو شهر
-  const priceMatch = text.match(/^([A-Za-z]{1,5})\s+(أسعار|سعر|تاريخ|history|شهر|month)$/i);
+  const priceMatch = text.match(/^([A-Za-z0-9.\-]{1,10})\s+(أسعار|سعر|تاريخ|history|شهر|month|week|أسبوع|اسبوع)$/i);
   if (priceMatch) {
     const sym = priceMatch[1].toUpperCase();
     await tgSend(`⏳ جاري جلب أسعار <b>${sym}</b>...`);
@@ -1157,6 +1192,12 @@ async function handleMessage(text, cid) {
     const count   = isMonth ? 30 : 7;
     const lastN   = d.dates.slice(-count);
     const clsN    = d.closes.slice(-count);
+    if (!lastN.length || !clsN.length) {
+      const cur = +d.quote.price;
+      const curChg = +(d.quote.changePercentage || 0).toFixed(2);
+      await tgSend(`💰 <b>${d.quote.name || sym} (${sym})</b>\nالسعر الحالي: <b>$${cur.toFixed(2)}</b> ${curChg >= 0 ? '▲' : '▼'} ${curChg >= 0 ? '+' : ''}${curChg}%\n⚠️ لا توجد بيانات تاريخية كافية لعرض ${isMonth ? 'الشهر' : 'الأسبوع'}.`);
+      return;
+    }
     const days    = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
 
     let m = `📅 <b>${d.quote.name || sym} (${sym})</b> — آخر ${isMonth ? '30 يوم' : '7 أيام'}
@@ -1188,8 +1229,8 @@ async function handleMessage(text, cid) {
   }
 
   // ── تحليل سهم بالطلب
-  const sym = text.toUpperCase().replace(/[^A-Z.]/g, '');
-  if (sym.length >= 1 && sym.length <= 5) {
+  const sym = text.toUpperCase().replace(/[^A-Z0-9.\-]/g, '');
+  if (sym.length >= 1 && sym.length <= 10) {
     await tgSend(`⏳ جاري تحليل <b>${sym}</b>...`);
     const d = await getStock(sym);
     if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات. تحقق من الرمز`); return; }
@@ -1197,7 +1238,10 @@ async function handleMessage(text, cid) {
     const q    = d.quote;
     const name = q.name || sym;
     const a    = analyzeStock(sym, q, d.closes);
-    if (!a) { await tgSend(`⚠️ ${sym} — بيانات غير كافية`); return; }
+    if (!a) {
+      await tgSend(`💰 <b>${name} (${sym})</b>\nالسعر الحالي: <b>$${(+q.price).toFixed(2)}</b>\n⚠️ لم تتوفر بيانات تاريخية كافية للتحليل الفني.`);
+      return;
+    }
 
     sess[cid] = { step: 'ask_bought', sym, price: q.price, analysis: a };
 
