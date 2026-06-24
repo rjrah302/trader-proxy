@@ -522,7 +522,9 @@ const state = {
   // التوصيات
   recs:           null,
   speculativeRecs:null,
-  hunterRecs:     [],    // صائد الارتداد
+  hunterRecs:     [],
+  priceTargets:   {},
+  analystRatings: {},    // صائد الارتداد
   recsTime:       null,
   sessionOneIds:  (() => {
     try {
@@ -700,10 +702,8 @@ async function fetchPrices() {
   for(let i=0; i<symbols.length; i+=BATCH) {
     const batch = symbols.slice(i, i+BATCH).join(',');
     try {
-      const ctrl  = new AbortController();
-      const timer = setTimeout(()=>ctrl.abort(), 10000);
-      const res   = await fetch('/api/stocks?symbols='+batch, {signal:ctrl.signal});
-      clearTimeout(timer);
+      // لا نستخدم AbortSignal مع الـ Proxy — لا يدعمه Vercel Edge
+      const res = await fetch('/api/stocks?symbols='+batch);
       if(!res.ok) {
         const txt = await res.text().catch(()=>'');
         proxyErrors.push('HTTP '+res.status+': '+txt.slice(0,80));
@@ -895,6 +895,45 @@ async function fetchIndicators() {
           for(let j=period; j<data.length; j++) val = data[j]*k + val*(1-k);
           return val;
         }
+
+        // ── ADX (14) — قوة الاتجاه
+        function calcADX(highs, lows, closes, period=14) {
+          if(!highs || !lows || !closes) return null;
+          if(highs.length < period*2) return null;
+          const n = highs.length;
+          const trs=[], pdms=[], ndms=[];
+          for(let i=1; i<n; i++) {
+            const tr  = Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1]));
+            const pdm = Math.max(highs[i]-highs[i-1], 0);
+            const ndm = Math.max(lows[i-1]-lows[i], 0);
+            trs.push(tr);
+            pdms.push(pdm > ndm ? pdm : 0);
+            ndms.push(ndm > pdm ? ndm : 0);
+          }
+          // Wilder smoothing
+          const smooth = (arr) => {
+            let s = arr.slice(0, period).reduce((a,b)=>a+b,0);
+            const out = [s];
+            for(let i=period; i<arr.length; i++) { s = s - s/period + arr[i]; out.push(s); }
+            return out;
+          };
+          const sTR = smooth(trs), sPDM = smooth(pdms), sNDM = smooth(ndms);
+          const dxArr = [];
+          for(let i=0; i<sTR.length; i++) {
+            if(sTR[i] === 0) continue;
+            const pdi = 100 * sPDM[i] / sTR[i];
+            const ndi = 100 * sNDM[i] / sTR[i];
+            const dx  = Math.abs(pdi-ndi) / (pdi+ndi) * 100;
+            dxArr.push(dx);
+          }
+          if(dxArr.length < period) return null;
+          // ADX = EMA14 من DX
+          let adx = dxArr.slice(0, period).reduce((a,b)=>a+b,0) / period;
+          for(let i=period; i<dxArr.length; i++) adx = (adx*(period-1) + dxArr[i]) / period;
+          return +adx.toFixed(1);
+        }
+
+        const adx = calcADX(highs, lows, closes);
         const ema12 = calcEMA(closes, 12);
         const ema26 = calcEMA(closes, 26);
         const macd  = (ema12!=null && ema26!=null) ? ema12-ema26 : null;
@@ -1050,7 +1089,7 @@ async function fetchIndicators() {
           weeklyMacd, weeklyMacdHist, weeklyTrend,
           bb_upper, bb_lower,
           support, resistance, nearSupport, nearResistance,
-          atrPct, stochRsi,
+          atrPct, stochRsi, adx,
           dataLen: closes.length,
           closes: closes.slice(-30),
           highs:  highs.slice(-30),
@@ -1214,11 +1253,13 @@ async function fetchEarnings() {
 async function fetchProfiles() {
   const symbols = ALL_STOCKS.map(s=>s.id);
   const BATCH   = 10;
+
+  // ── أولاً: Profile (بيانات أساسية)
   for(let i=0; i<symbols.length; i+=BATCH) {
     const batch = symbols.slice(i, i+BATCH);
     await Promise.all(batch.map(async sym => {
       try {
-        const res  = await fetch(`${FMP_BASE}/stable/profile?symbol=${sym}&apikey=${API_KEY}`);
+        const res  = await fetch(`${FMP_BASE}/stable/profile?symbol=${sym}&apikey=${API_KEY}`, { signal: AbortSignal.timeout(6000) });
         const data = await res.json();
         const p = Array.isArray(data) && data[0];
         if(p && p.symbol) {
@@ -1230,8 +1271,49 @@ async function fetchProfiles() {
         }
       } catch(e) {}
     }));
-    if(i+BATCH < symbols.length) await new Promise(r=>setTimeout(r,300));
+    if(i+BATCH < symbols.length) await new Promise(r=>setTimeout(r,200));
   }
+
+  // ── ثانياً: Analyst Ratings (دفعة منفصلة بعد Profile)
+  for(let i=0; i<symbols.length; i+=BATCH) {
+    const batch = symbols.slice(i, i+BATCH);
+    await Promise.all(batch.map(async sym => {
+      try {
+        const res2  = await fetch(`${FMP_BASE}/stable/ratings-snapshot?symbol=${sym}&apikey=${API_KEY}`, { signal: AbortSignal.timeout(6000) });
+        const data2 = await res2.json();
+        const r2 = Array.isArray(data2) ? data2[0] : data2;
+        if(r2 && r2.ratingRecommendation) {
+          state.analystRatings[sym] = {
+            rating:   r2.ratingRecommendation || null,
+            score:    +r2.ratingScore         || null,
+            analysts: +r2.ratingAnalystCount  || 0,
+          };
+        }
+      } catch(e) {}
+    }));
+    if(i+BATCH < symbols.length) await new Promise(r=>setTimeout(r,200));
+  }
+}
+
+// ── جلب Price Target للتوصيات فقط (5 أسهم)
+async function fetchPriceTargets(recs) {
+  if(!recs || recs.length === 0) return;
+  await Promise.all(recs.map(async r => {
+    try {
+      const res  = await fetch(`${FMP_BASE}/stable/price-target-consensus?symbol=${r.id}&apikey=${API_KEY}`, { signal: AbortSignal.timeout(6000) });
+      const data = await res.json();
+      const d = Array.isArray(data) ? data[0] : data;
+      if(d && d.targetConsensus) {
+        state.priceTargets = state.priceTargets || {};
+        state.priceTargets[r.id] = {
+          consensus: +d.targetConsensus || null,
+          high:      +d.targetHigh      || null,
+          low:       +d.targetLow       || null,
+          median:    +d.targetMedian    || null,
+        };
+      }
+    } catch(e) {}
+  }));
 }
 
 // ================================================================
@@ -1347,7 +1429,23 @@ function calcSignal(stock) {
   else if(riskReward>=1.5) { buy++;  reasons.push('نسبة مخاطرة/مكافأة '+fmt(riskReward,1)+'x جيدة'); }
   else if(riskReward<1)    { sell++; }
 
-  // ── MACD Histogram — الأهم (يتجاوز MACD البسيط)
+  // ── Analyst Ratings — نقاط إيجابية فقط
+  const ar = state.analystRatings?.[stock.id];
+  if(ar && ar.analysts >= 5) {
+    const rat = (ar.rating||'').toLowerCase();
+    if(rat.includes('strong buy') || rat.includes('buy')) {
+      if(ar.analysts >= 20) { buy+=3; reasons.push('👨‍💼 '+ar.analysts+' محلل — شراء قوي'); }
+      else if(ar.analysts >= 10) { buy+=2; reasons.push('👨‍💼 '+ar.analysts+' محلل — شراء'); }
+      else { buy++; reasons.push('👨‍💼 '+ar.analysts+' محلل — إيجابي'); }
+    } else if(rat.includes('sell') || rat.includes('underperform')) {
+      sell+=2; // محللون يقولون بيع → عقوبة
+    }
+  }
+  if(ind.adx != null) {
+    if(ind.adx > 30 && macdHist > 0)       { buy++;  reasons.push('ADX '+ind.adx+' — اتجاه صاعد قوي جداً'); }
+    else if(ind.adx > 25 && macdHist > 0)  { buy++;  reasons.push('ADX '+ind.adx+' — اتجاه صاعد قوي'); }
+    // ADX < 20 = لا نعاقب، فقط لا نكافئ
+  }
   if(ind.macdHist!=null) {
     const hist    = ind.macdHist;
     const histDir = ind.macdHistDir;
@@ -1544,6 +1642,7 @@ function calcSignal(stock) {
     highs:  ind.highs  || null,
     lows:   ind.lows   || null,
     opens:  ind.opens  || null,
+    adx:    ind.adx    || null,
     candlePatterns,
     relativeStrength: rs,
   };
@@ -2032,10 +2131,18 @@ async function fetchHunterData(sym) {
 async function calcHunterScore(stock) {
   const p   = state.prices[stock.id];
   const ind = state.indicators[stock.id];
-  if (!p?.price || !ind) return null;
+  // Gainers خارج قائمتنا ليس لهم ind — نسمح لهم بالمرور بدرجة أساسية
+  if (!p?.price) return null;
+  if (!ind && !stock.isGainer) return null; // غير Gainer بدون ind = مرفوض
 
   const price = p.price;
-  const { rsi, stochRsi, bb_lower, support, macdHist, macdHistDir, atrPct } = ind;
+  const rsi       = ind?.rsi       ?? null;
+  const stochRsi  = ind?.stochRsi  ?? null;
+  const bb_lower  = ind?.bb_lower  ?? null;
+  const support   = ind?.support   ?? null;
+  const macdHist  = ind?.macdHist  ?? null;
+  const macdHistDir = ind?.macdHistDir ?? null;
+  const atrPct    = ind?.atrPct    ?? 3;
 
   const intra = await fetchHunterData(stock.id);
 
@@ -2132,6 +2239,8 @@ async function calcHunterScore(stock) {
     // Higher Low في السوق الهابط = إشارة قوية جداً
     if (checks.higherLow) score += 10;
   }
+  // ══ مكافأة Gainer
+  if (stock.isGainer) { score += 10; checks.isGainer = true; }
   // الوقف: تحت آخر قاع صاعد − 0.2 × ATR
   const atrAbs  = price * atrVal / 100;
   const stopLoss = (support || price * 0.97) - (0.2 * atrAbs);
@@ -2140,7 +2249,7 @@ async function calcHunterScore(stock) {
   // الهدف: VWAP أو مقاومة لحظية
   const targetPrice = intra?.vwap && intra.vwap > price
     ? intra.vwap
-    : ind.resistance && ind.resistance > price * 1.02
+    : ind?.resistance && ind.resistance > price * 1.02
       ? ind.resistance
       : price * (1 + atrVal * 2 / 100);
 
@@ -2150,8 +2259,8 @@ async function calcHunterScore(stock) {
   let rrScore = 0;
   if (rr >= 2)       { rrScore += 6; }
   else if (rr >= 1.5){ rrScore += 4; }
-  if (lossPct < atrVal * 1.5) rrScore += 2; // وقف ضيق
-  if (!ind.resistance || ind.resistance > price * 1.03) rrScore += 2; // مساحة للحركة
+  if (lossPct < atrVal * 1.5) rrScore += 2;
+  if (!ind?.resistance || ind.resistance > price * 1.03) rrScore += 2;
   score += Math.min(rrScore, 10);
 
   // رفض إذا R/R أقل من 1.5
@@ -2191,6 +2300,26 @@ function getHunterCandidates() {
     if (ind.nearSupport) return true;
     return false;
   });
+}
+
+// ── جلب After Hours للمرشحين فقط
+async function fetchAftermarketData(candidates) {
+  if (!candidates || candidates.length === 0) return;
+  await Promise.all(candidates.map(async stock => {
+    try {
+      const res  = await fetch(`${FMP_BASE}/stable/aftermarket-quote?symbol=${stock.id}&apikey=${API_KEY}`, { signal: AbortSignal.timeout(5000) });
+      const data = await res.json();
+      const d = Array.isArray(data) ? data[0] : data;
+      if (d && d.price) {
+        state.aftermarket = state.aftermarket || {};
+        state.aftermarket[stock.id] = {
+          price:  +d.price  || null,
+          change: +d.changesPercentage || 0,
+          volume: +d.volume || 0,
+        };
+      }
+    } catch(e) {}
+  }));
 }
 
 // ── وضع الصيد الليلي — بيانات يومية فقط بدون intraday
@@ -2277,6 +2406,21 @@ async function calcHunterNight() {
       rr, atrPct: atrVal,
       marketTrend: state.marketTrend,
       isNight: true, // 🌙 علامة التحليل الليلي
+      _rawScore: score, // للتحقق من المرشحين
+    });
+  }
+
+  // ── جلب After Hours للمرشحين (score >= 30)
+  const ahCandidates = results.filter(r => r._rawScore >= 30);
+  if (ahCandidates.length > 0 && !isMarketOpen()) {
+    await fetchAftermarketData(ahCandidates);
+    ahCandidates.forEach(r => {
+      const ah = state.aftermarket?.[r.id];
+      if (!ah) return;
+      if (ah.change > 2 && ah.volume > 500000)     { r.score = Math.min(r.score + 10, 100); r.ahBonus = true; }
+      else if (ah.change > 0 && ah.volume > 200000) { r.score = Math.min(r.score + 5, 100); }
+      else if (ah.change < -3)                       { r.score = Math.max(r.score - 10, 0); }
+      r.aftermarket = ah;
     });
   }
 
@@ -2285,17 +2429,65 @@ async function calcHunterNight() {
   console.log('[Hunter] 🌙 ليلية اكتملت:', results.length, 'فرصة');
 }
 
+// ── جلب Biggest Gainers من السوق كله
+async function fetchBiggestGainers() {
+  try {
+    const res  = await fetch(`${FMP_BASE}/stable/biggest-gainers?apikey=${API_KEY}`, { signal: AbortSignal.timeout(8000) });
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+
+    // فلتر: حجم > 500K وسعر $3-$200
+    const filtered = data
+      .filter(s => s.symbol && s.price >= 3 && s.price <= 200 && (s.volume||0) > 500000)
+      .slice(0, 20)
+      .map(s => ({
+        id:     s.symbol,
+        name:   s.name || s.symbol,
+        sector: 'غيينر',
+        cat:    'mid',
+        beta:   1.5, // افتراضي
+        price:  +s.price,
+        change: +s.changesPercentage,
+        volume: +s.volume,
+        isGainer: true, // علامة
+      }));
+
+    console.log('[Gainers] طلع:', filtered.length, 'سهم');
+    return filtered;
+  } catch(e) {
+    console.warn('[Gainers] error:', e.message);
+    return [];
+  }
+}
+
 // ── الدورة الكاملة: كل الأسهم (افتتاح + منتصف)
 async function calcHunterFull() {
   if (!state.indicatorsDone) return;
   console.log('[Hunter] دورة كاملة...');
+
+  // ── جلب Gainers وإضافتهم للمسح
+  const gainers = isMarketOpen() ? await fetchBiggestGainers() : [];
+
+  // دمج Gainers مع قائمتنا — نتجنب التكرار
+  const ourIds      = new Set(ALL_STOCKS.map(s => s.id));
+  const extraStocks = gainers.filter(g => !ourIds.has(g.id));
+
+  // نجلب أسعار الـ Gainers الجدد (ما عندهم state.prices)
+  for (const g of extraStocks) {
+    if (!state.prices[g.id]) {
+      state.prices[g.id] = { price: g.price, change: g.change, isReal: true, avgVolume: g.volume };
+    }
+  }
+  // نحذف Gainers الذين ليس لهم مؤشرات — نبقى بالقوة النسبية فقط
+  // calcHunterScore سيتعامل معهم بـ intraday فقط إذا ما عندهم ind
+  const allStocks = [...ALL_STOCKS, ...extraStocks];
   const BATCH = 5;
   const results = [];
-  for (let i = 0; i < ALL_STOCKS.length; i += BATCH) {
-    const batch = ALL_STOCKS.slice(i, i + BATCH);
+  for (let i = 0; i < allStocks.length; i += BATCH) {
+    const batch = allStocks.slice(i, i + BATCH);
     const res = await Promise.all(batch.map(s => calcHunterScore(s)));
     res.forEach(r => { if (r) results.push(r); });
-    if (i + BATCH < ALL_STOCKS.length) await new Promise(r => setTimeout(r, 400));
+    if (i + BATCH < allStocks.length) await new Promise(r => setTimeout(r, 400));
   }
   results.sort((a, b) => b.score - a.score);
   state.hunterRecs = results;
@@ -2420,6 +2612,9 @@ async function loadData(full=false) {
       calcSpeculative();
       await calcHunterFull();
       startHunterLoop();
+      // جلب Price Target للتوصيات والمجازفة
+      const allRecs = [...(state.recs||[]), ...(state.speculativeRecs||[])];
+      if(allRecs.length > 0) await fetchPriceTargets(allRecs);
     } else {
       await calcHunterNight();
     }
@@ -3863,6 +4058,16 @@ function renderRecCard(r, idx) {
         ]),
       ]),
       el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['ADX']),
+        el('div', {style:{
+          fontSize:'13px', fontWeight:'700',
+          color: r.adx!=null?(r.adx>30?C.green:r.adx>20?C.blue:C.text3):C.text3,
+        }}, [r.adx!=null ? fmt(r.adx,0) : '—']),
+        el('div', {style:{fontSize:'9px', color:C.text3}}, [
+          r.adx!=null?(r.adx>30?'قوي جداً':r.adx>25?'قوي':r.adx>20?'متوسط':'ضعيف'):'—'
+        ]),
+      ]),
+      el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
         el('div', {style:{fontSize:'9px', color:C.text3}}, ['ثقة / جودة']),
         el('div', {style:{
           fontSize:'13px', fontWeight:'700',
@@ -3944,7 +4149,54 @@ function renderRecCard(r, idx) {
       ]),
     ]),
 
-    // ── 6. شموع يابانية + القوة النسبية
+    // ── Analyst Ratings
+    state.analystRatings?.[r.id]?.analysts >= 5 && (() => {
+      const ar = state.analystRatings?.[r.id];
+      if (!ar) return null;
+      const rat = (ar.rating||'').toLowerCase();
+      const isBuy  = rat.includes('buy');
+      const isSell = rat.includes('sell');
+      const color  = isBuy ? C.green : isSell ? C.pink : C.yellow;
+      const label  = isBuy ? 'شراء' : isSell ? 'بيع' : 'محايد';
+      return el('div', {style:{
+        background:'rgba(0,255,136,.06)', borderRadius:'8px',
+        padding:'6px 10px', marginBottom:'8px',
+        border:`1px solid ${color}22`,
+        display:'flex', justifyContent:'space-between', alignItems:'center',
+      }}, [
+        el('div', {style:{fontSize:'10px', color:C.text2}}, ['👨‍💼 المحللون']),
+        el('div', {style:{textAlign:'left'}}, [
+          el('div', {style:{fontSize:'12px', fontWeight:'700', color}}, [
+            ar.analysts+' محلل — '+label
+          ]),
+          ar.score && el('div', {style:{fontSize:'9px', color:C.text3}}, [
+            'تقييم: '+fmt(ar.score,1)+'/5'
+          ]),
+        ]),
+      ]);
+    })(),
+    state.priceTargets?.[r.id] && (() => {
+      const pt = state.priceTargets[r.id];
+      if(!pt.consensus) return null;
+      const diff = ((pt.consensus - r.price) / r.price * 100).toFixed(1);
+      const color = diff > 0 ? C.green : C.pink;
+      return el('div', {style:{
+        background:'rgba(0,200,255,.06)', borderRadius:'8px',
+        padding:'6px 10px', marginBottom:'8px',
+        border:'1px solid rgba(0,200,255,.15)',
+        display:'flex', justifyContent:'space-between', alignItems:'center',
+      }}, [
+        el('div', {style:{fontSize:'10px', color:C.text2}}, ['👨‍💼 هدف المحللين']),
+        el('div', {style:{textAlign:'left'}}, [
+          el('div', {style:{fontSize:'12px', fontWeight:'700', color}}, [
+            '$'+fmt(pt.consensus,2)+' ('+(diff>0?'+':'')+diff+'%)'
+          ]),
+          pt.high && pt.low && el('div', {style:{fontSize:'9px', color:C.text3}}, [
+            'أعلى: $'+fmt(pt.high,2)+' | أدنى: $'+fmt(pt.low,2)
+          ]),
+        ]),
+      ]);
+    })(),
     r.closes && r.closes.length >= 5
       ? renderCandleChart(r.closes, r.highs, r.lows, r.opens)
       : null,
@@ -4335,7 +4587,30 @@ function renderSpecCard(s, idx) {
       }}, ['⚠️ '+w])),
     ]),
 
-    // ── 4b. حالة الشمعة — واضحة ومؤثرة
+    // ── 4b. Price Target المحللين
+    state.priceTargets?.[s.id]?.consensus && (() => {
+      const pt   = state.priceTargets[s.id];
+      const diff = ((pt.consensus - s.price) / s.price * 100).toFixed(1);
+      const color = diff > 0 ? C.green : C.pink;
+      return el('div', {style:{
+        background:'rgba(180,79,255,.06)', borderRadius:'8px',
+        padding:'6px 10px', marginBottom:'8px',
+        border:'1px solid rgba(180,79,255,.2)',
+        display:'flex', justifyContent:'space-between', alignItems:'center',
+      }}, [
+        el('div', {style:{fontSize:'10px', color:C.text2}}, ['👨‍💼 هدف المحللين']),
+        el('div', {style:{textAlign:'left'}}, [
+          el('div', {style:{fontSize:'12px', fontWeight:'700', color}}, [
+            '$'+fmt(pt.consensus,2)+' ('+(diff>0?'+':'')+diff+'%)'
+          ]),
+          pt.high && pt.low && el('div', {style:{fontSize:'9px', color:C.text3}}, [
+            'أعلى: $'+fmt(pt.high,2)+' | أدنى: $'+fmt(pt.low,2)
+          ]),
+        ]),
+      ]);
+    })(),
+
+    // ── 4c. حالة الشمعة — واضحة ومؤثرة
     s.topCandle && el('div', {style:{
       background: s.topCandle.signal==='bullish'
         ? 'rgba(0,255,136,.08)' : s.topCandle.signal==='bearish'
@@ -4715,6 +4990,8 @@ function renderHunterCard(h, idx) {
             el('div', {style:{fontSize:'13px', fontWeight:'800', color:C.text}}, [h.name]),
             trendBadge,
             h.isNight && el('span', {style:{fontSize:'9px', color:'#aaa', background:'rgba(255,255,255,.06)', borderRadius:'4px', padding:'1px 5px'}}, ['🌙 ليلي']),
+        h.ahBonus && el('span', {style:{fontSize:'9px', color:C.green, background:'rgba(0,255,136,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['🔥 AH+']),
+        h.checks?.isGainer && el('span', {style:{fontSize:'9px', color:C.yellow, background:'rgba(255,224,51,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['⚡ Gainer']),
           ]),
           el('div', {style:{fontSize:'10px', color:C.text3}}, [h.id+' · '+h.sector]),
         ]),
@@ -4733,6 +5010,10 @@ function renderHunterCard(h, idx) {
       el('div', {style:{display:'flex', gap:'8px', fontSize:'10px', marginBottom:'6px', flexWrap:'wrap'}}, [
         el('div', {style:{color:C.text, fontWeight:'700'}}, ['$'+fmt(h.price, 2)]),
         h.change !== 0 && el('div', {style:{color:h.change>0?C.green:C.pink, fontWeight:'700'}}, [(h.change>0?'+':'')+fmt(h.change,2)+'%']),
+        // After Hours
+        h.aftermarket?.price && el('div', {style:{color:h.aftermarket.change>0?C.green:C.pink}}, [
+          '🌙 $'+fmt(h.aftermarket.price,2)+' ('+(h.aftermarket.change>0?'+':'')+fmt(h.aftermarket.change,1)+'%)'
+        ]),
         h.vwap && el('div', {style:{color:h.checks.aboveVwap?C.green:C.text3}}, [
           'VWAP $'+fmt(h.vwap,2)+' '+(h.checks.aboveVwap?'▲':'▼')
         ]),
@@ -6028,6 +6309,8 @@ setInterval(async () => {
     calcRecs();
     calcSpeculative();
     await calcHunterFull();
+    // جلب Price Target للتوصيات فقط
+    if(state.recs?.length > 0) await fetchPriceTargets(state.recs);
     if(state.recs?.length > 0 && isMarketOpen()) {
       recordRecsToHistory(state.recs, 'منتصف');
     }
