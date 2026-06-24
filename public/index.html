@@ -2288,8 +2288,9 @@ async function calcHunterScore(stock) {
   if (!ind?.resistance || ind.resistance > price * 1.03) rrScore += 2;
   score += Math.min(rrScore, 10);
 
-  // رفض إذا R/R أقل من 1.5
-  if (rr < 1.5) return null;
+  // رفض إذا R/R أقل من الحد — أخف في السوق الصاعد الهادئ
+  const rrMin = state.marketTrend === 'bearish' ? 1.5 : 1.2;
+  if (rr < rrMin) return null;
   // رفض إذا score أقل من 55
   if (score < 55) return null;
 
@@ -2603,11 +2604,10 @@ async function loadData(full=false) {
     return;
   }
 
-  // تحميل المؤشرات: عند فتح السوق، أو الطلب الصريح فقط
-  // ❌ لا نحسّب توصيات خارج وقت السوق
+  // تحميل المؤشرات: عند فتح السوق أو أول مرة (للصائد الليلي)
   const session     = getSessionInfo();
   const neverLoaded = !state.indicatorsDone && !_indicatorsLoading;
-  const shouldLoad  = isMarketOpen() && !state.indicatorsDone && !_indicatorsLoading;
+  const shouldLoad  = (isMarketOpen() || neverLoaded) && !state.indicatorsDone && !_indicatorsLoading;
 
   if(shouldLoad) {
     _indicatorsLoading = true;
@@ -2615,10 +2615,13 @@ async function loadData(full=false) {
 
     await fetchIndicators();
 
-    // ── حساب فقط لو السوق لا يزال مفتوحاً (لم يُغلق أثناء التحميل)
+    // ── حساب فقط لو السوق لا يزال مفتوحاً
     if(isMarketOpen()) {
       calcRecs();
       calcSpeculative();
+    } else {
+      // السوق مغلق — شغّل الصائد الليلي بعد اكتمال المؤشرات
+      await calcHunterNight();
     }
     render();
 
