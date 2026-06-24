@@ -2292,7 +2292,11 @@ async function calcHunterScore(stock) {
   const rrMin = state.marketTrend === 'bearish' ? 1.5 : 1.2;
   if (rr < rrMin) return null;
   // رفض إذا score أقل من 55
-  if (score < 55) return null;
+  if (score < 55) {
+    // debug: أعلى 5 أسهم نقاطاً
+    if (score > 30) console.log(`[Hunter] ${stock.id}: score=${score} rr=${rr.toFixed(1)} rsi=${rsi} rvol=${intra?.rvol?.toFixed(1)}`);
+    return null;
+  }
 
   checks.rr = rr;
 
