@@ -1280,7 +1280,19 @@ async function fetchProfiles() {
     if(i+BATCH < symbols.length) await new Promise(r=>setTimeout(r,200));
   }
 
-  // ── ثانياً: Analyst Ratings (دفعة منفصلة بعد Profile)
+  // ── ثانياً: Analyst Ratings — مرة واحدة يومياً فقط
+  const today         = new Date().toDateString();
+  const analystDate   = localStorage.getItem('analyst_date');
+  const analystCache  = localStorage.getItem('analyst_ratings');
+
+  if(analystDate === today && analystCache) {
+    // استخدم الكاش — لا طلبات إضافية
+    try { state.analystRatings = JSON.parse(analystCache); } catch(e) {}
+    console.log('[Analyst] من الكاش ✅');
+    return;
+  }
+
+  // جلب جديد
   for(let i=0; i<symbols.length; i+=BATCH) {
     const batch = symbols.slice(i, i+BATCH);
     await Promise.all(batch.map(async sym => {
@@ -1299,7 +1311,13 @@ async function fetchProfiles() {
     }));
     if(i+BATCH < symbols.length) await new Promise(r=>setTimeout(r,200));
   }
-}
+
+  // حفظ في localStorage
+  try {
+    localStorage.setItem('analyst_date',    today);
+    localStorage.setItem('analyst_ratings', JSON.stringify(state.analystRatings));
+    console.log('[Analyst] حُفظ في الكاش ✅');
+  } catch(e) {}
 
 // ── جلب Price Target للتوصيات فقط (5 أسهم)
 async function fetchPriceTargets(recs) {
@@ -6476,21 +6494,10 @@ function tgCheckTrades() {
 // ── حالة المحادثة
 const tgState = {};
 
-// ── polling — يستقبل رسائلك كل 3 ثوانٍ
-let tgOffset = 0;
+// ── polling معطل — البوت يعمل على Vercel webhook
+// لا نستخدم getUpdates من المتصفح لتجنب 409 Conflict
 async function tgPoll() {
-  try {
-    const r = await fetch(`${TG_API}/getUpdates?offset=${tgOffset}&timeout=3`);
-    const d = await r.json();
-    if(!d.ok) return;
-    for(const u of (d.result||[])) {
-      tgOffset = u.update_id + 1;
-      const msg = u.message?.text?.trim();
-      const cid  = String(u.message?.chat?.id);
-      if(!msg || cid !== TG_CHAT_ID) continue;
-      await tgHandle(msg, cid);
-    }
-  } catch(e){}
+  // معطل — البوت على Vercel يتعامل مع الرسائل
 }
 
 // ── معالج الرسائل الذكي
@@ -6614,14 +6621,13 @@ async function tgHandle(msg, cid) {
     await tgSend(msg2);
     return;
   }
-
+}
   // ── مساعدة
   await tgSend(`🦅 <b>RamiFalconX</b>\n──────────────\nاكتب رمز السهم: <code>NVDA</code>\nمحفظتك: <code>محفظتي</code>\nتقرير اليوم: <code>تقرير</code>\nخروج من سهم: <code>خرجت ALAB</code>`);
 }
 
-// ── ابدأ Polling كل 3 ثوانٍ
-setInterval(tgPoll, 3000);
-tgPoll(); // استدعاء أولي فوري
+// ── Polling معطل — البوت على Vercel يتعامل مع الرسائل
+// setInterval(() => tgPoll(), 3000);
 
 </script>
 </body>
