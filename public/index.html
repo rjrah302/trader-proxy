@@ -709,7 +709,14 @@ async function fetchPrices() {
         proxyErrors.push('HTTP '+res.status+': '+txt.slice(0,80));
         continue;
       }
-      const json = await res.json();
+      // تحقق إن الرد مش HTML (404 page من Vercel)
+      const contentType = res.headers.get('content-type')||'';
+      if(contentType.includes('text/html')) {
+        proxyErrors.push('Proxy returned HTML — skipping');
+        break;
+      }
+      const json = await res.json().catch(() => null);
+      if(!json) { proxyErrors.push('Proxy JSON parse failed'); continue; }
       const data = json?.quoteResponse?.result || [];
       let got = 0;
       data.forEach(q => { if(storeProxy(q)) { proxyOk = true; got++; } });
@@ -1441,8 +1448,8 @@ function calcSignal(stock) {
     }
   }
   if(ind.adx != null) {
-    if(ind.adx > 30 && macdHist > 0)       { buy++;  reasons.push('ADX '+ind.adx+' — اتجاه صاعد قوي جداً'); }
-    else if(ind.adx > 25 && macdHist > 0)  { buy++;  reasons.push('ADX '+ind.adx+' — اتجاه صاعد قوي'); }
+    if(ind.adx > 30 && ind.macdHist > 0)       { buy++;  reasons.push('ADX '+ind.adx+' — اتجاه صاعد قوي جداً'); }
+    else if(ind.adx > 25 && ind.macdHist > 0)  { buy++;  reasons.push('ADX '+ind.adx+' — اتجاه صاعد قوي'); }
     // ADX < 20 = لا نعاقب، فقط لا نكافئ
   }
   if(ind.macdHist!=null) {
