@@ -544,6 +544,8 @@ const state = {
   marketTrend: null, // 'bullish' | 'neutral' | 'bearish'
   spyChange:   null,
   qqqChange:   null,
+  search:      '',
+  searchDraft: '',
 
   // واجهة
   tab:        'rec',
@@ -2612,8 +2614,27 @@ async function calcHunterNight() {
   console.log('[Hunter] 🌙 دورة ليلية...');
 
   const results = [];
+  const gainers = await fetchBiggestGainers();
+  const gainerMap = new Map(gainers.map(g => [g.id, g]));
+  const ourIds = new Set(ALL_STOCKS.map(s => s.id));
+  for (const g of gainers) {
+    state.prices[g.id] = {
+      ...(state.prices[g.id] || {}),
+      price: g.price,
+      change: g.change,
+      volume: g.volume,
+      avgVolume: state.prices[g.id]?.avgVolume || g.volume,
+      isReal: true,
+      isGainer: true,
+    };
+  }
+  const nightStocks = ALL_STOCKS.map(s => {
+    const g = gainerMap.get(s.id);
+    return g ? {...s, isGainer:true, gainerRank:g.gainerRank, gainerChange:g.change, gainerVolume:g.volume} : s;
+  });
+  const externalGainers = gainers.filter(g => !ourIds.has(g.id));
 
-  for (const stock of ALL_STOCKS) {
+  for (const stock of nightStocks) {
     const p   = state.prices[stock.id];
     const ind = state.indicators[stock.id];
     if (!p?.price || !ind) continue;
@@ -2659,6 +2680,11 @@ async function calcHunterNight() {
     if (ind.weeklyTrend === 'bullish') score += 15;
     else if (ind.weeklyTrend === 'bearish') score -= 8;
 
+    if (stock.isGainer) {
+      score += 14;
+      checks.isGainer = true;
+    }
+
     // ══ جودة الصفقة R/R (15 نقطة)
     const atrAbs   = price * atrVal / 100;
     const stopLoss = (support || price * 0.97) - (0.2 * atrAbs);
@@ -2678,6 +2704,26 @@ async function calcHunterNight() {
     if (score < threshold) continue;
     if (rr < 1.3) continue; // R/R أدنى حد
 
+    let action = 'راقب فقط';
+    let actionTone = 'neutral';
+    let actionNote = 'تحليل ليلي؛ انتظر افتتاح السوق لتأكيد VWAP والحجم اللحظي.';
+    let gainerClass = null;
+    let gainerNote = null;
+    if(stock.isGainer) {
+      const chaseRisk = (p.change || 0) >= 18 && !nearSup;
+      gainerClass = chaseRisk ? 'chase' : (score >= 70 && rr >= 1.5 ? 'confirmed' : 'watch');
+      gainerNote = chaseRisk
+        ? '🚫 من أقوى 20 اليوم لكنه مرتفع بقوة؛ لا تطارد قبل Pullback.'
+        : gainerClass === 'confirmed'
+          ? '🔥 من أقوى 20 اليوم ونجح في فلتر الصايد الليلي.'
+          : '👀 من أقوى 20 اليوم؛ يحتاج تأكيد الافتتاح وVWAP.';
+      action = chaseRisk ? 'لا تطارد' : (gainerClass === 'confirmed' ? 'راقب افتتاح قوي' : 'Gainer مراقبة');
+      actionTone = chaseRisk ? 'neutral' : (gainerClass === 'confirmed' ? 'watch' : 'support');
+      actionNote = chaseRisk
+        ? 'السهم قوي يوميًا لكن الدخول الآن متأخر.'
+        : 'إذا افتتح فوق VWAP ومع حجم مرتفع يتحول لصيد فعلي.';
+    }
+
     results.push({
       id: stock.id, name: stock.name, sector: stock.sector,
       price, change: p.change || 0,
@@ -2692,9 +2738,44 @@ async function calcHunterNight() {
       rr, atrPct: atrVal,
       marketTrend: state.marketTrend,
       isNight: true, // 🌙 علامة التحليل الليلي
+      isGainer: !!stock.isGainer,
+      gainerRank: stock.gainerRank || null,
+      gainerClass, gainerNote,
+      action, actionTone, actionNote,
       _rawScore: score, // للتحقق من المرشحين
     });
   }
+
+  externalGainers.forEach(g => {
+    const chaseRisk = (g.change || 0) >= 18;
+    const score = Math.max(45, Math.min(72, 45 + Math.min(Math.max(g.change || 0, 0), 20) + (g.volume > 2000000 ? 7 : 0)));
+    results.push({
+      id: g.id, name: g.name, sector: 'FMP Gainers',
+      price: g.price, change: g.change || 0,
+      score, checks:{isGainer:true},
+      rsi:null, stochRsi:null, support:null, resistance:null,
+      vwap:null, ema9:null, ema21:null,
+      rvol:0, rs30:0, stockReturn30:0,
+      stopLoss:+(g.price * 0.96).toFixed(2),
+      targetPrice:+(g.price * 1.06).toFixed(2),
+      profitPct:6,
+      lossPct:4,
+      rr:1.5,
+      atrPct:4,
+      marketTrend:state.marketTrend,
+      isNight:true,
+      isGainer:true,
+      gainerRank:g.gainerRank,
+      gainerClass:chaseRisk?'chase':'watch',
+      gainerNote:chaseRisk
+        ? '🚫 من أقوى 20 FMP لكنه خارج قائمتك ومرتفع بقوة؛ لا تطارد.'
+        : '👀 سهم جديد من أقوى 20 FMP خارج قائمتك؛ يحتاج تأكيد مؤشرات عند الافتتاح.',
+      action:chaseRisk?'لا تطارد':'Gainer جديد',
+      actionTone:chaseRisk?'neutral':'watch',
+      actionNote:'ظهر من اشتراك FMP. أضفه للقائمة فقط إذا تكرر أو أعطى تأكيد VWAP وحجم.',
+      _rawScore:score,
+    });
+  });
 
   // ── جلب After Hours للمرشحين (score >= 30)
   const ahCandidates = results.filter(r => r._rawScore >= 30);
@@ -2710,7 +2791,10 @@ async function calcHunterNight() {
     });
   }
 
-  results.sort((a, b) => b.score - a.score);
+  results.sort((a, b) => {
+    const boost = x => x.isGainer ? (x.gainerClass === 'chase' ? 8 : 28) : 0;
+    return (b.score + boost(b)) - (a.score + boost(a));
+  });
   state.hunterRecs = results;
   console.log('[Hunter] 🌙 ليلية اكتملت:', results.length, 'فرصة');
 }
@@ -2787,7 +2871,10 @@ async function calcHunterFull() {
     res.forEach(r => { if (r) results.push(r); });
     if (i + BATCH < allStocks.length) await new Promise(r => setTimeout(r, 400));
   }
-  results.sort((a, b) => b.score - a.score);
+  results.sort((a, b) => {
+    const boost = x => x.isGainer ? (x.gainerClass === 'chase' ? 8 : 28) : 0;
+    return (b.score + boost(b)) - (a.score + boost(a));
+  });
   state.hunterRecs = results;
   console.log('[Hunter] كاملة:', results.length, 'فرصة');
 }
@@ -2810,7 +2897,10 @@ async function calcHunterQuick() {
     r => !candidates.some(c => c.id === r.id)
   );
   const merged = [...results, ...oldResults];
-  merged.sort((a, b) => b.score - a.score);
+  merged.sort((a, b) => {
+    const boost = x => x.isGainer ? (x.gainerClass === 'chase' ? 8 : 28) : 0;
+    return (b.score + boost(b)) - (a.score + boost(a));
+  });
   state.hunterRecs = merged;
   render();
 }
@@ -5688,16 +5778,31 @@ function renderMarketTab() {
     // ── بحث + فرز + تحديث
     el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}},[
       el('input',{
-        type:'text',placeholder:'🔍 بحث...',value:state.search||'',
+        type:'text',placeholder:'اكتب الرمز أو الاسم ثم Enter...',value:state.searchDraft ?? state.search ?? '',
         style:{flex:'1',background:'#0a1020',border:'1px solid #1a2340',
           borderRadius:'8px',padding:'7px 10px',color:C.text,fontSize:'12px',outline:'none'},
         onInput:e=>{
-          state.search=e.target.value;
-          clearTimeout(state._searchTimer);
-          state._searchTimer=setTimeout(()=>render(), 250);
+          state.searchDraft=e.target.value;
         },
-        onKeyDown:e=>{ if(e.key==='Enter') { clearTimeout(state._searchTimer); state.search=e.target.value; render(); } }
+        onKeyDown:e=>{
+          if(e.key==='Enter') {
+            state.search=state.searchDraft||'';
+            render();
+          }
+        },
       }),
+      el('button',{
+        style:{fontSize:'11px',fontWeight:'800',color:C.green,flexShrink:'0',
+          background:'rgba(0,255,136,.10)',borderRadius:'8px',padding:'7px 10px',
+          border:'1px solid rgba(0,255,136,.28)'},
+        onClick:()=>{state.search=state.searchDraft||''; render();}
+      },['🔍']),
+      (state.search||state.searchDraft) && el('button',{
+        style:{fontSize:'11px',fontWeight:'800',color:C.pink,flexShrink:'0',
+          background:'rgba(255,45,122,.10)',borderRadius:'8px',padding:'7px 9px',
+          border:'1px solid rgba(255,45,122,.25)'},
+        onClick:()=>{state.search=''; state.searchDraft=''; render();}
+      },['مسح']),
       // فرز
       (() => {
         const sel = document.createElement('select');
