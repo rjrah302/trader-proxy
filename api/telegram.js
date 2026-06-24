@@ -112,19 +112,15 @@ async function getStock(sym) {
   try {
     const [q, h] = await Promise.all([
       fetch(`https://financialmodelingprep.com/stable/quote?symbol=${sym}&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
-      fetch(`https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=300&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
+      fetch(`https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym}&limit=60&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
     ]);
-    const quote   = Array.isArray(q) ? q[0] : null;
-    const history = Array.isArray(h) ? h : [];
-    // نفلتر صفوف تحتوي على close وhigh وlow فقط — open اختياري
-    const valid   = history.filter(d => (+d.adjClose||+d.close) && +d.high && +d.low);
-    const closes  = valid.map(d => +(d.adjClose||d.close)).reverse();
-    const highs   = valid.map(d => +d.high).reverse();
-    const lows    = valid.map(d => +d.low).reverse();
-    // open اختياري — إذا مفقود نستخدم close السابق
-    const opens   = valid.map((d, i) => +d.open || +(valid[i-1]?.adjClose||valid[i-1]?.close) || +(d.adjClose||d.close)).reverse();
-    const dates   = valid.map(d => d.date).reverse();
-    return { quote, closes, highs, lows, opens, dates };
+    const quote    = Array.isArray(q) ? q[0] : null;
+    const history  = Array.isArray(h) ? h : [];
+    const closes   = history.map(d => d.close).reverse();
+    const highs    = history.map(d => d.high  || d.close).reverse();
+    const lows     = history.map(d => d.low   || d.close).reverse();
+    const dates    = history.map(d => d.date).reverse();
+    return { quote, closes, highs, lows, dates };
   } catch (e) { return null; }
 }
 
@@ -179,18 +175,8 @@ function calcMACD(closes) {
   const hist     = (e12 - e26) - sig;
   const prevArr  = macdArr.slice(0, -1);
   const prevSig  = calcEMA(prevArr, 9);
-  const prevHist = prevArr.length && prevSig ? prevArr[prevArr.length - 1] - prevSig : null;
-
-  // نفس منطق الأداة — القيمة المطلقة + عبور الصفر
-  let dir = null;
-  if (prevHist != null) {
-    const sameSign = (hist >= 0) === (prevHist >= 0);
-    if (!sameSign) {
-      dir = 'crossing';
-    } else {
-      dir = Math.abs(hist) > Math.abs(prevHist) ? 'expanding' : 'contracting';
-    }
-  }
+  const prevHist = prevArr.length ? prevArr[prevArr.length - 1] - prevSig : null;
+  const dir      = prevHist != null ? (Math.abs(hist) > Math.abs(prevHist) ? 'expanding' : 'contracting') : null;
 
   return { hist: +hist.toFixed(3), dir, signal: +sig.toFixed(3), macdLine: +(e12 - e26).toFixed(3) };
 }
@@ -256,204 +242,28 @@ function calcGreenCandles(closes) {
   return green;
 }
 
-// ── أنماط الشموع — نفس الأداة الرئيسية بالضبط
-function detectCandlePatterns(closes, highs, lows, opens) {
-  if (!closes || closes.length < 3) return [];
-  if (!opens || opens.length !== closes.length) return [];
-
-  const n = closes.length;
-  const patterns = [];
-
-  const C0 = closes[n-1], H0 = highs[n-1], L0 = lows[n-1], O0 = opens[n-1];
-  const C1 = closes[n-2], H1 = highs[n-2], L1 = lows[n-2], O1 = opens[n-2];
-  const C2 = n>=4 ? closes[n-3] : C1;
-  const H2 = n>=4 ? highs[n-3]  : H1;
-  const L2 = n>=4 ? lows[n-3]   : L1;
-  const O2 = n>=4 ? opens[n-3]  : O1;
-
-  const body0 = Math.abs(C0-O0), range0 = H0-L0 || 0.0001;
-  const body1 = Math.abs(C1-O1), range1 = H1-L1 || 0.0001;
-  const body2 = Math.abs(C2-O2), range2 = H2-L2 || 0.0001;
-
-  const bull0 = C0>O0, bear0 = C0<O0;
-  const bull1 = C1>O1, bear1 = C1<O1;
-  const bull2 = C2>O2, bear2 = C2<O2;
-
-  const upperShadow0 = bull0 ? H0-C0 : H0-O0;
-  const lowerShadow0 = bull0 ? O0-L0 : C0-L0;
-
-  if (body0/range0 < 0.05)
-    patterns.push({ar:'دوجي', signal:'neutral', strength:2, tip:'تردد — انتظر تأكيد'});
-  if (lowerShadow0 > body0*2 && upperShadow0 < body0*0.5 && range0 > 0) {
-    const downtrend = closes.slice(-6,-1).every((_,i,a) => i===0 || a[i] <= a[i-1]);
-    if (downtrend || lowerShadow0 > body0*3)
-      patterns.push({ar:'المطرقة', signal:'bullish', strength:4, tip:'ارتداد صاعد قوي'});
-  }
-  if (upperShadow0 > body0*2 && lowerShadow0 < body0*0.5 && range0 > 0) {
-    const uptrend = closes.slice(-6,-1).every((_,i,a) => i===0 || a[i] >= a[i-1]);
-    if (uptrend || upperShadow0 > body0*3)
-      patterns.push({ar:'النجم الساقط', signal:'bearish', strength:4, tip:'انعكاس هبوطي'});
-  }
-  if (bull0 && bear1 && C0 >= O1 && O0 <= C1 && body0 > body1)
-    patterns.push({ar:'الابتلاع الصاعد', signal:'bullish', strength:5, tip:'انعكاس صاعد قوي'});
-  if (bear0 && bull1 && O0 >= C1 && C0 <= O1 && body0 > body1)
-    patterns.push({ar:'الابتلاع الهابط', signal:'bearish', strength:5, tip:'انعكاس هبوطي قوي'});
-  if (n >= 4 && bear2 && body1/range1 < 0.3 && bull0 && C0 > (O2+C2)/2)
-    patterns.push({ar:'نجمة الصباح', signal:'bullish', strength:5, tip:'انعكاس صاعد من 3 شمعات'});
-  if (n >= 4 && bull2 && body1/range1 < 0.3 && bear0 && C0 < (O2+C2)/2)
-    patterns.push({ar:'نجمة المساء', signal:'bearish', strength:5, tip:'انعكاس هبوطي من 3 شمعات'});
-  if (n >= 4 && bull0 && bull1 && bull2 && body0>range0*0.5 && body1>range1*0.5 && C0>C1 && C1>C2)
-    patterns.push({ar:'الجنود الثلاثة', signal:'bullish', strength:5, tip:'زخم صاعد استثنائي'});
-  if (n >= 4 && bear0 && bear1 && bear2 && body0>range0*0.5 && body1>range1*0.5 && C0<C1 && C1<C2)
-    patterns.push({ar:'الغربان الثلاثة', signal:'bearish', strength:5, tip:'زخم هبوطي قوي'});
-
-  return patterns.sort((a,b) => b.strength - a.strength).slice(0,2);
-}
-
-// ── ADX (14) — قوة الاتجاه
-function calcADX(highs, lows, closes, period=14) {
-  if(!highs || !lows || !closes) return null;
-  if(highs.length < period*2) return null;
-  const n = highs.length;
-  const trs=[], pdms=[], ndms=[];
-  for(let i=1; i<n; i++) {
-    const tr  = Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1]));
-    const pdm = Math.max(highs[i]-highs[i-1], 0);
-    const ndm = Math.max(lows[i-1]-lows[i], 0);
-    trs.push(tr);
-    pdms.push(pdm > ndm ? pdm : 0);
-    ndms.push(ndm > pdm ? ndm : 0);
-  }
-  const smooth = (arr) => {
-    let s = arr.slice(0, period).reduce((a,b)=>a+b,0);
-    const out = [s];
-    for(let i=period; i<arr.length; i++) { s = s - s/period + arr[i]; out.push(s); }
-    return out;
-  };
-  const sTR = smooth(trs), sPDM = smooth(pdms), sNDM = smooth(ndms);
-  const dxArr = [];
-  for(let i=0; i<sTR.length; i++) {
-    if(sTR[i] === 0) continue;
-    const pdi = 100 * sPDM[i] / sTR[i];
-    const ndi = 100 * sNDM[i] / sTR[i];
-    const dx  = Math.abs(pdi-ndi) / (pdi+ndi) * 100;
-    dxArr.push(dx);
-  }
-  if(dxArr.length < period) return null;
-  let adx = dxArr.slice(0, period).reduce((a,b)=>a+b,0) / period;
-  for(let i=period; i<dxArr.length; i++) adx = (adx*(period-1) + dxArr[i]) / period;
-  return +adx.toFixed(1);
-}
-
-// ── جلب Analyst Ratings و Price Target
-async function fetchAnalystData(sym) {
-  try {
-    const [r1, r2] = await Promise.all([
-      fetch(`https://financialmodelingprep.com/stable/ratings-snapshot?symbol=${sym}&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(6000) }).then(r => r.json()),
-      fetch(`https://financialmodelingprep.com/stable/price-target-consensus?symbol=${sym}&apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(6000) }).then(r => r.json()),
-    ]);
-    const rating = Array.isArray(r1) ? r1[0] : r1;
-    const target = Array.isArray(r2) ? r2[0] : r2;
-    return {
-      rating:    rating?.ratingRecommendation || null,
-      analysts:  +rating?.ratingAnalystCount  || 0,
-      score:     +rating?.ratingScore         || null,
-      consensus: +target?.targetConsensus     || null,
-      targetHigh:+target?.targetHigh          || null,
-      targetLow: +target?.targetLow           || null,
-    };
-  } catch(e) { return null; }
-}
-function calcStochRSI(closes) {
-  if (!closes || closes.length < 20) return null;
-  const rsiArr = [];
-  for (let i = 14; i <= closes.length; i++) {
-    const sl   = closes.slice(i - 14, i);
-    const diffs = sl.map((v, j) => j > 0 ? v - sl[j-1] : 0).slice(1);
-    const ag   = diffs.map(x => x > 0 ? x : 0).reduce((a, b) => a + b, 0) / 14;
-    const al   = diffs.map(x => x < 0 ? -x : 0).reduce((a, b) => a + b, 0) / 14;
-    rsiArr.push(al === 0 ? 100 : 100 - (100 / (1 + ag / al)));
-  }
-  if (rsiArr.length < 14) return null;
-  const last14 = rsiArr.slice(-14);
-  const minR   = Math.min(...last14);
-  const maxR   = Math.max(...last14);
-  return maxR === minR ? 50 : +((rsiArr[rsiArr.length-1] - minR) / (maxR - minR) * 100).toFixed(1);
-}
-
-// ── حساب وقف وهدف وR/R — نفس الأداة الرئيسية
-function calcStopTarget(price, support, resistance, atrPct) {
-  const atrVal      = atrPct || 3;
-  const atrMultFinal= atrVal < 2 ? 1.5 : atrVal < 4 ? 2.0 : 2.5;
-  const atrStop     = Math.min(atrVal * atrMultFinal, 15);
-  const atrBasedStop= price * (1 - atrStop / 100);
-  const supBasedStop= support ? support * 0.99 : null;
-  const stopLoss    = Math.max(
-    supBasedStop && supBasedStop > atrBasedStop ? supBasedStop : atrBasedStop,
-    price * 0.75
-  );
-  const minTarget   = price * 1.03;
-  const atrTarget   = price * (1 + Math.max(atrStop * 2, 3) / 100);
-  const atrRealist  = price + (price * atrVal / 100 * 3.5);
-  const resValid    = resistance && resistance > price * 1.02 && resistance > minTarget;
-  const isNearRes   = resistance && price >= resistance * 0.98;
-  const target      = isNearRes
-    ? resistance * 1.05
-    : resValid
-      ? Math.min(resistance, atrRealist > minTarget ? atrRealist : resistance)
-      : Math.max(atrTarget, minTarget);
-  const profitPct   = (target - price) / price * 100;
-  const lossPct     = (price - stopLoss) / price * 100;
-  const rr          = lossPct > 0 ? +(profitPct / lossPct).toFixed(2) : 0;
-  return { stopLoss: +stopLoss.toFixed(2), target: +target.toFixed(2), profitPct: +profitPct.toFixed(2), lossPct: +lossPct.toFixed(2), rr };
-}
-
-// ── تحليل شامل لسهم — نفس منطق الأداة الرئيسية
-function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, lows = null, opens = null) {
+// ── تحليل شامل لسهم
+function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, lows = null) {
   if (!quote || !closes.length) return null;
 
   const price  = quote.price;
   const change = quote.changePercentage || 0;
   const rsi    = calcRSI(closes);
-  const stochRsi = calcStochRSI(closes);
   const macd   = calcMACD(closes);
   const weekly = calcWeeklyTrend(closes);
   const levels = calcSupRes(closes, highs || closes, lows || closes, price);
   const atrPct = calcATR(closes);
   const green  = calcGreenCandles(closes);
-  const adx    = calcADX(highs, lows, closes);
 
-  // ── الشموع — تمرير opens الحقيقي
-  const candlePatterns = detectCandlePatterns(closes, highs, lows, opens);
-
-  // ── Bollinger Bands
-  let bb_lower = null, bb_upper = null;
-  if (closes.length >= 20) {
-    const last20 = closes.slice(-20);
-    const ma20   = last20.reduce((a, b) => a + b, 0) / 20;
-    const std    = Math.sqrt(last20.reduce((s, v) => s + Math.pow(v - ma20, 2), 0) / 20);
-    bb_upper = ma20 + 2 * std;
-    bb_lower = ma20 - 2 * std;
-  }
-
-  // ── MA20 و MA50
-  const ma20 = closes.length >= 20 ? closes.slice(-20).reduce((a, b) => a + b, 0) / 20 : null;
-  const ma50 = closes.length >= 50 ? closes.slice(-50).reduce((a, b) => a + b, 0) / 50 : null;
-
-  // ── نقاط الإشارة — نفس منطق الأداة
+  // ── نقاط الإشارة
   let buy = 0, sell = 0;
   const signals = [], risks = [];
 
-  // MACD مع crossing
-  if (macd.hist > 0 && macd.dir === 'expanding')        { buy += 2; signals.push('MACD زخم صاعد قوي ↑'); }
-  else if (macd.hist > 0 && macd.dir === 'crossing')    { buy += 2; signals.push('MACD عبر الصفر للأعلى ↑'); }
-  else if (macd.hist > 0)                               { buy++;    signals.push('MACD صاعد يضعف'); }
-  else if (macd.hist < 0 && macd.dir === 'contracting') { buy++;    signals.push('MACD سالب يتقلص ↗'); }
-  else if (macd.hist < 0 && macd.dir === 'crossing')    { sell++;   risks.push('MACD عبر الصفر للأسفل ↓'); }
-  else if (macd.hist < 0 && macd.dir === 'expanding')   { sell += 2; risks.push('MACD هابط يتوسع ↓'); }
-  else if (macd.hist < 0)                               { sell++;   risks.push('MACD هابط'); }
+  if (macd.hist > 0 && macd.dir === 'expanding')  { buy += 2; signals.push('MACD زخم صاعد قوي ↑'); }
+  else if (macd.hist > 0)                          { buy++;    signals.push('MACD صاعد يضعف'); }
+  else if (macd.hist < 0 && macd.dir === 'expanding') { sell += 2; risks.push('MACD هابط يتوسع ↓'); }
+  else if (macd.hist < 0)                          { sell++;   risks.push('MACD هابط'); }
 
-  // RSI
   if (rsi !== null) {
     if (rsi < 30)       { buy += 2;  signals.push('RSI '+rsi+' — تشبع بيع شديد 🔥'); }
     else if (rsi < 40)  { buy++;     signals.push('RSI '+rsi+' — منطقة شراء'); }
@@ -461,74 +271,66 @@ function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, low
     else if (rsi > 65)  { sell++;    risks.push('RSI '+rsi+' — مرتفع'); }
   }
 
-  // MA
-  if (ma20 && ma50) {
-    if (ma20 > ma50 && price > ma20)  { buy++;   signals.push('فوق MA20 وMA50 ✅'); }
-    else if (ma20 < ma50)             { sell++;  risks.push('MA20 تحت MA50 ❌'); }
-  }
-
-  // Bollinger
-  if (bb_lower && price <= bb_lower) { buy++;   signals.push('عند Bollinger السفلي'); }
-  if (bb_upper && price >= bb_upper) { sell++;  risks.push('عند Bollinger العلوي'); }
-
-  // أسبوعي
   if (weekly === 'bullish') { buy++;   signals.push('أسبوعي صاعد ✅'); }
   else                      { sell++;  risks.push('أسبوعي هابط ❌'); }
 
-  // شموع
-  if (green >= 4) { buy++;  signals.push(green+' شموع خضراء من 5'); }
+  if (green >= 4) { buy++;   signals.push(green+' شموع خضراء من 5'); }
   else if (green <= 1) { sell++; risks.push('شموع حمراء متتالية'); }
 
-  // أنماط الشموع
-  candlePatterns.forEach(p => {
-    if (p.signal === 'bullish') { buy++;  signals.push('شمعة '+p.ar+' — '+p.tip); }
-    else if (p.signal === 'bearish') { sell++; risks.push('شمعة '+p.ar+' — '+p.tip); }
-  });
-
-  // ADX — نقاط إيجابية فقط
-  if (adx != null) {
-    if (adx > 30 && macd.hist > 0) { buy++; signals.push('ADX '+adx+' — اتجاه صاعد قوي جداً'); }
-    else if (adx > 25 && macd.hist > 0) { buy++; signals.push('ADX '+adx+' — اتجاه صاعد قوي'); }
-  }
-
-  // حجب: RSI مرتفع + قريب من المقاومة
+  // ✅ حجب: RSI مرتفع + قريب من المقاومة
   const nearRes = levels.resistance && price >= levels.resistance * 0.98;
   if (rsi !== null && rsi > 70 && nearRes) { sell += 4; risks.push('RSI مرتفع + قريب من المقاومة ⛔'); }
   else if (rsi !== null && rsi > 72)       { sell += 2; risks.push('RSI مرتفع جداً ⚠️'); }
 
   const score   = buy - sell;
   let verdict, vIcon;
-  if      (score >= 4) { verdict = 'شراء قوي';              vIcon = '✅'; }
-  else if (score >= 2) { verdict = 'إيجابي — يمكن الدخول';  vIcon = '⚠️'; }
+  if      (score >= 3) { verdict = 'إشارة شراء قوية';        vIcon = '✅'; }
+  else if (score >= 1) { verdict = 'إيجابي — يمكن الدخول';   vIcon = '⚠️'; }
   else if (score === 0){ verdict = 'إشارات متضاربة — انتظر'; vIcon = '⏳'; }
-  else                  { verdict = 'سلبي — تجنب الدخول';   vIcon = '❌'; }
+  else                  { verdict = 'سلبي — تجنب الدخول';    vIcon = '❌'; }
 
-  // ── اكتشاف التغييرات الجوهرية
+  // ── اكتشاف التغييرات الجوهرية (للتنبيه)
   const changes = [];
   if (prevAnalysis) {
+    // MACD تحول
     if (prevAnalysis.macdHist < 0 && macd.hist > 0)
       changes.push('🚀 MACD تحوّل إيجابياً — إشارة شراء جديدة!');
     if (prevAnalysis.macdHist > 0 && macd.hist < 0)
       changes.push('⚠️ MACD تحوّل سلبياً — كن حذراً');
+    // MACD اتجاه
     if (prevAnalysis.macdDir === 'contracting' && macd.dir === 'expanding' && macd.hist > 0)
       changes.push('📈 زخم MACD بدأ يتوسع — الزخم يتسارع');
+    // RSI
     if (prevAnalysis.rsi > 40 && rsi < 35)
       changes.push('🎯 RSI دخل منطقة تشبع البيع — فرصة اقتربت');
     if (prevAnalysis.rsi < 70 && rsi > 75)
       changes.push('🔔 RSI دخل منطقة تشبع الشراء — راقب الخروج');
+    // السعر عند الدعم
     if (levels.support && price <= levels.support * 1.015 && prevAnalysis.price > levels.support * 1.015)
       changes.push('🛡 السعر لامس الدعم $' + levels.support + ' — نقطة دخول محتملة');
+    // تحول الاتجاه الأسبوعي
     if (prevAnalysis.weekly === 'bearish' && weekly === 'bullish')
       changes.push('🌟 الاتجاه الأسبوعي تحوّل صاعداً!');
   }
 
   return {
-    price: +price.toFixed(2), change: +change.toFixed(2),
-    rsi, stochRsi, adx, macdHist: macd.hist, macdDir: macd.dir, macdLine: macd.macdLine,
-    weekly, support: levels.support, resistance: levels.resistance,
-    atrPct, green, bb_lower, bb_upper, ma20, ma50,
-    signals, risks, score, verdict, vIcon, changes,
-    candlePatterns,
+    price: +price.toFixed(2),
+    change: +change.toFixed(2),
+    rsi,
+    macdHist:  macd.hist,
+    macdDir:   macd.dir,
+    macdLine:  macd.macdLine,
+    weekly,
+    support:   levels.support,
+    resistance:levels.resistance,
+    atrPct,
+    green,
+    signals,
+    risks,
+    score,
+    verdict,
+    vIcon,
+    changes,  // التغييرات الجوهرية — للتنبيه
   };
 }
 
@@ -536,77 +338,53 @@ function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, low
 // ═══════════════════ MESSAGE BUILDERS ═══════════════════════════
 // ================================================================
 
-// رسالة تحليل سهم كامل — نفس الأداة الرئيسية
-function buildAnalysisMsg(sym, name, a, analystData) {
-  const st = calcStopTarget(a.price, a.support, a.resistance, a.atrPct);
+// رسالة تحليل سهم كامل (عند الطلب)
+function buildAnalysisMsg(sym, name, a, levels) {
+  const stopLoss = a.support ? +(a.support * 0.985).toFixed(2) : null;
+  // ✅ إذا قريب من المقاومة → الهدف 5% فوقها (بعد كسرها)
+  const isNearRes = a.resistance && a.price >= a.resistance * 0.98;
+  const target    = isNearRes
+    ? +(a.resistance * 1.05).toFixed(2)
+    : a.resistance || +(a.price * 1.08).toFixed(2);
+  const atr      = a.atrPct;
+  // ✅ تعديل: مدة تأخذ MACD والأسبوعي
+  const momentum = a.macdHist>0 && a.macdDir==='expanding' ? 1.3 :
+                   a.macdHist>0 ? 1.0 : 0.7;
+  const trend    = a.weekly==='bullish' ? 1.2 : 0.8;
+  const days     = atr ? Math.max(1, Math.ceil(((target - a.price) / a.price * 100) / (atr * momentum * trend))) : 3;
 
   let m = `📊 <b>${name || sym} (${sym})</b>\n`;
   m    += `💰 <b>$${a.price}</b> ${a.change >= 0 ? '📈' : '📉'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
   m    += `──────────────\n`;
 
   if (a.macdHist != null) {
-    const mIcon = a.macdHist > 0 ? '✅' : a.macdHist < 0 && a.macdDir === 'contracting' ? '⚠️' : '❌';
-    const mDir  = a.macdDir === 'expanding' ? '↑ يتوسع' : a.macdDir === 'crossing' ? '⚡ عبر الصفر' : '↓ يضيق';
+    const mIcon = a.macdHist > 0 ? '✅' : '❌';
+    const mDir  = a.macdDir === 'expanding' ? '↑ يتوسع' : '↓ يضيق';
     m += `MACD: ${mIcon} ${a.macdHist > 0 ? '+' : ''}${a.macdHist} ${mDir}\n`;
   }
   if (a.rsi != null) {
-    const rIcon = a.rsi < 35 ? '🔥' : a.rsi > 70 ? '⚠️' : '•';
+    const rIcon = a.rsi < 35 ? '✅' : a.rsi > 70 ? '❌' : '⚠️';
     const rNote = a.rsi < 35 ? 'تشبع بيع' : a.rsi > 70 ? 'تشبع شراء' : 'محايد';
     m += `RSI: ${rIcon} ${a.rsi} — ${rNote}\n`;
   }
-  if (a.stochRsi != null) {
-    const sIcon = a.stochRsi < 20 ? '🔥' : a.stochRsi > 80 ? '⚠️' : '•';
-    m += `Stoch RSI: ${sIcon} ${a.stochRsi}\n`;
-  }
-  if (a.adx != null) {
-    const dIcon = a.adx > 30 ? '💪' : a.adx > 20 ? '•' : '😴';
-    const dNote = a.adx > 30 ? 'قوي جداً' : a.adx > 25 ? 'قوي' : a.adx > 20 ? 'متوسط' : 'ضعيف';
-    m += `ADX: ${dIcon} ${a.adx} — ${dNote}\n`;
-  }
   m += `أسبوعي: ${a.weekly === 'bullish' ? '✅ صاعد' : '❌ هابط'}\n`;
-  if (a.ma20 && a.ma50) m += `MA: ${a.ma20 > a.ma50 ? '✅' : '❌'} MA20 ${a.ma20 > a.ma50 ? '>' : '<'} MA50\n`;
-  if (a.bb_lower) m += `BB: ${a.price <= a.bb_lower ? '🔥 عند الحد السفلي' : a.price >= a.bb_upper ? '⚠️ عند الحد العلوي' : '• داخل النطاق'}\n`;
+  m += `شموع: 🕯 ${a.green} خضراء من آخر 5\n`;
   m += `──────────────\n`;
   if (a.support)    m += `🟢 دعم: <b>$${a.support}</b>\n`;
   if (a.resistance) m += `🔴 مقاومة: <b>$${a.resistance}</b>\n`;
-  m += `🛑 وقف: <b>$${st.stopLoss}</b> (-${st.lossPct}%)\n`;
-  m += `🎯 هدف: <b>$${st.target}</b> (+${st.profitPct}%)\n`;
-  m += `📐 R/R: <b>${st.rr}x</b>\n`;
-
-  // Analyst Ratings
-  if (analystData?.analysts >= 5) {
-    const rat = (analystData.rating||'').toLowerCase();
-    const rIcon = rat.includes('buy') ? '✅' : rat.includes('sell') ? '❌' : '⚠️';
-    m += `──────────────\n`;
-    m += `👨‍💼 المحللون: ${rIcon} ${analystData.analysts} محلل — ${analystData.rating || 'محايد'}\n`;
-    if (analystData.score) m += `تقييم: ${analystData.score}/5\n`;
-  }
-
-  // Price Target
-  if (analystData?.consensus) {
-    const diff = ((analystData.consensus - a.price) / a.price * 100).toFixed(1);
-    m += `🎯 هدف المحللين: <b>$${analystData.consensus}</b> (${diff > 0 ? '+' : ''}${diff}%)\n`;
-    if (analystData.targetHigh && analystData.targetLow)
-      m += `أعلى: $${analystData.targetHigh} | أدنى: $${analystData.targetLow}\n`;
-  }
-
+  if (isNearRes)    m += `⚠️ السعر قريب من المقاومة — انتظر كسرها\n`;
+  if (stopLoss)     m += `🛑 وقف مقترح: <b>$${stopLoss}</b>\n`;
+  m += `⏱️ مدة الاحتفاظ: <b>${days <= 1 ? '🔥 يومي' : days <= 3 ? `⚡ ${days} أيام` : `📅 ${days} أيام`}</b>\n`;
   m += `──────────────\n`;
-
-  // أنماط الشموع
-  if (a.candlePatterns && a.candlePatterns.length > 0) {
-    a.candlePatterns.forEach(p => {
-      m += `${p.signal === 'bullish' ? '🕯✅' : p.signal === 'bearish' ? '🕯❌' : '🕯'} ${p.ar} — ${p.tip}\n`;
-    });
-    m += `──────────────\n`;
-  }
-
   m += `🤖 <b>التحليل:</b>\n`;
   a.signals.forEach(s => { m += `✅ ${s}\n`; });
   a.risks.forEach(r   => { m += `❌ ${r}\n`; });
   m += `──────────────\n`;
-  m += `${a.vIcon} <b>${a.verdict}</b>\n`;
+  m += `${a.vIcon} ${a.verdict}\n`;
   m += `──────────────\n`;
-  m += `هل اشتريت ${sym}؟\n1️⃣ نعم  2️⃣ لا — أضف للمراقبة`;
+  m += `هل اشتريت ${sym}؟\n`;
+  m += `1️⃣ نعم — سجّل الصفقة\n`;
+  m += `2️⃣ لا — أضفه للمراقبة`;
   return m;
 }
 
@@ -824,7 +602,7 @@ async function runMonitor() {
       if (!d?.quote) continue;
 
       const prev = prevState[sym] || null;
-      const a    = analyzeStock(sym, d.quote, d.closes, prev, d.highs, d.lows, d.opens);
+      const a    = analyzeStock(sym, d.quote, d.closes, prev, d.highs, d.lows);
       if (!a) continue;
 
       newState[sym] = {
@@ -849,7 +627,7 @@ async function runMonitor() {
       if (!d?.quote) continue;
 
       const prev = prevState[sym] || null;
-      const a    = analyzeStock(sym, d.quote, d.closes, prev, d.highs, d.lows, d.opens);
+      const a    = analyzeStock(sym, d.quote, d.closes, prev, d.highs, d.lows);
       if (!a) continue;
 
       newState[sym] = {
@@ -967,10 +745,6 @@ async function handleCallback(callbackId, data, cid) {
     await tgSend(`⏳ جاري جلب أسعار <b>${sym}</b>...`);
     const d = await getStock(sym);
     if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات`); return; }
-    if (!d.dates?.length || !d.closes?.length) {
-      await tgSend(`⚠️ ${sym} — لا توجد بيانات تاريخية كافية\nالسعر الحالي: <b>$${d.quote.price?.toFixed(2)}</b>`);
-      return;
-    }
     const count = isMonth ? 30 : 7;
     const lastN = d.dates.slice(-count);
     const clsN  = d.closes.slice(-count);
@@ -1053,12 +827,6 @@ async function handleCallback(callbackId, data, cid) {
       return;
     }
 
-    // صائد الارتداد
-    if (sym === 'HUNTER') {
-      await handleMessage('صائد', cid);
-      return;
-    }
-
     // تقرير الأداة
     if (sym === 'REPORT') {
       await tgSend('⏳ جاري تحضير تقرير الأداة...');
@@ -1069,79 +837,29 @@ async function handleCallback(callbackId, data, cid) {
     // مساعدة
     if (sym === 'HELP') {
       await tgSend(
-        `❓ <b>المساعدة</b>\n──────────────\n` +
-        `📊 تحليل سهم: اكتب رمزه مثل <code>NVDA</code>\n` +
-        `🎯 صائد الارتداد: <code>صائد</code>\n` +
-        `💼 محفظتي: <code>محفظتي</code>\n` +
-        `👁 مراقبتي: <code>مراقبتي</code>\n` +
-        `📈 تقرير: <code>تقرير</code>\n` +
-        `🚪 إغلاق: <code>خرجت AAPL</code>\n` +
-        `🗑 حذف: <code>حذف AAPL</code>\n` +
-        `──────────────\n` +
-        `اكتب <code>1</code> للقائمة`
+        `❓ <b>المساعدة</b>
+──────────────
+` +
+        `📊 تحليل سهم: اكتب رمزه مثل <code>NVDA</code>
+` +
+        `💼 محفظتي: اكتب <code>محفظتي</code>
+` +
+        `👁 مراقبتي: اكتب <code>مراقبتي</code>
+` +
+        `📈 تقرير: اكتب <code>تقرير</code>
+` +
+        `🚪 إغلاق صفقة: <code>خرجت AAPL</code>
+` +
+        `🗑 حذف من المراقبة: <code>حذف AAPL</code>
+` +
+        `──────────────
+` +
+        `اكتب <code>1</code> للقائمة الرئيسية`
       );
       return;
     }
   }
 
-  // ── القائمة الرئيسية
-  if (action === 'menu') {
-    if (sym === 'ANALYZE') {
-      sess[cid] = { step: 'waiting_sym' };
-      await tgSend('📊 اكتب رمز السهم:\nمثال: <code>NVDA</code>');
-      return;
-    }
-    if (sym === 'PORTFOLIO') {
-      const pd   = await fbGet('portfolio');
-      const pp   = (pd.trades || []).filter(t => !t.closed);
-      if (!pp.length) { await tgSend('📂 محفظتك فارغة'); return; }
-      const pst  = await getMultipleStocks(pp.map(t => t.symbol));
-      let pm = '💼 <b>محفظتك الآن:</b>\n──────────────\n';
-      let ptotal = 0;
-      for (const t of pp) {
-        const pc  = pst[t.symbol]?.quote?.price || t.entry;
-        const pp2 = +((pc - t.entry) / t.entry * 100).toFixed(2);
-        ptotal += pp2;
-        pm += `${pp2 >= 0 ? '✅' : '❌'} <b>${t.symbol}</b> $${t.entry} → $${pc?.toFixed(2)} (${pp2 >= 0 ? '+' : ''}${pp2}%)\n`;
-      }
-      pm += `──────────────\nمتوسط P&L: ${+(ptotal / pp.length).toFixed(2)}%`;
-      await tgSend(pm);
-      return;
-    }
-    if (sym === 'WATCHLIST') {
-      const wd  = await fbGet('watchlist');
-      const wl  = wd.symbols || [];
-      if (!wl.length) { await tgSend('👁 قائمة المراقبة فارغة'); return; }
-      const wst = await getMultipleStocks(wl);
-      let wm = '👁 <b>قائمة المراقبة:</b>\n──────────────\n';
-      for (const ws of wl) {
-        const wq = wst[ws]?.quote;
-        if (wq) {
-          const wc = +(wq.changePercentage || 0).toFixed(2);
-          wm += `• <b>${ws}</b> $${wq.price?.toFixed(2)} ${wc >= 0 ? '▲' : '▼'} ${wc >= 0 ? '+' : ''}${wc}%\n`;
-        } else { wm += `• <b>${ws}</b>\n`; }
-      }
-      await tgSend(wm);
-      return;
-    }
-    if (sym === 'REPORT') {
-      await tgSend('⏳ جاري تحضير تقرير الأداة...');
-      await generateReport();
-      return;
-    }
-    if (sym === 'HELP') {
-      await tgSend(
-        '❓ <b>المساعدة</b>\n──────────────\n' +
-        'تحليل سهم: اكتب رمزه مثل <code>NVDA</code>\n' +
-        'محفظتي: اكتب <code>محفظتي</code>\n' +
-        'مراقبتي: اكتب <code>مراقبتي</code>\n' +
-        'تقرير: اكتب <code>تقرير</code>\n' +
-        'إغلاق: <code>خرجت AAPL</code>\n──────────────\n' +
-        'اكتب <code>1</code> للقائمة'
-      );
-      return;
-    }
-  }
 }
 
 async function handleMessage(text, cid) {
@@ -1155,79 +873,12 @@ async function handleMessage(text, cid) {
       `🦅 <b>RamiMarketX — مرحباً رامي!</b>\nاختر من القائمة:`,
       [
         [{ text: '📊 تحليل سهم',     callback_data: 'menu_analyze'   }],
-        [{ text: '🎯 صائد الارتداد', callback_data: 'menu_hunter'    }],
         [{ text: '💼 محفظتي',         callback_data: 'menu_portfolio' }],
         [{ text: '👁 مراقبتي',        callback_data: 'menu_watchlist' }],
         [{ text: '📈 تقرير الأداة',   callback_data: 'menu_report'    }],
         [{ text: '❓ مساعدة',          callback_data: 'menu_help'      }],
       ]
     );
-    return;
-  }
-
-  // ── صائد الارتداد
-  if (text === 'صائد' || text === 'hunter' || text === 'ارتداد') {
-    await tgSend('⏳ جاري تشغيل صائد الارتداد...\nسيفحص الأسهم التي عندها RSI منخفض وبيانات ارتداد...');
-    const candidates = [
-      'NVDA','AMD','TSLA','META','AAPL','MSFT','AMZN','GOOGL',
-      'PLTR','CRWD','NET','SNOW','DDOG','APP','SMCI','SOUN',
-      'COIN','MARA','RIVN','RKLB','IONQ','ASTS','ACHR','CVNA',
-    ];
-    const stocksData = await getMultipleStocks(candidates);
-    const results    = [];
-
-    for (const sym of candidates) {
-      const d = stocksData[sym];
-      if (!d?.quote) continue;
-      const a = analyzeStock(sym, d.quote, d.closes, null, d.highs, d.lows, d.opens);
-      if (!a) continue;
-
-      // شروط الصائد — RSI منخفض + MACD يتحسن + عند الدعم
-      const rsiOk    = a.rsi != null && a.rsi < 40;
-      const macdOk   = a.macdHist != null && (
-        a.macdDir === 'crossing' ||
-        (a.macdHist < 0 && a.macdDir === 'contracting') ||
-        a.macdHist > 0
-      );
-      const supOk    = a.support && d.quote.price <= a.support * 1.05;
-      const bbOk     = a.bb_lower && d.quote.price <= a.bb_lower * 1.02;
-      const stochOk  = a.stochRsi != null && a.stochRsi < 30;
-
-      let hunterScore = 0;
-      if (rsiOk)   hunterScore += 30;
-      if (macdOk)  hunterScore += 25;
-      if (supOk)   hunterScore += 20;
-      if (bbOk)    hunterScore += 15;
-      if (stochOk) hunterScore += 10;
-
-      if (hunterScore >= 50) {
-        const st = calcStopTarget(d.quote.price, a.support, a.resistance, a.atrPct);
-        results.push({ sym, name: d.quote.name || sym, score: hunterScore, a, st });
-      }
-    }
-
-    results.sort((x, y) => y.score - x.score);
-
-    if (!results.length) {
-      await tgSend('🎯 <b>صائد الارتداد</b>\n──────────────\nلا توجد فرص ارتداد واضحة الآن\nجرب لاحقاً عند انخفاض السوق');
-      return;
-    }
-
-    let m = `🎯 <b>صائد الارتداد — ${results.length} فرصة</b>\n──────────────\n`;
-    for (const r of results.slice(0, 5)) {
-      const chgIcon = r.a.change >= 0 ? '▲' : '▼';
-      const macdIcon = r.a.macdHist > 0 ? '✅ موجب' : r.a.macdDir === 'contracting' ? '⚠️ يتقلص' : r.a.macdDir === 'crossing' ? '⚡ عبر الصفر' : '❌ هابط';
-      m += `\n<b>${r.sym}</b> — ${r.name}\n`;
-      m += `💰 $${r.a.price} ${chgIcon} ${r.a.change >= 0 ? '+' : ''}${r.a.change}% | درجة: ${r.score}/100\n`;
-      m += `📊 RSI: ${r.a.rsi} | ستوكاستيك: ${r.a.stochRsi || '—'}\n`;
-      m += `📉 MACD: ${macdIcon}\n`;
-      m += `🛑 وقف: $${r.st.stopLoss} (-${r.st.lossPct}%)\n`;
-      m += `🎯 هدف: $${r.st.target} (+${r.st.profitPct}%)\n`;
-      m += `📐 مخاطرة/مكافأة: ${r.st.rr}x\n`;
-      m += `──────────────\n`;
-    }
-    m += `\n✏️ اكتب رمز السهم للتحليل الكامل`;
-    await tgSend(m);
     return;
   }
 
@@ -1403,9 +1054,8 @@ async function handleMessage(text, cid) {
       await tgSend(`⏳ جاري تحليل <b>${sym2}</b>...`);
       const d = await getStock(sym2);
       if (!d?.quote) { await tgSend(`⚠️ ${sym2} — لم أجد بيانات`); sess[cid] = {}; return; }
-      const a  = analyzeStock(sym2, d.quote, d.closes, null, d.highs, d.lows, d.opens);
+      const a = analyzeStock(sym2, d.quote, d.closes, null, d.highs, d.lows);
       if (!a) { await tgSend(`⚠️ ${sym2} — بيانات غير كافية`); sess[cid] = {}; return; }
-      const analystData = await fetchAnalystData(sym2);
       sess[cid] = { step: 'ask_bought', sym: sym2, price: d.quote.price, analysis: a };
       const buttons = [
         [{ text: '✅ اشتريت',          callback_data: `bought_${sym2}` }],
@@ -1416,7 +1066,7 @@ async function handleMessage(text, cid) {
         ],
         [{ text: '🚪 خروج',            callback_data: `exit_${sym2}` }],
       ];
-      await tgSendButtons(buildAnalysisMsg(sym2, d.quote.name || sym2, a, analystData), buttons);
+      await tgSendButtons(buildAnalysisMsg(sym2, d.quote.name || sym2, a), buttons);
     } else {
       await tgSend('⚠️ رمز غير صحيح — اكتب مثل: <code>NVDA</code>');
     }
@@ -1461,10 +1111,11 @@ async function handleMessage(text, cid) {
 
   if (s.step === 'ask_qty') {
     const qty    = parseInt(text) || 1;
-    const st     = calcStopTarget(s.entry, s.analysis?.support, s.analysis?.resistance, s.analysis?.atrPct);
-    const stop   = st.stopLoss;
-    const target = st.target;
-    const pct    = st.profitPct;
+    const atr    = s.analysis?.atrPct || 3;
+    const stop   = +(s.entry * (1 - atr * 2 / 100)).toFixed(2);
+    const target = +(s.entry * (1 + atr * 3.5 / 100)).toFixed(2);
+    const pct    = +((target - s.entry) / s.entry * 100).toFixed(1);
+    const days   = Math.ceil(parseFloat(pct) / atr);
 
     const data = await fbGet('portfolio');
     const port = data.trades || [];
@@ -1484,9 +1135,9 @@ async function handleMessage(text, cid) {
       `✅ <b>تم تسجيل ${s.sym}</b>\n──────────────\n` +
       `دخول: <b>$${s.entry?.toFixed(2)}</b> × ${qty} سهم\n` +
       `رأس المال: <b>$${(s.entry * qty).toFixed(0)}</b>\n──────────────\n` +
-      `🛑 وقف: <b>$${stop}</b> (-${st.lossPct}%)\n` +
+      `🛑 وقف: <b>$${stop}</b> (-${(atr * 2).toFixed(1)}%)\n` +
       `🎯 هدف: <b>$${target}</b> (+${pct}%)\n` +
-      `📐 R/R: <b>${st.rr}x</b>\n` +
+      `⏱️ مدة: ${days <= 1 ? '🔥 يومي' : days <= 3 ? `⚡ ${days} أيام` : `📅 ${days} أيام`}\n` +
       `──────────────\n` +
       `👀 سأراقبه وأنبهك تلقائياً`
     );
@@ -1541,24 +1192,14 @@ async function handleMessage(text, cid) {
   if (sym.length >= 1 && sym.length <= 5) {
     await tgSend(`⏳ جاري تحليل <b>${sym}</b>...`);
     const d = await getStock(sym);
-    if (!d?.quote) { await tgSend(`⚠️ <b>${sym}</b> — لم أجد بيانات\n\nتحقق من الرمز أو جرب سهماً آخر\nمثال: <code>NVDA</code> أو <code>AAPL</code>`); return; }
+    if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات. تحقق من الرمز`); return; }
 
     const q    = d.quote;
     const name = q.name || sym;
-    const a    = analyzeStock(sym, q, d.closes, null, d.highs, d.lows, d.opens);
-    if (!a) {
-      await tgSend(
-        `⚠️ <b>${sym}</b> — بيانات غير كافية للتحليل\n` +
-        `السعر: $${q.price?.toFixed(2)}\n` +
-        `التاريخ المتاح: ${d.closes.length} يوم (نحتاج 35+ يوم)`
-      );
-      return;
-    }
+    const a    = analyzeStock(sym, q, d.closes);
+    if (!a) { await tgSend(`⚠️ ${sym} — بيانات غير كافية`); return; }
 
     sess[cid] = { step: 'ask_bought', sym, price: q.price, analysis: a };
-
-    // جلب بيانات المحللين
-    const analystData = await fetchAnalystData(sym);
 
     // أزرار Inline تحت التحليل
     const buttons = [
@@ -1571,7 +1212,7 @@ async function handleMessage(text, cid) {
       [{ text: '🚪 خروج', callback_data: `exit_${sym}` }],
     ];
 
-    await tgSendButtons(buildAnalysisMsg(sym, name, a, analystData), buttons);
+    await tgSendButtons(buildAnalysisMsg(sym, name, a), buttons);
     return;
   }
 
