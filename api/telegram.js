@@ -610,53 +610,6 @@ function buildAnalysisMsg(sym, name, a, analystData) {
   return m;
 }
 
-  let m = `📊 <b>${name || sym} (${sym})</b>\n`;
-  m    += `💰 <b>$${a.price}</b> ${a.change >= 0 ? '📈' : '📉'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
-  m    += `──────────────\n`;
-
-  if (a.macdHist != null) {
-    const mIcon = a.macdHist > 0 ? '✅' : a.macdHist < 0 && a.macdDir === 'contracting' ? '⚠️' : '❌';
-    const mDir  = a.macdDir === 'expanding' ? '↑ يتوسع' : a.macdDir === 'crossing' ? '⚡ عبر الصفر' : '↓ يضيق';
-    m += `MACD: ${mIcon} ${a.macdHist > 0 ? '+' : ''}${a.macdHist} ${mDir}\n`;
-  }
-  if (a.rsi != null) {
-    const rIcon = a.rsi < 35 ? '🔥' : a.rsi > 70 ? '⚠️' : '•';
-    const rNote = a.rsi < 35 ? 'تشبع بيع' : a.rsi > 70 ? 'تشبع شراء' : 'محايد';
-    m += `RSI: ${rIcon} ${a.rsi} — ${rNote}\n`;
-  }
-  if (a.stochRsi != null) {
-    const sIcon = a.stochRsi < 20 ? '🔥' : a.stochRsi > 80 ? '⚠️' : '•';
-    m += `Stoch RSI: ${sIcon} ${a.stochRsi}\n`;
-  }
-  m += `أسبوعي: ${a.weekly === 'bullish' ? '✅ صاعد' : '❌ هابط'}\n`;
-  if (a.ma20 && a.ma50) m += `MA: ${a.ma20 > a.ma50 ? '✅' : '❌'} MA20 ${a.ma20 > a.ma50 ? '>' : '<'} MA50\n`;
-  if (a.bb_lower) m += `BB: ${a.price <= a.bb_lower ? '🔥 عند الحد السفلي' : a.price >= a.bb_upper ? '⚠️ عند الحد العلوي' : '• داخل النطاق'}\n`;
-  m += `──────────────\n`;
-  if (a.support)    m += `🟢 دعم: <b>$${a.support}</b>\n`;
-  if (a.resistance) m += `🔴 مقاومة: <b>$${a.resistance}</b>\n`;
-  m += `🛑 وقف: <b>$${st.stopLoss}</b> (-${st.lossPct}%)\n`;
-  m += `🎯 هدف: <b>$${st.target}</b> (+${st.profitPct}%)\n`;
-  m += `📐 R/R: <b>${st.rr}x</b>\n`;
-  m += `──────────────\n`;
-
-  // أنماط الشموع
-  if (a.candlePatterns && a.candlePatterns.length > 0) {
-    a.candlePatterns.forEach(p => {
-      m += `${p.signal === 'bullish' ? '🕯✅' : p.signal === 'bearish' ? '🕯❌' : '🕯'} ${p.ar} — ${p.tip}\n`;
-    });
-    m += `──────────────\n`;
-  }
-
-  m += `🤖 <b>التحليل:</b>\n`;
-  a.signals.forEach(s => { m += `✅ ${s}\n`; });
-  a.risks.forEach(r   => { m += `❌ ${r}\n`; });
-  m += `──────────────\n`;
-  m += `${a.vIcon} <b>${a.verdict}</b>\n`;
-  m += `──────────────\n`;
-  m += `هل اشتريت ${sym}؟\n1️⃣ نعم  2️⃣ لا — أضف للمراقبة`;
-  return m;
-}
-
 // رسالة تحديث سهم في المراقبة (كل 10 دقائق)
 function buildWatchUpdateMsg(sym, a, prevA) {
   const hasChanges = a.changes && a.changes.length > 0;
