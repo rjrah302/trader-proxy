@@ -1,7 +1,7 @@
 // stocks.js - FMP Proxy
-import fetch from 'node-fetch';
+const fetch = require('node-fetch');
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
 
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
           regularMarketVolume:        parseInt(q.volume    || 0),
           regularMarketDayHigh:       parseFloat(q.dayHigh || q.price),
           regularMarketDayLow:        parseFloat(q.dayLow  || q.price),
-          avgVolume:                  parseInt(q.volume    || 0),
+          avgVolume:                  parseInt(q.avgVolume ?? q.averageVolume ?? q.volume ?? 0),
         };
       } catch(e) { return null; }
     });
