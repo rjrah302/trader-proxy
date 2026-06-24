@@ -793,6 +793,50 @@ async function fetchPrices() {
 }
 
 // ── 2. مؤشرات تقنية (3 طلبات/سهم، دفعات 8)
+// ── دوال المؤشرات — معرّفة عالمياً لتجنب إعادة الإنشاء في كل سهم
+
+function calcEMA(data, period) {
+  if(!data || data.length < period) return null;
+  const k = 2/(period+1);
+  let val = data.slice(0,period).reduce((a,b)=>a+b,0)/period;
+  for(let j=period; j<data.length; j++) val = data[j]*k + val*(1-k);
+  return val;
+}
+
+function calcADX(highs, lows, closes, period=14) {
+  if(!highs || !lows || !closes) return null;
+  if(highs.length < period*2) return null;
+  const n = highs.length;
+  const trs=[], pdms=[], ndms=[];
+  for(let i=1; i<n; i++) {
+    const tr  = Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1]));
+    const pdm = Math.max(highs[i]-highs[i-1], 0);
+    const ndm = Math.max(lows[i-1]-lows[i], 0);
+    trs.push(tr);
+    pdms.push(pdm > ndm ? pdm : 0);
+    ndms.push(ndm > pdm ? ndm : 0);
+  }
+  const smooth = (arr) => {
+    let s = arr.slice(0, period).reduce((a,b)=>a+b,0);
+    const out = [s];
+    for(let i=period; i<arr.length; i++) { s = s - s/period + arr[i]; out.push(s); }
+    return out;
+  };
+  const sTR = smooth(trs), sPDM = smooth(pdms), sNDM = smooth(ndms);
+  const dxArr = [];
+  for(let i=0; i<sTR.length; i++) {
+    if(sTR[i] === 0) continue;
+    const pdi = 100 * sPDM[i] / sTR[i];
+    const ndi = 100 * sNDM[i] / sTR[i];
+    const dx  = Math.abs(pdi-ndi) / (pdi+ndi) * 100;
+    dxArr.push(dx);
+  }
+  if(dxArr.length < period) return null;
+  let adx = dxArr.slice(0, period).reduce((a,b)=>a+b,0) / period;
+  for(let i=period; i<dxArr.length; i++) adx = (adx*(period-1) + dxArr[i]) / period;
+  return +adx.toFixed(1);
+}
+
 async function fetchIndicators() {
   state.loadingIndicators = true;
   state.indicators = {};
@@ -888,51 +932,6 @@ async function fetchIndicators() {
         }
 
         // ── MACD (EMA12 - EMA26)
-        function calcEMA(data, period) {
-          if(data.length < period) return null;
-          const k = 2/(period+1);
-          let val = data.slice(0,period).reduce((a,b)=>a+b,0)/period;
-          for(let j=period; j<data.length; j++) val = data[j]*k + val*(1-k);
-          return val;
-        }
-
-        // ── ADX (14) — قوة الاتجاه
-        function calcADX(highs, lows, closes, period=14) {
-          if(!highs || !lows || !closes) return null;
-          if(highs.length < period*2) return null;
-          const n = highs.length;
-          const trs=[], pdms=[], ndms=[];
-          for(let i=1; i<n; i++) {
-            const tr  = Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1]));
-            const pdm = Math.max(highs[i]-highs[i-1], 0);
-            const ndm = Math.max(lows[i-1]-lows[i], 0);
-            trs.push(tr);
-            pdms.push(pdm > ndm ? pdm : 0);
-            ndms.push(ndm > pdm ? ndm : 0);
-          }
-          // Wilder smoothing
-          const smooth = (arr) => {
-            let s = arr.slice(0, period).reduce((a,b)=>a+b,0);
-            const out = [s];
-            for(let i=period; i<arr.length; i++) { s = s - s/period + arr[i]; out.push(s); }
-            return out;
-          };
-          const sTR = smooth(trs), sPDM = smooth(pdms), sNDM = smooth(ndms);
-          const dxArr = [];
-          for(let i=0; i<sTR.length; i++) {
-            if(sTR[i] === 0) continue;
-            const pdi = 100 * sPDM[i] / sTR[i];
-            const ndi = 100 * sNDM[i] / sTR[i];
-            const dx  = Math.abs(pdi-ndi) / (pdi+ndi) * 100;
-            dxArr.push(dx);
-          }
-          if(dxArr.length < period) return null;
-          // ADX = EMA14 من DX
-          let adx = dxArr.slice(0, period).reduce((a,b)=>a+b,0) / period;
-          for(let i=period; i<dxArr.length; i++) adx = (adx*(period-1) + dxArr[i]) / period;
-          return +adx.toFixed(1);
-        }
-
         const adx = calcADX(highs, lows, closes);
         const ema12 = calcEMA(closes, 12);
         const ema26 = calcEMA(closes, 26);
@@ -2294,10 +2293,8 @@ function getHunterCandidates() {
     if (!ind || !p) return false;
     // أسهم ظهرت سابقاً في النتائج
     if ((state.hunterRecs||[]).some(r => r.id === s.id)) return true;
-    // أسهم عندها RSI منخفض = مرشحة للارتداد
-    if (ind.rsi != null && ind.rsi < 40) return true;
-    // أسهم عند الدعم
-    if (ind.nearSupport) return true;
+    if (ind?.rsi != null && ind.rsi < 40) return true;
+    if (ind?.nearSupport) return true;
     return false;
   });
 }
@@ -4991,7 +4988,7 @@ function renderHunterCard(h, idx) {
             trendBadge,
             h.isNight && el('span', {style:{fontSize:'9px', color:'#aaa', background:'rgba(255,255,255,.06)', borderRadius:'4px', padding:'1px 5px'}}, ['🌙 ليلي']),
         h.ahBonus && el('span', {style:{fontSize:'9px', color:C.green, background:'rgba(0,255,136,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['🔥 AH+']),
-        h.checks?.isGainer && el('span', {style:{fontSize:'9px', color:C.yellow, background:'rgba(255,224,51,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['⚡ Gainer']),
+        h.checks?.isGainer && el('span', {style:{fontSize:'9px', color:C.yellow, background:'rgba(255,224,51,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['🔥 من أقوى السوق اليوم']),
           ]),
           el('div', {style:{fontSize:'10px', color:C.text3}}, [h.id+' · '+h.sector]),
         ]),
