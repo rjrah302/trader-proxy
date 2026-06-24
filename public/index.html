@@ -1318,6 +1318,7 @@ async function fetchProfiles() {
     localStorage.setItem('analyst_ratings', JSON.stringify(state.analystRatings));
     console.log('[Analyst] حُفظ في الكاش ✅');
   } catch(e) {}
+}
 
 // ── جلب Price Target للتوصيات فقط (5 أسهم)
 async function fetchPriceTargets(recs) {
@@ -6621,14 +6622,13 @@ async function tgHandle(msg, cid) {
     await tgSend(msg2);
     return;
   }
-}
+
   // ── مساعدة
   await tgSend(`🦅 <b>RamiFalconX</b>\n──────────────\nاكتب رمز السهم: <code>NVDA</code>\nمحفظتك: <code>محفظتي</code>\nتقرير اليوم: <code>تقرير</code>\nخروج من سهم: <code>خرجت ALAB</code>`);
 }
 
 // ── Polling معطل — البوت على Vercel يتعامل مع الرسائل
 // setInterval(() => tgPoll(), 3000);
-
 </script>
 </body>
 </html>
