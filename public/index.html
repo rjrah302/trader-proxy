@@ -2806,24 +2806,48 @@ async function fetchBiggestGainers() {
     const data = await res.json();
     if (!Array.isArray(data)) return [];
 
-    // فلتر: حجم > 500K وسعر $3-$200
-    const filtered = data
-      .filter(s => s.symbol && s.price >= 3 && s.price <= 200 && (s.volume||0) > 500000)
-      .slice(0, 20)
-      .map((s, idx) => ({
+    // FMP biggest-gainers أحياناً لا يرجع volume؛ لا نرمي السهم قبل محاولة quote
+    const base = data
+      .filter(s => s.symbol && +s.price >= 1 && +s.price <= 200)
+      .slice(0, 25);
+
+    const quoteMap = {};
+    const symbols = base.map(s => s.symbol).filter(Boolean);
+    for(let i=0; i<symbols.length; i+=25) {
+      const batch = symbols.slice(i, i+25).join(',');
+      try {
+        const qres = await fetch(`${FMP_BASE}/stable/quote?symbol=${batch}&apikey=${API_KEY}`, { signal: AbortSignal.timeout(8000) });
+        const qdata = await qres.json();
+        if(Array.isArray(qdata)) {
+          qdata.forEach(q => { if(q?.symbol) quoteMap[q.symbol] = q; });
+        }
+      } catch(e) {}
+    }
+
+    const filtered = base
+      .map((s, idx) => {
+        const q = quoteMap[s.symbol] || {};
+        const price = +(q.price ?? s.price ?? 0);
+        const volume = +(q.volume ?? s.volume ?? 0);
+        const change = +(q.changePercentage ?? q.changesPercentage ?? s.changesPercentage ?? 0);
+        return {
         id:     s.symbol,
-        name:   s.name || s.symbol,
+        name:   q.name || s.name || s.symbol,
         sector: 'Gainers',
         cat:    'mid',
         beta:   1.5, // افتراضي
-        price:  +s.price,
-        change: +s.changesPercentage,
-        volume: +s.volume,
+        price,
+        change,
+        volume,
+        volumeKnown: volume > 0,
         gainerRank: idx + 1,
         isGainer: true, // علامة
-      }));
+      };
+    })
+      .filter(s => s.price >= 1 && s.price <= 200)
+      .slice(0, 20);
 
-    console.log('[Gainers] طلع:', filtered.length, 'سهم');
+    console.log('[Gainers] طلع:', filtered.length, 'سهم | volume known:', filtered.filter(x=>x.volumeKnown).length);
     return filtered;
   } catch(e) {
     console.warn('[Gainers] error:', e.message);
