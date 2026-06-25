@@ -546,6 +546,24 @@ const state = {
   qqqChange:   null,
   search:      '',
   searchDraft: '',
+  broker:      (() => { try { return localStorage.getItem('risk_broker') || 'ibkr'; } catch(e){ return 'ibkr'; } })(),
+  riskPanelOpen:false,
+  riskSettings:(() => {
+    try {
+      return {
+        ibkr: 0,
+        sahm: 0,
+        defaultBroker: 'ibkr',
+        recRisk: 1.0,
+        hunterRisk: 0.5,
+        specRisk: 0.5,
+        dailyLimit: 2.0,
+        ...JSON.parse(localStorage.getItem('risk_settings') || '{}')
+      };
+    } catch(e) {
+      return {ibkr:0, sahm:0, defaultBroker:'ibkr', recRisk:1.0, hunterRisk:0.5, specRisk:0.5, dailyLimit:2.0};
+    }
+  })(),
 
   // واجهة
   tab:        'rec',
@@ -610,6 +628,127 @@ function fmt(n, d=2) {
 function fmtPrice(n) {
   if(!n) return '—';
   return '$'+Number(n).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function saveRiskSettings() {
+  try {
+    localStorage.setItem('risk_settings', JSON.stringify(state.riskSettings));
+    localStorage.setItem('risk_broker', state.broker || state.riskSettings.defaultBroker || 'ibkr');
+  } catch(e) {}
+}
+
+function getBrokerCapital(broker=state.broker) {
+  const rs = state.riskSettings || {};
+  return broker === 'sahm' ? +(rs.sahm || 0) : +(rs.ibkr || 0);
+}
+
+function getRiskPct(kind, ctx={}) {
+  const rs = state.riskSettings || {};
+  if(ctx.watchOnly || ctx.noTrade || ctx.gainerClass === 'chase') return 0;
+  if(kind === 'rec') return +(rs.recRisk ?? 1.0);
+  if(kind === 'hunter') return +(rs.hunterRisk ?? 0.5);
+  if(kind === 'spec') return +(rs.specRisk ?? 0.5);
+  return 0.5;
+}
+
+function calcTradeDecision({kind, symbol, entry, stop, target, rr, action, watchOnly=false, noTrade=false, gainerClass=null}) {
+  const broker = state.broker || state.riskSettings.defaultBroker || 'ibkr';
+  const capital = getBrokerCapital(broker);
+  const riskPct = getRiskPct(kind, {watchOnly, noTrade, gainerClass});
+  const e = +entry, s = +stop, t = +target;
+  const riskPerShare = e > 0 && s > 0 ? Math.max(e - s, 0) : 0;
+  const maxRisk = capital > 0 && riskPct > 0 ? capital * riskPct / 100 : 0;
+  const qty = riskPerShare > 0 && maxRisk > 0 ? Math.floor(maxRisk / riskPerShare) : 0;
+  const positionValue = qty > 0 ? qty * e : 0;
+  const potentialLoss = qty > 0 ? qty * riskPerShare : 0;
+  const potentialProfit = qty > 0 && t > e ? qty * (t - e) : 0;
+  const realRR = riskPerShare > 0 && t > e ? (t - e) / riskPerShare : (+rr || 0);
+
+  let verdict = 'حدد رأس المال';
+  let tone = 'neutral';
+  let note = 'أدخل رأس مال IBKR أو سهم لتفعيل حساب الكمية.';
+
+  if(noTrade || watchOnly || riskPct <= 0) {
+    verdict = 'مراقبة فقط';
+    tone = 'watch';
+    note = action || 'لا يوجد أمر شراء الآن.';
+  } else if(capital <= 0) {
+    verdict = 'حدد رأس المال';
+    tone = 'neutral';
+  } else if(qty <= 0) {
+    verdict = 'الكمية صفر';
+    tone = 'danger';
+    note = 'المسافة للوقف كبيرة بالنسبة للمخاطرة المحددة.';
+  } else if(realRR < 1.2) {
+    verdict = 'لا يستحق';
+    tone = 'danger';
+    note = 'العائد مقابل المخاطرة ضعيف؛ لا تدخل.';
+  } else {
+    verdict = 'قرار منضبط';
+    tone = 'ok';
+    note = 'لا ترفع الدخول فوق السعر المحدد، والوقف إلزامي.';
+  }
+
+  return {broker, capital, riskPct, entry:e, stop:s, target:t, riskPerShare, maxRisk, qty, positionValue, potentialLoss, potentialProfit, rr:realRR, verdict, tone, note, symbol};
+}
+
+function renderBrokerSelector() {
+  const btn = (id, label) => el('button', {
+    style:{
+      flex:'1', fontSize:'10px', fontWeight:'800', padding:'5px 8px',
+      borderRadius:'8px',
+      color:state.broker===id?'#050810':C.text2,
+      background:state.broker===id?C.green:'rgba(255,255,255,.05)',
+      border:state.broker===id?'none':'1px solid #1a2340',
+    },
+    onClick:()=>{state.broker=id; state.riskSettings.defaultBroker=id; saveRiskSettings(); render();}
+  }, [label]);
+  return el('div', {style:{display:'flex', gap:'5px'}}, [
+    btn('ibkr','IBKR'),
+    btn('sahm','سهم'),
+  ]);
+}
+
+function renderTradeDecisionBox(decision) {
+  const color = decision.tone === 'ok' ? C.green : decision.tone === 'danger' ? C.pink : decision.tone === 'watch' ? C.yellow : C.blue;
+  return el('div', {style:{
+    background:color+'0f', border:`1px solid ${color}30`,
+    borderRadius:'10px', padding:'9px 10px', marginBottom:'8px',
+  }}, [
+    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'7px'}}, [
+      el('div', {style:{fontSize:'11px', fontWeight:'900', color}}, ['🛡️ قرار الصفقة: '+decision.verdict]),
+      el('div', {style:{fontSize:'9px', color:C.text2}}, [
+        (decision.broker==='sahm'?'سهم':'IBKR')+' • '+(decision.riskPct ? decision.riskPct+'%' : '0%')
+      ]),
+    ]),
+    decision.capital <= 0
+      ? el('div', {style:{fontSize:'10px', color:C.text2, lineHeight:'1.7'}}, [decision.note])
+      : el('div', {style:{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'5px', marginBottom:'6px'}}, [
+          el('div', {style:{background:'#060b14', borderRadius:'7px', padding:'5px', textAlign:'center'}}, [
+            el('div',{style:{fontSize:'8px', color:C.text3}}, ['الكمية']),
+            el('div',{style:{fontSize:'12px', fontWeight:'900', color:decision.qty>0?C.text:C.pink}}, [decision.qty+'']),
+          ]),
+          el('div', {style:{background:'#060b14', borderRadius:'7px', padding:'5px', textAlign:'center'}}, [
+            el('div',{style:{fontSize:'8px', color:C.text3}}, ['خسارة قصوى']),
+            el('div',{style:{fontSize:'12px', fontWeight:'900', color:C.pink}}, ['$'+fmt(decision.potentialLoss,0)]),
+          ]),
+          el('div', {style:{background:'#060b14', borderRadius:'7px', padding:'5px', textAlign:'center'}}, [
+            el('div',{style:{fontSize:'8px', color:C.text3}}, ['قيمة الصفقة']),
+            el('div',{style:{fontSize:'12px', fontWeight:'900', color:C.text}}, ['$'+fmt(decision.positionValue,0)]),
+          ]),
+          el('div', {style:{background:'#060b14', borderRadius:'7px', padding:'5px', textAlign:'center'}}, [
+            el('div',{style:{fontSize:'8px', color:C.text3}}, ['ربح محتمل']),
+            el('div',{style:{fontSize:'12px', fontWeight:'900', color:C.green}}, ['$'+fmt(decision.potentialProfit,0)]),
+          ]),
+        ]),
+    el('div', {style:{fontSize:'9px', color:C.text2, display:'flex', justifyContent:'space-between', gap:'8px', flexWrap:'wrap'}}, [
+      el('span', {}, ['دخول '+fmtPrice(decision.entry)]),
+      el('span', {style:{color:C.pink}}, ['وقف '+fmtPrice(decision.stop)]),
+      el('span', {style:{color:C.green}}, ['هدف '+fmtPrice(decision.target)]),
+      el('span', {style:{color:decision.rr>=1.5?C.green:C.yellow}}, ['R/R '+fmt(decision.rr,1)+'x']),
+    ]),
+    el('div', {style:{fontSize:'9px', color, marginTop:'5px', fontWeight:'700'}}, [decision.note]),
+  ]);
 }
 
 // ================================================================
@@ -3860,6 +3999,7 @@ function renderApp() {
     renderTicker(),
     renderDataCheck(),
     renderMacdBar(),
+    renderRiskPanel(),
     renderContent(),
     renderBottomNav(),
     // ── صفحة تحليل السهم الكاملة (overlay)
@@ -3961,6 +4101,70 @@ function renderHeader() {
 function renderTicker() {
   // مخفي مؤقتاً — سيعود في تطوير قادم
   return el('div', {}, []);
+}
+
+function renderRiskPanel() {
+  const rs = state.riskSettings || {};
+  const activeCapital = getBrokerCapital();
+  const setNum = (key, val) => {
+    const n = parseFloat(val);
+    state.riskSettings[key] = isNaN(n) ? 0 : Math.max(0, n);
+    saveRiskSettings();
+  };
+  const input = (label, key, suffix='$') => el('label', {style:{display:'block'}}, [
+    el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, [label]),
+    el('input', {
+      type:'number', inputmode:'decimal', value:rs[key] || '',
+      placeholder:'0',
+      style:{
+        width:'100%', boxSizing:'border-box', background:'#060b14',
+        border:'1px solid #1a2340', borderRadius:'7px',
+        color:C.text, padding:'6px 7px', fontSize:'11px', outline:'none',
+      },
+      onInput:e=>setNum(key, e.target.value),
+      onChange:()=>render(),
+    }),
+  ]);
+
+  return el('div', {style:{
+    background:'#050810', borderBottom:'1px solid var(--border)',
+    padding:'7px 16px',
+  }}, [
+    el('div', {style:{display:'flex', gap:'6px', alignItems:'center', marginBottom:state.riskPanelOpen?'8px':'0'}}, [
+      el('button', {
+        style:{
+          flex:'1', textAlign:'right',
+          background:'rgba(0,255,136,.07)', border:'1px solid rgba(0,255,136,.22)',
+          borderRadius:'9px', padding:'7px 9px', color:C.text, cursor:'pointer',
+        },
+        onClick:()=>{state.riskPanelOpen=!state.riskPanelOpen; render();}
+      }, [
+        '🛡️ إدارة المال: ',
+        el('span', {style:{color:activeCapital>0?C.green:C.yellow, fontWeight:'900'}}, [
+          (state.broker==='sahm'?'سهم':'IBKR')+' '+(activeCapital>0?'$'+fmt(activeCapital,0):'غير محدد')
+        ]),
+      ]),
+      el('div', {style:{width:'120px', flexShrink:'0'}}, [renderBrokerSelector()]),
+    ]),
+    state.riskPanelOpen && el('div', {style:{
+      background:'rgba(255,255,255,.025)', border:'1px solid #1a2340',
+      borderRadius:'10px', padding:'9px',
+    }}, [
+      el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'7px', marginBottom:'8px'}}, [
+        input('رأس مال IBKR', 'ibkr'),
+        input('رأس مال سهم', 'sahm'),
+      ]),
+      el('div', {style:{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'6px'}}, [
+        input('توصية %', 'recRisk', '%'),
+        input('صايد %', 'hunterRisk', '%'),
+        input('مجازفة %', 'specRisk', '%'),
+        input('حد يومي %', 'dailyLimit', '%'),
+      ]),
+      el('div', {style:{fontSize:'9px', color:C.text2, marginTop:'7px', lineHeight:'1.6'}}, [
+        'الحساب يحدد الكمية حسب الوقف. إذا لم تحدد رأس المال تظهر البطاقة كتحليل فقط بدون كمية.'
+      ]),
+    ]),
+  ]);
 }
 
 // ── Data Check Bar
@@ -4677,6 +4881,18 @@ function renderRecCard(r, idx) {
       el('div', {style:{fontSize:'9px', color:C.text2, textAlign:'left', maxWidth:'55%'}}, [r.entryNote]),
     ]),
 
+    renderTradeDecisionBox(calcTradeDecision({
+      kind:'rec',
+      symbol:r.id,
+      entry:buyPrice || r.price,
+      stop:r.stopLoss,
+      target:r.target,
+      rr:r.riskReward,
+      action:r.entryNote,
+      watchOnly:!r.activeBuy,
+      noTrade:r.blockEntry || r.tooCloseToResistance,
+    })),
+
     renderAnalystMini(r.id, r.price, true),
 
     // ── 5. دعم / مقاومة + المتوسطات
@@ -5148,6 +5364,18 @@ function renderSpecCard(s, idx) {
     ]),
 
     // ── 3. سبب الاختيار — واضح ومباشر
+    renderTradeDecisionBox(calcTradeDecision({
+      kind:'spec',
+      symbol:s.id,
+      entry:buyPrice || s.price,
+      stop:s.stopLoss,
+      target:s.target,
+      rr:s.riskReward,
+      action:s.entryNote,
+      watchOnly:s.isWatch || s.entryTiming === 'انتظر' || s.entryTiming === 'متأخر',
+      noTrade:s.tooCloseToResistance,
+    })),
+
     renderAnalystMini(s.id, s.price, true),
 
     // ── 3. سبب الاختيار — واضح ومباشر
@@ -5553,6 +5781,40 @@ function renderHunterCard(h, idx) {
   const isSelected = state.selected === h.id + '_hunter';
   const scoreColor = h.score >= 80 ? C.green : h.score >= 70 ? C.blue : h.score >= 60 ? C.yellow : C.orange;
   const actionColor = h.actionTone === 'buy' ? C.green : h.actionTone === 'watch' ? C.yellow : h.actionTone === 'support' ? C.blue : C.text2;
+  const analystView = getAnalystView(h.id, h.price);
+  const targetReason = h.vwap && h.vwap > h.price
+    ? 'الهدف هو VWAP؛ ارتداد قصير وليس مطاردة.'
+    : h.checks?.breakout15
+      ? 'الهدف مبني على امتداد الاختراق بعد قمة 15 دقيقة.'
+      : h.support
+        ? 'الهدف بعد ارتداد من الدعم مع وقف واضح أسفله.'
+        : 'الهدف محسوب من ATR لعدم وجود مقاومة قريبة موثوقة.';
+  const speedFactor =
+    (h.actionTone === 'buy' ? 1.35 : h.actionTone === 'support' ? 1.1 : 0.85) *
+    (h.checks?.cleanMomentum ? 1.2 : 1) *
+    (h.rvol >= 3 ? 1.25 : h.rvol >= 1.5 ? 1.1 : 0.85) *
+    (h.rs30 > 1 ? 1.15 : h.rs30 < 0 ? 0.85 : 1);
+  const estimatedDays = Math.max(1, Math.ceil((h.profitPct || 1) / Math.max(0.5, (h.atrPct || 2.5) * speedFactor)));
+  const durationText = h.isNight
+    ? 'بعد الافتتاح'
+    : estimatedDays <= 1
+      ? 'اليوم / جلسة واحدة'
+      : estimatedDays <= 3
+        ? estimatedDays + ' أيام تداول'
+        : '3-7 أيام تداول';
+  const enterVerdict = h.actionTone === 'buy'
+    ? {label:'دخول مسموح', color:C.green, note:'نفذ فقط إذا بقي فوق VWAP والحجم داعم.'}
+    : h.actionTone === 'support'
+      ? {label:'دخول قرب الدعم', color:C.blue, note:'لا تدخل إلا قريبًا من الدعم وبوقف صغير.'}
+      : h.gainerClass === 'chase' || h.action === 'لا تطارد'
+        ? {label:'لا تدخل الآن', color:C.pink, note:'السهم مرتفع لكن الدخول متأخر؛ انتظر Pullback.'}
+        : {label:'انتظار تأكيد', color:C.yellow, note:'الدخول بعد اختراق/ثبات وليس بسعر عشوائي.'};
+  const triggerText = h.actionTone === 'buy'
+    ? 'الثبات فوق $'+fmt(h.vwap || h.price,2)+' مع RVOL أعلى من 1.5'
+    : h.checks?.breakout15
+      ? 'إغلاق 5 دقائق فوق قمة الاختراق'
+      : 'رجوع فوق VWAP أو Higher Low جديد';
+  const invalidationText = 'كسر $'+fmt(h.stopLoss,2)+' أو فقدان VWAP مع حجم بيع';
   const trendBadge = h.marketTrend === 'bearish'
     ? el('span', {style:{fontSize:'9px', color:C.pink, background:'rgba(255,45,122,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['سوق هابط'])
     : h.marketTrend === 'bullish'
@@ -5618,6 +5880,40 @@ function renderHunterCard(h, idx) {
         fontSize:'10px', fontWeight:'700',
       }}, [h.gainerNote]),
 
+      el('div', {style:{
+        display:'grid', gridTemplateColumns:'1.1fr 1fr 1fr', gap:'6px',
+        marginBottom:'8px',
+      }}, [
+        el('div', {style:{
+          background:enterVerdict.color+'10', border:`1px solid ${enterVerdict.color}28`,
+          borderRadius:'8px', padding:'7px 8px',
+        }}, [
+          el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, ['قرار التنفيذ']),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:enterVerdict.color}}, [enterVerdict.label]),
+          el('div', {style:{fontSize:'8px', color:C.text2, marginTop:'2px', lineHeight:'1.35'}}, [enterVerdict.note]),
+        ]),
+        el('div', {style:{
+          background:'rgba(255,255,255,.035)', border:'1px solid rgba(255,255,255,.08)',
+          borderRadius:'8px', padding:'7px 8px',
+        }}, [
+          el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, ['مدة الهدف']),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:estimatedDays<=1?C.green:estimatedDays<=3?C.orange:C.blue}}, [durationText]),
+          el('div', {style:{fontSize:'8px', color:C.text2, marginTop:'2px'}}, ['حسب ATR والحجم والزخم']),
+        ]),
+        el('div', {style:{
+          background:(analystView?.color || C.text2)+'0d', border:`1px solid ${(analystView?.color || C.text2)}24`,
+          borderRadius:'8px', padding:'7px 8px',
+        }}, [
+          el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, ['رأي المحللين']),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:analystView?.color || C.text2}}, [
+            analystView?.analysts ? analystView.verdict : 'غير متاح'
+          ]),
+          el('div', {style:{fontSize:'8px', color:C.text2, marginTop:'2px'}}, [
+            analystView?.target ? 'هدفهم $'+fmt(analystView.target,2)+' ('+((analystView.upside||0)>=0?'+':'')+fmt(analystView.upside,1)+'%)' : 'ليس شرط دخول'
+          ]),
+        ]),
+      ]),
+
       // السعر + VWAP + RS
       el('div', {style:{display:'flex', gap:'8px', fontSize:'10px', marginBottom:'6px', flexWrap:'wrap'}}, [
         el('div', {style:{color:C.text, fontWeight:'700'}}, ['$'+fmt(h.price, 2)]),
@@ -5632,6 +5928,20 @@ function renderHunterCard(h, idx) {
         h.rvol > 0 && el('div', {style:{color:h.rvol>=2?C.green:C.text2}}, ['RVOL ×'+fmt(h.rvol,1)]),
         h.rs30 !== 0 && el('div', {style:{color:h.rs30>0?C.green:C.pink}}, [
           'RS30m '+(h.rs30>0?'+':'')+fmt(h.rs30,1)+'%'
+        ]),
+      ]),
+
+      el('div', {style:{
+        display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px',
+        marginBottom:'8px', fontSize:'9px',
+      }}, [
+        el('div', {style:{background:'#090f1b', border:'1px solid rgba(0,255,136,.12)', borderRadius:'8px', padding:'7px 8px'}}, [
+          el('div', {style:{color:C.green, fontWeight:'800', marginBottom:'3px'}}, ['محفز الدخول']),
+          el('div', {style:{color:C.text2, lineHeight:'1.45'}}, [triggerText]),
+        ]),
+        el('div', {style:{background:'#090f1b', border:'1px solid rgba(255,45,122,.14)', borderRadius:'8px', padding:'7px 8px'}}, [
+          el('div', {style:{color:C.pink, fontWeight:'800', marginBottom:'3px'}}, ['إلغاء الفكرة']),
+          el('div', {style:{color:C.text2, lineHeight:'1.45'}}, [invalidationText]),
         ]),
       ]),
 
@@ -5652,6 +5962,30 @@ function renderHunterCard(h, idx) {
           el('div', {style:{fontSize:'9px', color:C.green}}, ['+'+fmt(h.profitPct,1)+'%']),
         ]),
       ]),
+
+      el('div', {style:{
+        background:'rgba(255,255,255,.028)',
+        border:'1px solid rgba(255,255,255,.08)',
+        borderRadius:'8px', padding:'7px 8px',
+        color:C.text2, fontSize:'9px', lineHeight:'1.5',
+        marginBottom:'8px',
+      }}, [
+        el('span', {style:{color:C.yellow, fontWeight:'800'}}, ['سبب الهدف: ']),
+        targetReason
+      ]),
+
+      renderTradeDecisionBox(calcTradeDecision({
+        kind:'hunter',
+        symbol:h.id,
+        entry:h.price,
+        stop:h.stopLoss,
+        target:h.targetPrice,
+        rr:h.rr,
+        action:h.actionNote,
+        watchOnly:h.actionTone !== 'buy' && h.actionTone !== 'support',
+        noTrade:h.isNight || h.gainerClass === 'chase' || h.action === 'لا تطارد',
+        gainerClass:h.gainerClass,
+      })),
 
       // R/R + RSI
       el('div', {style:{display:'flex', justifyContent:'space-between', fontSize:'10px', color:C.text2}}, [
