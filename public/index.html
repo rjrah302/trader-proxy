@@ -525,6 +525,8 @@ const state = {
   recs:           null,
   speculativeRecs:null,
   hunterRecs:     [],
+  specTime:        null,
+  hunterTime:      null,
   priceTargets:   {},
   analystRatings: {},    // صائد الارتداد
   recsTime:       null,
@@ -628,6 +630,18 @@ function fmt(n, d=2) {
 function fmtPrice(n) {
   if(!n) return '—';
   return '$'+Number(n).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function fmtClock(t) {
+  if(!t) return '—';
+  try { return new Date(t).toLocaleTimeString('ar', {hour:'2-digit', minute:'2-digit'}); }
+  catch(e) { return '—'; }
+}
+
+function nextUpdateText(t, mins) {
+  if(!t) return 'بعد أول تحديث';
+  const next = new Date(new Date(t).getTime() + mins * 60000);
+  return fmtClock(next);
 }
 
 function saveRiskSettings() {
@@ -2405,6 +2419,8 @@ function calcSpeculative() {
         ...s, price, change, volR, beta, atrPct,
         score, label, reasons, warnings, isWatch,
         rsi:ind.rsi, macd:ind.macd,
+        macdHist:ind.macdHist, macdHistDir:ind.macdHistDir,
+        weeklyTrend:ind.weeklyTrend,
         ma20:ind.ma20, ma50:ind.ma50, ma200:ind.ma200,
         support:ind.support, resistance:ind.resistance,
         roomToResistance, minRoomToResistance, tooCloseToResistance,
@@ -2426,6 +2442,7 @@ function calcSpeculative() {
   state.speculativeRecs = candidates;
   specDebug.kept = candidates.length;
   state.specDebug = specDebug;
+  state.specTime = new Date();
   if(candidates.length && isMarketOpen()) recordSpecToHistory(candidates);
   return candidates;
 }
@@ -3035,6 +3052,7 @@ async function calcHunterNight() {
     return (b.score + boost(b)) - (a.score + boost(a));
   });
   state.hunterRecs = results;
+  state.hunterTime = new Date();
   console.log('[Hunter] 🌙 ليلية اكتملت:', results.length, 'فرصة');
 }
 
@@ -3141,6 +3159,7 @@ async function calcHunterFull() {
   const existingIds = new Set(results.map(r => r.id));
   const radar = results.length < 6 ? buildHunterRadar(existingIds, 6 - results.length) : [];
   state.hunterRecs = [...results, ...radar];
+  state.hunterTime = new Date();
   console.log('[Hunter] كاملة:', results.length, 'فرصة + رادار', radar.length);
 }
 
@@ -3169,6 +3188,7 @@ async function calcHunterQuick() {
   const existingIds = new Set(merged.map(r => r.id));
   const radar = merged.length < 6 ? buildHunterRadar(existingIds, 6 - merged.length) : [];
   state.hunterRecs = [...merged, ...radar];
+  state.hunterTime = new Date();
   render();
 }
 
@@ -3179,6 +3199,17 @@ function startHunterLoop() {
   _hunterInterval = setInterval(async () => {
     if (isMarketOpen()) await calcHunterQuick();
   }, 30 * 60 * 1000);
+}
+
+let _specInterval = null;
+function startSpecLoop() {
+  if (_specInterval) clearInterval(_specInterval);
+  _specInterval = setInterval(() => {
+    if (isMarketOpen() && state.indicatorsDone) {
+      calcSpeculative();
+      render();
+    }
+  }, 45 * 60 * 1000);
 }
 
 // ================================================================
@@ -3236,6 +3267,7 @@ async function loadData(full=false) {
       if(isMarketOpen()) {
         await calcHunterFull();
         startHunterLoop();
+        startSpecLoop();
       } else {
         await calcHunterNight();
       }
@@ -3278,6 +3310,7 @@ async function loadData(full=false) {
       calcSpeculative();
       await calcHunterFull();
       startHunterLoop();
+      startSpecLoop();
       // جلب Price Target للتوصيات والمجازفة
       const allRecs = [...(state.recs||[]), ...(state.speculativeRecs||[])];
       if(allRecs.length > 0) await fetchPriceTargets(allRecs);
@@ -3307,6 +3340,7 @@ async function loadData(full=false) {
     if(isMarketOpen()) {
       await calcHunterFull();
       startHunterLoop();
+      startSpecLoop();
     } else {
       await calcHunterNight();
     }
@@ -5365,6 +5399,15 @@ function renderSpecTab() {
         ]),
       ]),
       el('div', {style:{
+        display:'flex', justifyContent:'space-between', gap:'8px',
+        fontSize:'9px', color:C.text3,
+        background:'rgba(255,255,255,.035)', borderRadius:'6px',
+        padding:'5px 8px', marginBottom:'6px',
+      }}, [
+        el('span', {}, ['آخر تحديث: '+fmtClock(state.specTime)]),
+        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.specTime,45):'عند فتح السوق')]),
+      ]),
+      el('div', {style:{
         fontSize:'10px', color:C.orange,
         background:'rgba(255,45,122,.06)', borderRadius:'6px',
         padding:'5px 8px', border:'1px solid rgba(255,45,122,.2)',
@@ -5413,6 +5456,20 @@ function renderSpecCard(s, idx) {
         ? {label:'دخول مشروط', color:C.blue, note:'الأفضل أمر محدد قرب الدعم؛ لا تطارد السعر.'}
         : {label:'ممنوع الآن', color:C.pink, note:'الدخول متأخر أو المخاطرة غير مناسبة.'};
   const specCancel = 'إلغاء الفكرة إذا كسر '+fmtPrice(s.stopLoss)+' أو فقد الزخم قبل الدخول.';
+  const displayEntryTiming = s.isWatch
+    ? 'انتظر نقطة الدخول'
+    : specVerdict.label === 'ممنوع الآن'
+      ? 'لا تدخل'
+      : s.entryTiming;
+  const displayEntryNote = s.isWatch
+    ? (s.entryNote || 'انتظر اكتمال شروط الدخول قبل التنفيذ.')
+    : specVerdict.label === 'ممنوع الآن'
+      ? specVerdict.note
+      : s.entryNote;
+  const canPlaceSpecOrder = specVerdict.label === 'دخول مجازفة' || specVerdict.label === 'دخول مشروط';
+  const specPlanTitle = canPlaceSpecOrder ? '📋 أمر الشراء' : '📋 خطة المراقبة';
+  const displayOrderType = canPlaceSpecOrder ? orderType : 'انتظار';
+  const displayOrderColor = canPlaceSpecOrder ? orderColor : specVerdict.color;
 
   return el('div', {
     class:'fade-up',
@@ -5518,8 +5575,8 @@ function renderSpecCard(s, idx) {
       ]),
     ]),
 
-    // ── 3. سبب الاختيار — واضح ومباشر
-    renderTradeDecisionBox(calcTradeDecision({
+    // ── 3. حاسبة الكمية — تظهر عند الضغط فقط حتى لا تزحم قرار البطاقة
+    isSelected && renderTradeDecisionBox(calcTradeDecision({
       kind:'spec',
       symbol:s.id,
       entry:buyPrice || s.price,
@@ -5531,7 +5588,7 @@ function renderSpecCard(s, idx) {
       noTrade:s.tooCloseToResistance,
     })),
 
-    renderAnalystMini(s.id, s.price, true),
+    isSelected && renderAnalystMini(s.id, s.price, true),
 
     // ── 3. سبب الاختيار — واضح ومباشر
     isSelected && s.reasons.length>0 && el('div', {style:{
@@ -5627,12 +5684,12 @@ function renderSpecCard(s, idx) {
 
     // ── 5. توقيت الدخول
     el('div', {style:{
-      background:entryColor+'11', border:'1px solid '+entryColor+'33',
+      background:specVerdict.color+'11', border:'1px solid '+specVerdict.color+'33',
       borderRadius:'8px', padding:'7px 10px', marginBottom:'8px',
       display:'flex', justifyContent:'space-between', alignItems:'center',
     }}, [
-      el('span', {style:{fontSize:'11px', fontWeight:'800', color:entryColor}}, [s.entryTiming]),
-      el('span', {style:{fontSize:'9px', color:C.text3, textAlign:'left', maxWidth:'60%'}}, [s.entryNote]),
+      el('span', {style:{fontSize:'11px', fontWeight:'800', color:specVerdict.color}}, [displayEntryTiming]),
+      el('span', {style:{fontSize:'9px', color:C.text3, textAlign:'left', maxWidth:'60%'}}, [displayEntryNote]),
     ]),
 
     // ── 6. شموع يابانية
@@ -5645,7 +5702,7 @@ function renderSpecCard(s, idx) {
       : null,
 
     // ── 7. الأرقام الحاسمة: دعم / مقاومة / هدف / وقف
-    el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px', marginBottom:'8px'}}, [
+    isSelected && el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px', marginBottom:'8px'}}, [
       // دعم
       el('div', {style:{
         background:'rgba(0,200,255,.06)', border:'1px solid rgba(0,200,255,.15)',
@@ -5696,7 +5753,7 @@ function renderSpecCard(s, idx) {
         el('div', {style:{fontSize:'8px', color:C.text3, marginTop:'1px'}}, [
           s.resistance && Math.abs(s.resistance-s.target)<0.5
             ? '📍 من المقاومة'
-            : '📐 من ATR×3.5',
+            : '📐 من ATR×2.5',
         ]),
       ]),
       el('div', {style:{
@@ -5718,24 +5775,24 @@ function renderSpecCard(s, idx) {
       ]),
     ]),
 
-    // ── 9. أمر الشراء الجاهز
-    el('div', {style:{
+    // ── 9. أمر الشراء الجاهز — يظهر عند الضغط فقط
+    isSelected && el('div', {style:{
       background:'linear-gradient(135deg,rgba(180,79,255,.08),rgba(255,45,122,.04))',
       border:'1px solid rgba(180,79,255,.3)',
       borderRadius:'10px', padding:'10px 12px', marginBottom:'8px',
     }}, [
       el('div', {style:{fontSize:'10px', fontWeight:'800', color:C.purple, marginBottom:'8px'}},
-        ['📋 أمر الشراء']),
+        [specPlanTitle]),
       el('div', {style:{borderTop:'1px solid rgba(180,79,255,.2)', marginBottom:'8px'}}),
       el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}, [
         el('span', {style:{fontSize:'10px', color:C.text3}}, ['نوع الأمر']),
         el('span', {style:{
-          fontSize:'11px', fontWeight:'800', color:orderColor,
-          background:orderColor+'18', borderRadius:'5px', padding:'2px 8px',
-        }}, [orderType]),
+          fontSize:'11px', fontWeight:'800', color:displayOrderColor,
+          background:displayOrderColor+'18', borderRadius:'5px', padding:'2px 8px',
+        }}, [displayOrderType]),
       ]),
       el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['سعر الشراء']),
+        el('span', {style:{fontSize:'10px', color:C.text3}}, [canPlaceSpecOrder ? 'سعر الشراء' : 'أفضل نقطة دخول']),
         el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, ['$'+fmt(buyPrice,2)]),
       ]),
       el('div', {style:{borderTop:'1px solid rgba(255,255,255,.05)', margin:'5px 0'}}),
@@ -5751,7 +5808,7 @@ function renderSpecCard(s, idx) {
           el('div', {style:{fontSize:'8px', color:C.text3}}, [
             s.resistance && Math.abs(s.resistance-s.target)<0.5
               ? '📍 عند المقاومة'
-              : '📐 ATR×3.5 (مقاومة قريبة جداً)',
+              : '📐 ATR×2.5 (هدف واقعي)',
           ]),
         ]),
       ]),
@@ -5909,6 +5966,16 @@ function renderHunterTab() {
         el('span', {style:{color:C.text2}}, ['مؤشر السوق:']),
         el('span', {style:{color:state.spyChange>=0?C.green:C.pink, fontWeight:'700'}}, ['SPY '+(state.spyChange>=0?'+':'')+fmt(state.spyChange)+'%']),
         el('span', {style:{color:state.qqqChange>=0?C.green:C.pink, fontWeight:'700'}}, ['QQQ '+(state.qqqChange>=0?'+':'')+fmt(state.qqqChange)+'%']),
+      ]),
+
+      el('div', {style:{
+        display:'flex', justifyContent:'space-between', gap:'8px',
+        fontSize:'9px', color:C.text3,
+        background:'rgba(255,255,255,.035)', borderRadius:'6px',
+        padding:'5px 8px', marginBottom:'6px',
+      }}, [
+        el('span', {}, ['آخر تحديث: '+fmtClock(state.hunterTime)]),
+        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.hunterTime,30):'عند فتح السوق')]),
       ]),
 
       // تنبيه السوق الهابط
@@ -7210,7 +7277,7 @@ function renderTipsTab() {
       title: '🗺️ دليل الأداة v24', color: C.blue, isHeader: true,
       lines: [
         '🎯 توصياتي — 127 سهم × 10 مؤشرات + شموع + قوة نسبية + أخبار',
-        '🎲 مجازفة — أسهم $3-$80 عالية التقلب، R/R 3.5:1 على الأقل',
+        '🎲 مجازفة — أسهم متقلبة بقرار واضح: دخول / انتظار / ممنوع',
         '📊 السوق — نظرة كاملة مع فرز بالتغيير/الحجم/السعر',
         '💼 محفظتي — سجّل صفقاتك مع وقف وهدف وR/R',
         '📈 السجل — تقييم تلقائي لكل توصية (ربح/خسارة)',
@@ -7276,7 +7343,7 @@ function renderTipsTab() {
       'ATR = متوسط تحرك السهم اليومي',
       'وقف الخسارة = السعر - (ATR × 1.5) — حد أقصى -15%',
       'سهم ATR=10% → وقف أوسع | سهم ATR=2% → وقف ضيق',
-      'المجازفة تستخدم ATR × 2 (أوسع) وهدف ATR × 3.5',
+      'المجازفة تستخدم هدف مقاومة موثوقة أو ATR × 2.5 كهدف واقعي',
     ]},
 
     // ── القسم 5: الشموع اليابانية
@@ -7311,10 +7378,10 @@ function renderTipsTab() {
     // ── القسم 8: المجازفة
     {icon:'🎲', title:'المجازفة — فلسفتها وشروطها', color:C.purple, lines:[
       'رأسمال 5-10% فقط — رهان صغير ربحه ضخم',
-      'السعر بين $3 و$80 — لا أسهم غالية',
-      'Beta ≥ 1.7 أو ATR ≥ 2.5% — تقلب حقيقي',
+      'السعر بين $3 و$100 — لا أسهم غالية جداً',
+      'Beta ≥ 1.4 أو ATR ≥ 1.8% — تقلب كافٍ للمجازفة',
       'الوقف تحت الدعم بـ 1.5% — محدد وواضح',
-      'الهدف 3.5:1 R/R — أي سهم أقل يُرفض تلقائياً',
+      'R/R الضعيف جداً يُرفض، والمتوسط يظهر مراقبة فقط',
       'المقاومة تُستخدم كهدف فقط إذا أعلى بـ 5%+',
     ]},
 
@@ -7418,12 +7485,12 @@ function renderTipsTab() {
 
     // ══ الجديد: نظام المجازفة الكامل
     {icon:'🎲', title:'نظام المجازفة — كيف يعمل الآن', color:C.purple, lines:[
-      'شرط 1: السعر $3-$80 فقط (لا أسهم غالية)',
-      'شرط 2: Beta ≥ 1.7 أو ATR ≥ 2.5% (تقلب حقيقي)',
+      'شرط 1: السعر $3-$100 فقط، مع أولوية للأسهم الأرخص والأكثر حركة',
+      'شرط 2: Beta ≥ 1.4 أو ATR ≥ 1.8% (تقلب كافٍ للمجازفة)',
       'شرط 3: MACD Hist سالب متوسع = حجب فوري ❌',
       'شرط 4: أسبوعي هابط قوي = حجب فوري ❌',
-      'شرط 5: R/R أقل من 2:1 = رفض تلقائي',
-      'الهدف: ATR×3.5 أو مقاومة أعلى بـ 5%+ فقط',
+      'شرط 5: R/R ضعيف جداً = رفض، والمتوسط يظهر كمراقبة فقط',
+      'الهدف: مقاومة موثوقة أو ATR×2.5 كهدف واقعي قصير المدى',
       'نقاط مضاعفة: المطرقة والابتلاع الصاعد أقوى من غيرهما',
     ]},
   ];
@@ -7531,7 +7598,6 @@ setInterval(async () => {
       return { ...r, price:p.price, change:p.change };
     });
   }
-  if(state.indicatorsDone) calcSpeculative();
   render();
 }, 30000);
 
