@@ -5938,7 +5938,7 @@ function renderHunterTab() {
   }}, [
     el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}}, [
       el('div', {style:{fontSize:'11px', fontWeight:'900', color}}, [title]),
-      el('div', {style:{fontSize:'10px', fontWeight:'800', color}}, [count+'']),
+      el('div', {style:{fontSize:'10px', fontWeight:'800', color}}, [count+' فرصة']),
     ]),
     note && el('div', {style:{fontSize:'9px', color:C.text2, marginTop:'3px', lineHeight:'1.45'}}, [note]),
   ]);
@@ -6010,7 +6010,7 @@ function renderHunterTab() {
             : 'لا توجد فرص ارتداد تستوفي الشروط الآن'
         ])
       : el('div', {}, [
-          entryHunters.length > 0 && sectionTitle('دخول فعلي / ارتداد جاهز', entryHunters.length, C.green, 'هذه فقط التي تسمح بالدخول وفق الوقف والهدف.'),
+          entryHunters.length > 0 && sectionTitle('فرص دخول مسموحة', entryHunters.length, C.green, 'ادخل فقط إذا كان السعر عند نقطة الدخول المكتوبة، ولا تطارد.'),
           ...entryHunters.map((h, i) => renderHunterCard(h, i)),
 
           watchHunters.length > 0 && sectionTitle('رادار مراقبة وانتظار تأكيد', watchHunters.length, C.yellow, 'ليست دخول الآن؛ انتظر محفز الدخول المكتوب داخل البطاقة.'),
@@ -6054,6 +6054,13 @@ function renderHunterCard(h, idx) {
       : h.gainerClass === 'chase' || h.action === 'لا تطارد'
         ? {label:'لا تدخل الآن', color:C.pink, note:'السهم مرتفع لكن الدخول متأخر؛ انتظر Pullback.'}
         : {label:'انتظار تأكيد', color:C.yellow, note:'الدخول بعد اختراق/ثبات وليس بسعر عشوائي.'};
+  const directOrder = h.actionTone === 'buy'
+    ? {label:'ادخل الآن بشروط', color:C.green, note:'السعر قريب من الدخول. نفذ فقط مع الوقف المكتوب.'}
+    : h.actionTone === 'support'
+      ? {label:'ادخل فقط قرب الدعم', color:C.blue, note:'لا تدخل إذا ابتعد السعر عن الدعم أو صار الوقف بعيد.'}
+      : h.gainerClass === 'chase' || h.action === 'لا تطارد'
+        ? {label:'ممنوع الدخول', color:C.pink, note:'انتظر Pullback أو تجاهل السهم.'}
+        : {label:'انتظر الإشارة', color:C.yellow, note:'لا شراء الآن. انتظر محفز الدخول المكتوب.'};
   const triggerText = h.actionTone === 'buy'
     ? 'الثبات فوق $'+fmt(h.vwap || h.price,2)+' مع RVOL أعلى من 1.5'
     : h.checks?.breakout15
@@ -6107,14 +6114,14 @@ function renderHunterCard(h, idx) {
 
       el('div', {style:{
         display:'flex', justifyContent:'space-between', alignItems:'center', gap:'8px',
-        background:actionColor+'12', border:`1px solid ${actionColor}33`,
+        background:directOrder.color+'12', border:`1px solid ${directOrder.color}33`,
         borderRadius:'8px', padding:'7px 9px', marginBottom:'8px',
       }}, [
-        el('div', {style:{fontSize:'12px', fontWeight:'900', color:actionColor, whiteSpace:'nowrap'}}, [
-          h.action || 'راقب فقط'
+        el('div', {style:{fontSize:'13px', fontWeight:'900', color:directOrder.color, whiteSpace:'nowrap'}}, [
+          directOrder.label
         ]),
         el('div', {style:{fontSize:'9px', color:C.text2, textAlign:'left'}}, [
-          h.actionNote || 'انتظر اكتمال إشارة الدخول.'
+          directOrder.note
         ]),
       ]),
 
@@ -6134,7 +6141,7 @@ function renderHunterCard(h, idx) {
           background:enterVerdict.color+'10', border:`1px solid ${enterVerdict.color}28`,
           borderRadius:'8px', padding:'7px 8px',
         }}, [
-          el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, ['قرار التنفيذ']),
+          el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, ['نوع الإشارة']),
           el('div', {style:{fontSize:'11px', fontWeight:'900', color:enterVerdict.color}}, [enterVerdict.label]),
           el('div', {style:{fontSize:'8px', color:C.text2, marginTop:'2px', lineHeight:'1.35'}}, [enterVerdict.note]),
         ]),
