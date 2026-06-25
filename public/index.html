@@ -525,6 +525,8 @@ const state = {
   recs:           null,
   speculativeRecs:null,
   hunterRecs:     [],
+  specTime:        null,
+  hunterTime:      null,
   priceTargets:   {},
   analystRatings: {},    // صائد الارتداد
   recsTime:       null,
@@ -629,6 +631,26 @@ function fmtPrice(n) {
   if(!n) return '—';
   return '$'+Number(n).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+
+function fmtClock(t) {
+  if(!t) return '—';
+  try { return new Date(t).toLocaleTimeString('ar', {hour:'2-digit', minute:'2-digit'}); }
+  catch(e) { return '—'; }
+}
+
+function nextUpdateText(t, mins) {
+  if(!t) return 'بعد أول تحديث';
+  const next = new Date(new Date(t).getTime() + mins * 60000);
+  return fmtClock(next);
+}
+
+const HUNTER_REFRESH_MIN = 10;
+const SPEC_REFRESH_MIN = 15;
+const REC_REFRESH_MIN = 15;
+const NEWS_REFRESH_MIN = 15;
+const REC_MIN_ENTRY_RR = 1.5;
+const REC_MIN_ENTRY_QUALITY = 50;
+const REC_MIN_ENTRY_ADX = 18;
 
 function saveRiskSettings() {
   try {
@@ -1376,6 +1398,15 @@ async function fetchNews() {
 
           if(itemScore > 0) state.news[sym].pos += itemScore;
           else if(itemScore < 0) state.news[sym].neg += Math.abs(itemScore);
+
+          if(itemScore !== 0) {
+            state.news[sym].items.push({
+              title: n.title || 'خبر بدون عنوان',
+              source: n.site || n.publisher || n.source || '',
+              ageHours,
+              score: +itemScore.toFixed(1),
+            });
+          }
         });
 
       } catch(e) { console.warn('[News batch]', e.message); }
@@ -1387,9 +1418,81 @@ async function fetchNews() {
     Object.keys(state.news).forEach(sym => {
       state.news[sym].pos = Math.round(state.news[sym].pos);
       state.news[sym].neg = Math.round(state.news[sym].neg);
+      state.news[sym].items = (state.news[sym].items || [])
+        .sort((a,b) => Math.abs(b.score) - Math.abs(a.score))
+        .slice(0, 3);
+      state.news[sym].net = state.news[sym].pos - state.news[sym].neg;
     });
 
   } catch(e) { console.warn('[News] error:', e.message); }
+}
+
+function getNewsImpact(sym) {
+  const n = state.news?.[sym] || {pos:0, neg:0, items:[]};
+  const pos = +(n.pos || 0);
+  const neg = +(n.neg || 0);
+  const net = pos - neg;
+  const top = (n.items || [])[0] || null;
+
+  if(neg >= 8 || net <= -6) {
+    return {
+      level:'criticalNeg', label:'خبر سلبي قوي', color:C.pink,
+      score:-3, block:true,
+      summary: top?.title || 'أخبار سلبية قوية؛ لا تدخل قبل هدوء الخبر.',
+      pos, neg, net, top,
+    };
+  }
+  if(neg >= 4 || net <= -3) {
+    return {
+      level:'neg', label:'خبر سلبي', color:C.orange,
+      score:-2, block:false,
+      summary: top?.title || 'أخبار سلبية تحتاج حذر.',
+      pos, neg, net, top,
+    };
+  }
+  if(pos >= 6 || net >= 5) {
+    return {
+      level:'strongPos', label:'خبر إيجابي قوي', color:C.green,
+      score:2, block:false,
+      summary: top?.title || 'أخبار إيجابية داعمة.',
+      pos, neg, net, top,
+    };
+  }
+  if(pos >= 2 || net >= 2) {
+    return {
+      level:'pos', label:'خبر إيجابي', color:C.blue,
+      score:1, block:false,
+      summary: top?.title || 'أخبار إيجابية خفيفة.',
+      pos, neg, net, top,
+    };
+  }
+  return {
+    level:'neutral', label:'أخبار هادئة', color:C.text3,
+    score:0, block:false,
+    summary:'لا يوجد خبر مؤثر واضح الآن.',
+    pos, neg, net, top,
+  };
+}
+
+function renderNewsMini(sym, compact=false) {
+  const ni = getNewsImpact(sym);
+  if(ni.level === 'neutral' && compact) return null;
+  return el('div', {style:{
+    background:ni.color+'0f',
+    border:`1px solid ${ni.color}26`,
+    borderRadius:'8px',
+    padding:compact ? '6px 8px' : '8px 10px',
+    marginBottom:'8px',
+  }}, [
+    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'8px'}}, [
+      el('div', {style:{fontSize:compact?'9px':'10px', color:C.text2}}, ['📰 الأخبار']),
+      el('div', {style:{fontSize:compact?'10px':'12px', fontWeight:'900', color:ni.color}}, [ni.label]),
+    ]),
+    !compact && el('div', {style:{fontSize:'9px', color:C.text2, lineHeight:'1.45', marginTop:'5px'}}, [ni.summary]),
+    !compact && el('div', {style:{fontSize:'8px', color:C.text3, marginTop:'4px'}}, [
+      'إيجابي '+ni.pos+' / سلبي '+ni.neg
+    ]),
+  ]);
 }
 
 // ── 4. أرباح قادمة
@@ -1658,6 +1761,7 @@ function calcSignal(stock) {
   const ind = state.indicators[stock.id];
   const pro = state.profiles[stock.id];
   const news= state.news[stock.id]||{pos:0,neg:0};
+  const newsImpact = getNewsImpact(stock.id);
   const earn= state.earnings[stock.id]??999;
 
   // ══ شرط أساسي: يجب أن يكون لدينا سعر (حقيقي أو cache) ومؤشرات
@@ -1847,6 +1951,8 @@ function calcSignal(stock) {
   if(news.pos>=6)        { buy+=4; }        // أخبار إيجابية جداً
   else if(news.pos>=3)   { buy+=3; }        // أخبار إيجابية قوية
   else if(news.pos>=1)   { buy += Math.min(2, Math.round(news.pos)); }
+  if(newsImpact.block)   { sell+=3; }
+  else if(newsImpact.level === 'strongPos' && volR >= 1.2) { buy++; reasons.push('خبر إيجابي قوي مع حجم داعم'); }
 
   // ══ الإشارة النهائية
   const netScore = buy - sell;
@@ -1950,9 +2056,25 @@ function calcSignal(stock) {
 
   // ══ حالة الدخول
   const signalQuality = confidence>=70 ? 'HIGH' : confidence>=50 ? 'MEDIUM' : 'LOW';
-  const activeBuy  = !isCooldown && !tooCloseToResistance && signalQuality==='HIGH' && (entryTiming==='ادخل الآن' || entryTiming==='مقبول');
-  const watchOnly  = !isCooldown && (signalQuality==='MEDIUM' || entryTiming==='انتظر');
-  const blockEntry = isCooldown || signalQuality==='LOW' || entryTiming==='متأخر';
+  const rrOkForEntry = riskReward >= REC_MIN_ENTRY_RR;
+  const qualityOkForEntry = tradeQuality >= REC_MIN_ENTRY_QUALITY;
+  const trendOkForEntry = ind.adx == null || ind.adx >= REC_MIN_ENTRY_ADX || nearSupport;
+  const newsOkForEntry = !newsImpact.block && newsImpact.level !== 'neg';
+  const timingOkForEntry = entryTiming==='ادخل الآن' || entryTiming==='مقبول';
+  const entryBlockReasons = [];
+  if(!rrOkForEntry) entryBlockReasons.push('R/R أقل من '+REC_MIN_ENTRY_RR+'x');
+  if(!qualityOkForEntry) entryBlockReasons.push('جودة الصفقة أقل من '+REC_MIN_ENTRY_QUALITY+'%');
+  if(!trendOkForEntry) entryBlockReasons.push('ADX ضعيف ولا يوجد دعم كاف');
+  if(!newsOkForEntry) entryBlockReasons.push('خبر سلبي مؤثر');
+  if(!timingOkForEntry) entryBlockReasons.push('التوقيت غير مناسب');
+  const activeBuy  = !isCooldown && !tooCloseToResistance && signalQuality==='HIGH' && rrOkForEntry && qualityOkForEntry && trendOkForEntry && newsOkForEntry && timingOkForEntry;
+  const blockEntry = isCooldown || signalQuality==='LOW' || entryTiming==='متأخر' || newsImpact.block;
+  const watchOnly  = !activeBuy && !blockEntry;
+  const finalEntryNote = activeBuy
+    ? entryNote
+    : entryBlockReasons.length
+      ? 'لا تدخل الآن — '+entryBlockReasons.join('، ')
+      : entryNote;
 
   return {
     id: stock.id, name: stock.name, sector: stock.sector, cat: stock.cat,
@@ -1967,9 +2089,11 @@ function calcSignal(stock) {
     signal, strength, confidence, tradeQuality,
     netScore, buy, sell, reasons,
     stopLoss, target, profitPct,
-    entryTiming, entryColor, entryNote, idealEntry, distToSupport,
+    entryTiming, entryColor, entryNote: finalEntryNote, idealEntry, distToSupport,
+    entryBlockReasons,
     earnings: earn,
     news: news,
+    newsImpact,
     // ⭐ High Conviction: ظهر في الجلسة الأولى وعاد في منتصف اليوم
     // نتحقق من _midDayDone أو من localStorage مباشرة (للحالة بعد إعادة التحميل)
     isConviction: (() => {
@@ -2012,16 +2136,18 @@ function calcRecs() {
   const candidates = ALL_STOCKS
     .map(s => calcSignal(s))
     .filter(Boolean)
+    // Recommendations must be executable entries only; watch ideas belong in hunter/spec tabs.
+    .filter(s => s.activeBuy === true)
     // شرط 1: إشارة شراء
     .filter(s => s.signal==='شراء قوي' || s.signal==='شراء')
     // شرط 2: ثقة كافية (60%+) — رفعنا من 50
     .filter(s => s.confidence >= 60)
-    // شرط 3: جودة صفقة مقبولة (35%+) — خُفِّض من 40 لتجنب رفض R/R جيد بلا دعم
-    .filter(s => s.tradeQuality >= 35)
+    // شرط 3: جودة صفقة مقبولة — لا نسمح ببطاقة ضعيفة ثم تقول "ادخل"
+    .filter(s => s.tradeQuality >= 45)
     // شرط 4: هدف ربح 2%+
     .filter(s => s.profitPct >= 2)
-    // شرط 5: نسبة مخاطرة/مكافأة 1:1 على الأقل — جديد
-    .filter(s => s.riskReward >= 1.0)
+    // شرط 5: لا توصية إذا R/R أقل من 1.5x
+    .filter(s => s.riskReward >= REC_MIN_ENTRY_RR)
     // شرط 6: لا أرباح قريبة — أكثر صرامة للأسهم عالية التقلب
     .filter(s => {
       const beta = s.beta || 1;
@@ -2049,6 +2175,10 @@ function calcRecs() {
     .filter(s => !s.tooCloseToResistance && (s.roomToResistance == null || s.roomToResistance >= Math.max(4, s.minRoomToResistance || 0)))
     // شرط 9: السعر فوق MA50 على الأقل
     .filter(s => s.ma50==null || s.price >= s.ma50*0.97)
+    // شرط 9.5: الاتجاه اللحظي/اليومي ليس ضعيفًا جدًا إلا إذا كان السهم عند الدعم
+    .filter(s => s.nearSupport || s.adx == null || s.adx >= REC_MIN_ENTRY_ADX || (s.macdHist != null && s.macdHist > 0))
+    // شرط 9.6: الخبر السلبي القوي يلغي التوصية
+    .filter(s => !s.newsImpact?.block && s.newsImpact?.level !== 'neg')
     // شرط 10: ✅ بيانات كافية — 100 يوم على الأقل
     .filter(s => (state.indicators[s.id]?.dataLen || state.indicators[s.id]?.closes?.length || 0) >= 100)
     // شرط 11: سيولة كافية — 500 ألف سهم يومياً على الأقل
@@ -2161,8 +2291,22 @@ function calcRecs() {
 function calcSpeculative() {
   if(state.marketTrend === 'bearish') {
     state.speculativeRecs = [];
+    state.specDebug = {
+      mode:'blocked',
+      reason:'السوق هابط؛ تم إيقاف المجازفة لحماية رأس المال.',
+      checked:0,
+      kept:0,
+    };
     return [];
   }
+
+  const specDebug = {
+    mode:'active',
+    checked:0,
+    kept:0,
+    rejected:{price:0, volume:0, volatility:0, drop:0, earnings:0, data:0, macd:0, weekly:0, news:0, score:0, target:0, rr:0},
+    watch:0,
+  };
 
   const candidates = ALL_STOCKS
     .filter(s => s.cat==='future' || s.cat==='small' || s.beta>=1.5 || (state.prices[s.id]?.price > 0 && state.prices[s.id].price <= 50))
@@ -2171,14 +2315,16 @@ function calcSpeculative() {
       const ind = state.indicators[s.id];
       const pro = state.profiles[s.id];
 
-      if(!p?.price || !ind) return null;
-      if(isMarketOpen() && !p.isReal) return null;
+      specDebug.checked++;
+      if(!p?.price || !ind) { specDebug.rejected.data++; return null; }
+      if(isMarketOpen() && !p.isReal) { specDebug.rejected.data++; return null; }
 
       const price  = p.price;
       const beta   = pro?.beta || s.beta || 1;
       const volR   = p.avgVolume>0 ? p.volume/p.avgVolume : 0;
       const change = p.change||0;
       const earnDays    = state.earnings[s.id]??999;
+      const newsImpact  = getNewsImpact(s.id);
       const dataQuality = ind.dataLen || ind.closes?.length || 0; // ✅ العدد الحقيقي
       const atrPct = ind.atrPct||0;
       const roomToResistance = ind.resistance && ind.resistance > price
@@ -2188,25 +2334,28 @@ function calcSpeculative() {
       const tooCloseToResistance = ind.resistance && roomToResistance < minRoomToResistance;
 
       // ══ شرط 1: السعر — متوسط إلى صغير ($3 - $100)
-      if(price > 100 || price < 3) return null;
+      if(price > 100 || price < 3) { specDebug.rejected.price++; return null; }
 
       // ══ شرط 1.5: سيولة كافية — مليون سهم يومياً على الأقل
       const avgVolSpec = p.avgVolume || pro?.avgVolume || 0;
-      if(avgVolSpec > 0 && avgVolSpec < 500000) return null;
+      if(avgVolSpec > 0 && avgVolSpec < 350000) { specDebug.rejected.volume++; return null; }
 
       // ══ شرط 2: تقلب كافٍ (beta أو ATR)
       // ATR% يعكس التقلب الفعلي أفضل من beta
-      const isVolatile = beta>=1.5 || atrPct>=2.0;
-      if(!isVolatile) return null;
+      const isVolatile = beta>=1.4 || atrPct>=1.8;
+      if(!isVolatile) { specDebug.rejected.volatility++; return null; }
 
       // ══ شرط 3: لا هبوط حر (لا gap-down >10%)
-      if(change < -10) return null;
+      if(change < -10) { specDebug.rejected.drop++; return null; }
 
       // ══ شرط 4: لا أرباح قريبة جداً (<5 أيام)
-      if(earnDays <= 5) return null;
+      if(earnDays <= 5) { specDebug.rejected.earnings++; return null; }
+
+      // ══ شرط 4.5: خبر سلبي قوي يمنع المجازفة مباشرة
+      if(newsImpact.block) { specDebug.rejected.news++; return null; }
 
       // ✅ شرط 5: بيانات كافية — 60 يوم على الأقل للمجازفة (أقل من التوصية)
-      if(dataQuality < 40) return null;
+      if(dataQuality < 35) { specDebug.rejected.data++; return null; }
 
       // ══ حساب النقاط — فكرة: الربح المحتمل vs الخسارة المحدودة
       let score = 0;
@@ -2261,9 +2410,11 @@ function calcSpeculative() {
           warnings.push('MACD Hist سالب يتقلص — انتظر تأكيد التحول');
         } else if(hist < 0 && histDir === 'crossing') {
           // عبر الصفر للأسفل — خطر
+          specDebug.rejected.macd++;
           return null;
         } else if(hist < 0 && histDir === 'expanding') {
           // زخم بيعي متصاعد — حجب فوري
+          specDebug.rejected.macd++;
           return null;
         }
       } else if(ind.macd!=null) {
@@ -2275,6 +2426,7 @@ function calcSpeculative() {
       // ── أسبوعي — لا مجازفة في هبوط أسبوعي حاد
       if(ind.weeklyTrend === 'bearish' && ind.weeklyMacdHist!=null && ind.weeklyMacdHist < -1) {
         // الأسبوعي هابط بقوة — حجب
+        specDebug.rejected.weekly++;
         return null;
       } else if(ind.weeklyTrend === 'bullish') {
         score+=8;
@@ -2309,12 +2461,15 @@ function calcSpeculative() {
 
       // ── 7. عقوبات
       if(earnDays<=14)      { score-=8;  warnings.push('أرباح خلال '+earnDays+' يوم — تقلب مرتقب'); }
+      if(newsImpact.level === 'neg') { score-=10; warnings.push('خبر سلبي مؤثر — انتظر هدوء الخبر'); }
+      if(newsImpact.level === 'strongPos' && volR>=1.2) { score+=8; reasons.push('خبر إيجابي قوي مع حجم داعم'); }
+      else if(newsImpact.level === 'pos') { score+=3; reasons.push('خبر إيجابي داعم'); }
       if(change>12)         { score-=10; warnings.push('ارتفع '+fmt(change,1)+'% اليوم — قد يتراجع'); }
       if(ind.rsi!=null && ind.rsi>78) { score-=10; warnings.push('RSI مرتفع '+fmt(ind.rsi)+'% — تشبع شراء'); }
       if(tooCloseToResistance) { score-=15; warnings.push('قريب من المقاومة — مساحة '+fmt(roomToResistance,1)+'% فقط'); }
 
       score = Math.max(0, score);
-      if(score < 25) return null;
+      if(score < 22) { specDebug.rejected.score++; return null; }
 
       // ══ حساب وقف الخسارة والهدف — الأهم في المجازفة
       // وقف الخسارة: أسفل الدعم مباشرة أو 2×ATR
@@ -2330,8 +2485,8 @@ function calcSpeculative() {
       const resValidSpec = ind.resistance && ind.resistance > price*1.05;
       // 2. امتداد ATR × 2.5 ضمن أفق 3-5 أيام (واقعي للمجازفة)
       const atrExtTarget = price * (1 + (ind.atrPct||3) * 2.5 / 100);
-      // 3. الحد الأدنى المقبول (3:1 R/R من الوقف)
-      const minRRTarget  = price * (1 + lossPct*3/100);
+      // 3. الحد الأدنى المقبول: 1.6:1 للمراقبة، 2.2:1 للدخول القوي
+      const minRRTarget  = price * (1 + lossPct*1.6/100);
 
       // نختار الهدف: المقاومة إذا كانت أعلى من الحد الأدنى، وإلا ATR extension
       let target;
@@ -2340,6 +2495,7 @@ function calcSpeculative() {
       } else if(atrExtTarget > minRRTarget) {
         target = atrExtTarget;   // هدف من ATR واقعي
       } else {
+        specDebug.rejected.target++;
         return null; // لا يوجد هدف حقيقي — نرفض السهم
       }
 
@@ -2352,7 +2508,7 @@ function calcSpeculative() {
       const riskReward = lossPct>0 ? profitPct/lossPct : 0;
 
       // رفض فقط إذا R/R ضعيف جداً، أما 1.0-1.7 فتظهر كمراقبة لا كدخول
-      if(riskReward < 1.0) return null;
+      if(riskReward < 0.9) { specDebug.rejected.rr++; return null; }
 
       // ══ توقيت الدخول
       const distToSup = ind.support>0 ? (price-ind.support)/price*100 : 999;
@@ -2371,7 +2527,7 @@ function calcSpeculative() {
         entryNote   = 'بعيد عن الدعم — الدخول محفوف بالمخاطر';
       }
 
-      const isWatch = tooCloseToResistance || score < 48 || riskReward < 1.7 || entryTiming === 'انتظر' || entryTiming === 'متأخر';
+      const isWatch = tooCloseToResistance || score < 45 || riskReward < 1.45 || entryTiming === 'انتظر' || entryTiming === 'متأخر';
       const label = isWatch ? '👀 مراقبة مجازفة' :
         score>=80 ? '🚀 انفجار محتمل' :
         score>=65 ? '🔥 زخم قوي'      :
@@ -2380,13 +2536,17 @@ function calcSpeculative() {
 
       // تخصيص رأس المال: 5-10% حسب الجودة
       const allocPct = isWatch ? 0 : score>=70 ? 0.10 : score>=55 ? 0.07 : 0.05;
+      if(isWatch) specDebug.watch++;
 
       return {
         ...s, price, change, volR, beta, atrPct,
         score, label, reasons, warnings, isWatch,
         rsi:ind.rsi, macd:ind.macd,
+        macdHist:ind.macdHist, macdHistDir:ind.macdHistDir,
+        weeklyTrend:ind.weeklyTrend,
         ma20:ind.ma20, ma50:ind.ma50, ma200:ind.ma200,
         support:ind.support, resistance:ind.resistance,
+        newsImpact,
         roomToResistance, minRoomToResistance, tooCloseToResistance,
         nearSupport:ind.nearSupport,
         stopLoss, target, profitPct, lossPct, riskReward,
@@ -2404,6 +2564,9 @@ function calcSpeculative() {
     .slice(0, 5);
 
   state.speculativeRecs = candidates;
+  specDebug.kept = candidates.length;
+  state.specDebug = specDebug;
+  state.specTime = new Date();
   if(candidates.length && isMarketOpen()) recordSpecToHistory(candidates);
   return candidates;
 }
@@ -2506,6 +2669,7 @@ async function calcHunterScore(stock) {
   if (!ind && !stock.isGainer) return null; // غير Gainer بدون ind = مرفوض
 
   const price = p.price;
+  const newsImpact = getNewsImpact(stock.id);
   const rsi       = ind?.rsi       ?? null;
   const stochRsi  = ind?.stochRsi  ?? null;
   const bb_lower  = ind?.bb_lower  ?? null;
@@ -2612,6 +2776,14 @@ async function calcHunterScore(stock) {
   // ══ مكافأة Gainer
   if (stock.isGainer) { score += 10; checks.isGainer = true; }
 
+  // ══ تأثير الأخبار: لا نجعل الخبر وحده إشارة دخول، لكنه يمنع الأخبار السلبية القوية
+  checks.newsRisk = newsImpact.level === 'criticalNeg' || newsImpact.level === 'neg';
+  checks.newsBoost = newsImpact.level === 'strongPos' || newsImpact.level === 'pos';
+  if(newsImpact.block) score -= 18;
+  else if(newsImpact.level === 'neg') score -= 8;
+  else if(newsImpact.level === 'strongPos' && (intra?.rvol || 0) >= 1.5) score += 6;
+  else if(newsImpact.level === 'pos') score += 2;
+
   // ══ مكافأة: سهم هبط intraday ولكن مؤشراته جيدة (فرصة ارتداد سريع)
   const intradayDip = (p.change || 0) < -3 && macdHist != null && macdHist > -0.5;
   if (intradayDip) { score += 12; checks.intradayDip = true; }
@@ -2662,15 +2834,21 @@ async function calcHunterScore(stock) {
     actionTone = 'buy';
     actionNote = 'زخم لحظي مؤكد: فوق VWAP + EMA9 أعلى EMA21 + حجم داعم.';
   } else if(score >= 65 && (checks.breakout15 || checks.higherLow) && rr >= 1.5) {
-    action = 'شراء مشروط';
+    action = 'لا تدخل الآن';
     actionTone = 'watch';
     actionNote = checks.breakout15
       ? 'انتظر ثبات السعر فوق الاختراق؛ لا تطارد شمعة طويلة.'
       : 'راقب اختراق آخر قمة 15 دقيقة أو رجوع فوق VWAP.';
   } else if(checks.safePullback && rr >= 1.5) {
-    action = 'ارتداد عند الدعم';
-    actionTone = 'support';
-    actionNote = 'الشراء يكون قرب الدعم فقط، والوقف تحته مباشرة.';
+    action = 'لا تدخل الآن';
+    actionTone = 'watch';
+    actionNote = 'قريب من الدعم، لكن لا يعتبر دخولًا حتى يعطي إشارة تنفيذ واضحة.';
+  }
+
+  if(newsImpact.block && actionTone === 'buy') {
+    action = 'لا تدخل الآن';
+    actionTone = 'watch';
+    actionNote = 'خبر سلبي قوي يلغي الدخول حتى تهدأ الحركة ويتأكد السعر من جديد.';
   }
 
   if(stock.isGainer) {
@@ -2706,11 +2884,90 @@ async function calcHunterScore(stock) {
     stopLoss, targetPrice, profitPct, lossPct, rr,
     atrPct: atrVal,
     marketTrend: state.marketTrend,
+    newsImpact,
     action, actionTone, actionNote,
     isGainer: !!stock.isGainer,
     gainerRank: stock.gainerRank || null,
     gainerClass, gainerNote,
   };
+}
+
+function buildHunterRadar(existingIds=new Set(), limit=6) {
+  const rows = [];
+  for (const stock of ALL_STOCKS) {
+    if (existingIds.has(stock.id)) continue;
+    const p = state.prices[stock.id];
+    const ind = state.indicators[stock.id];
+    if (!p?.price || !ind) continue;
+
+    const price = p.price;
+    const atrPct = ind.atrPct || 3;
+    const support = ind.support || null;
+    const resistance = ind.resistance || null;
+    const nearSup = support && Math.abs(price - support) / price * 100 <= atrPct * 1.25;
+    const rsi = ind.rsi ?? null;
+    const stochRsi = ind.stochRsi ?? null;
+    const bbReversal = ind.bb_lower != null && price > ind.bb_lower * 0.985 && price <= ind.bb_lower * 1.035;
+    const holdingBetterThanSpy = (p.change || 0) > (state.spyChange || 0) - 0.4;
+    const volumeRatio = p.avgVolume ? (p.volume || 0) / p.avgVolume : 0;
+
+    let radarScore = 30;
+    if (nearSup) radarScore += 14;
+    if (rsi != null && rsi < 45) radarScore += rsi < 35 ? 12 : 7;
+    if (stochRsi != null && stochRsi < 40) radarScore += stochRsi < 20 ? 10 : 5;
+    if (bbReversal) radarScore += 8;
+    if (holdingBetterThanSpy) radarScore += 8;
+    if (volumeRatio >= 1.5) radarScore += 7;
+    if ((p.change || 0) > 0 && state.marketTrend !== 'bearish') radarScore += 4;
+
+    const atrAbs = price * atrPct / 100;
+    const stopLoss = (support || price * 0.97) - (0.2 * atrAbs);
+    const lossPct = Math.max(0.1, (price - stopLoss) / price * 100);
+    const targetPrice = resistance && resistance > price * 1.018
+      ? resistance
+      : price * (1 + atrPct * 1.7 / 100);
+    const profitPct = (targetPrice - price) / price * 100;
+    const rr = profitPct / lossPct;
+
+    if (radarScore < 45 || rr < 1.05) continue;
+
+    rows.push({
+      id: stock.id, name: stock.name, sector: stock.sector,
+      price, change: p.change || 0,
+      score: Math.min(64, Math.round(radarScore)),
+      checks: {
+        rsiExhaust: rsi != null && rsi < 35,
+        stochCross: stochRsi != null && stochRsi < 25,
+        bbReversal,
+        rvolOk: volumeRatio >= 1.5,
+        nearSup,
+        aboveVwap: false,
+        emaOk: false,
+        higherLow: false,
+        breakout15: false,
+        macd5Ok: false,
+        macdDayOk: ind.macdHist != null && (ind.macdHist > 0 || ind.macdHistDir === 'contracting'),
+        rsScore: holdingBetterThanSpy ? 6 : 0,
+        rr,
+      },
+      rsi, stochRsi, support,
+      vwap: null, ema9: null, ema21: null,
+      rvol: volumeRatio, rs30: 0, stockReturn30: 0,
+      stopLoss, targetPrice, profitPct, lossPct, rr,
+      atrPct,
+      marketTrend: state.marketTrend,
+      action: 'رادار مراقبة',
+      actionTone: 'watch',
+      actionNote: 'قريب من شروط الصائد لكنه لم يؤكد VWAP أو الاختراق بعد.',
+      isRadar: true,
+      gainerClass: null,
+      gainerNote: '👀 رادار مراقبة: لا دخول قبل رجوع فوق VWAP أو ظهور Higher Low بحجم داعم.',
+    });
+  }
+
+  return rows
+    .sort((a, b) => (b.score + b.rr * 4) - (a.score + a.rr * 4))
+    .slice(0, limit);
 }
 
 // ── قائمة المرشحين المختصرة للتحديث السريع
@@ -2935,6 +3192,7 @@ async function calcHunterNight() {
     return (b.score + boost(b)) - (a.score + boost(a));
   });
   state.hunterRecs = results;
+  state.hunterTime = new Date();
   console.log('[Hunter] 🌙 ليلية اكتملت:', results.length, 'فرصة');
 }
 
@@ -3038,11 +3296,14 @@ async function calcHunterFull() {
     const boost = x => x.isGainer ? (x.gainerClass === 'chase' ? 8 : 28) : 0;
     return (b.score + boost(b)) - (a.score + boost(a));
   });
-  state.hunterRecs = results;
-  console.log('[Hunter] كاملة:', results.length, 'فرصة');
+  const existingIds = new Set(results.map(r => r.id));
+  const radar = results.length < 6 ? buildHunterRadar(existingIds, 6 - results.length) : [];
+  state.hunterRecs = [...results, ...radar];
+  state.hunterTime = new Date();
+  console.log('[Hunter] كاملة:', results.length, 'فرصة + رادار', radar.length);
 }
 
-// ── الدورة السريعة: المرشحون فقط (كل 30 دقيقة)
+// ── الدورة السريعة: المرشحون فقط
 async function calcHunterQuick() {
   if (!state.indicatorsDone || !isMarketOpen()) return;
   const candidates = getHunterCandidates();
@@ -3064,17 +3325,34 @@ async function calcHunterQuick() {
     const boost = x => x.isGainer ? (x.gainerClass === 'chase' ? 8 : 28) : 0;
     return (b.score + boost(b)) - (a.score + boost(a));
   });
-  state.hunterRecs = merged;
+  const existingIds = new Set(merged.map(r => r.id));
+  const radar = merged.length < 6 ? buildHunterRadar(existingIds, 6 - merged.length) : [];
+  state.hunterRecs = [...merged, ...radar];
+  state.hunterTime = new Date();
   render();
 }
 
-// ── بدء الـ loop كل 30 دقيقة
+// ── بدء loop الصائد
 let _hunterInterval = null;
 function startHunterLoop() {
   if (_hunterInterval) clearInterval(_hunterInterval);
   _hunterInterval = setInterval(async () => {
     if (isMarketOpen()) await calcHunterQuick();
-  }, 30 * 60 * 1000);
+  }, HUNTER_REFRESH_MIN * 60 * 1000);
+}
+
+let _specInterval = null;
+function startSpecLoop() {
+  if (_specInterval) clearInterval(_specInterval);
+  _specInterval = setInterval(async () => {
+    if (isMarketOpen() && state.indicatorsDone) {
+      await fetchMarketTrend();
+      await fetchNews();
+      calcRecs();
+      calcSpeculative();
+      render();
+    }
+  }, SPEC_REFRESH_MIN * 60 * 1000);
 }
 
 // ================================================================
@@ -3132,6 +3410,7 @@ async function loadData(full=false) {
       if(isMarketOpen()) {
         await calcHunterFull();
         startHunterLoop();
+        startSpecLoop();
       } else {
         await calcHunterNight();
       }
@@ -3174,6 +3453,7 @@ async function loadData(full=false) {
       calcSpeculative();
       await calcHunterFull();
       startHunterLoop();
+      startSpecLoop();
       // جلب Price Target للتوصيات والمجازفة
       const allRecs = [...(state.recs||[]), ...(state.speculativeRecs||[])];
       if(allRecs.length > 0) await fetchPriceTargets(allRecs);
@@ -3203,6 +3483,7 @@ async function loadData(full=false) {
     if(isMarketOpen()) {
       await calcHunterFull();
       startHunterLoop();
+      startSpecLoop();
     } else {
       await calcHunterNight();
     }
@@ -4680,6 +4961,14 @@ function renderRecTab() {
           state.recsTime ? 'آخر تحديث: '+state.recsTime.toLocaleTimeString('ar') : ''
         ]),
       ]),
+      el('div', {style:{
+        marginTop:'6px', fontSize:'9px', color:C.text3,
+        background:'rgba(255,255,255,.035)', borderRadius:'6px',
+        padding:'5px 8px', display:'flex', justifyContent:'space-between',
+      }}, [
+        el('span', {}, ['إعادة حساب التوصيات كل '+REC_REFRESH_MIN+' دقيقة']),
+        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.recsTime,REC_REFRESH_MIN):'عند فتح السوق')]),
+      ]),
     ]),
 
     // البطاقات
@@ -4699,6 +4988,7 @@ function renderRecCard(r, idx) {
   const distToSup  = r.support>0 ? (r.price - r.support) / r.price * 100 : 0;
   const atSupport  = r.nearSupport || distToSup < 1;
   const hasSupport = r.support>0 && distToSup > 0;
+  const recStatusColor = r.activeBuy ? C.green : r.watchOnly ? C.yellow : C.pink;
 
   let orderType, orderColor, orderNote, buyPrice;
 
@@ -4872,10 +5162,10 @@ function renderRecCard(r, idx) {
     // ── 4. توقيت الدخول
     el('div', {style:{
       display:'flex', alignItems:'center', justifyContent:'space-between',
-      background: r.entryColor+'11', border:`1px solid ${r.entryColor}33`,
+      background: recStatusColor+'11', border:`1px solid ${recStatusColor}33`,
       borderRadius:'8px', padding:'8px 10px', marginBottom:'8px',
     }}, [
-      el('div', {style:{fontSize:'12px', fontWeight:'800', color:r.entryColor}}, [
+      el('div', {style:{fontSize:'12px', fontWeight:'800', color:recStatusColor}}, [
         r.activeBuy?'✅ ادخل الآن': r.watchOnly?'👀 راقب فقط': r.blockEntry?'🚫 لا تدخل': r.entryTiming
       ]),
       el('div', {style:{fontSize:'9px', color:C.text2, textAlign:'left', maxWidth:'55%'}}, [r.entryNote]),
@@ -4892,6 +5182,8 @@ function renderRecCard(r, idx) {
       watchOnly:!r.activeBuy,
       noTrade:r.blockEntry || r.tooCloseToResistance,
     })),
+
+    renderNewsMini(r.id, true),
 
     renderAnalystMini(r.id, r.price, true),
 
@@ -5214,6 +5506,24 @@ function renderSpecTab() {
   }
 
   const specs = state.speculativeRecs || [];
+  const specDebug = state.specDebug || null;
+  const topReject = specDebug?.rejected
+    ? Object.entries(specDebug.rejected).sort((a,b)=>b[1]-a[1])[0]
+    : null;
+  const rejectLabels = {
+    price:'السعر خارج نطاق المجازفة',
+    volume:'السيولة ضعيفة',
+    volatility:'التذبذب غير كاف',
+    drop:'هبوط حر',
+    earnings:'أرباح قريبة',
+    data:'بيانات ناقصة أو غير لحظية',
+    macd:'زخم MACD سلبي',
+    weekly:'الأسبوعي هابط بقوة',
+    news:'خبر سلبي قوي',
+    score:'النقاط ضعيفة',
+    target:'لا يوجد هدف واقعي',
+    rr:'R/R ضعيف',
+  };
 
   const trendColor = state.marketTrend==='bullish'?C.green:
                      state.marketTrend==='bearish'?C.pink:C.yellow;
@@ -5244,6 +5554,15 @@ function renderSpecTab() {
         ]),
       ]),
       el('div', {style:{
+        display:'flex', justifyContent:'space-between', gap:'8px',
+        fontSize:'9px', color:C.text3,
+        background:'rgba(255,255,255,.035)', borderRadius:'6px',
+        padding:'5px 8px', marginBottom:'6px',
+      }}, [
+        el('span', {}, ['آخر تحديث: '+fmtClock(state.specTime)]),
+        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.specTime,SPEC_REFRESH_MIN):'عند فتح السوق')]),
+      ]),
+      el('div', {style:{
         fontSize:'10px', color:C.orange,
         background:'rgba(255,45,122,.06)', borderRadius:'6px',
         padding:'5px 8px', border:'1px solid rgba(255,45,122,.2)',
@@ -5251,8 +5570,19 @@ function renderSpecTab() {
     ]),
 
     specs.length===0 ?
-      el('div', {style:{textAlign:'center', padding:'40px 0', color:C.text2, fontSize:'12px'}}, [
-        'لا توجد فرص مجازفة تستوفي الشروط الآن'
+      el('div', {style:{textAlign:'center', padding:'32px 0', color:C.text2, fontSize:'12px'}}, [
+        el('div', {style:{fontSize:'13px', color:C.text2, marginBottom:'8px'}}, ['لا توجد فرص مجازفة تستوفي الشروط الآن']),
+        specDebug && el('div', {style:{
+          maxWidth:'420px', margin:'0 auto',
+          background:'rgba(255,255,255,.035)', border:'1px solid rgba(255,255,255,.08)',
+          borderRadius:'10px', padding:'10px 12px', textAlign:'right',
+          fontSize:'10px', lineHeight:'1.8',
+        }}, [
+          'تم فحص '+(specDebug.checked||0)+' مرشح. ',
+          topReject && topReject[1] > 0 ? 'أكبر سبب رفض: '+(rejectLabels[topReject[0]]||topReject[0])+' ('+topReject[1]+').' : '',
+          el('br'),
+          'المجازفة لا تعرض دخولًا إلا إذا توفر هدف ووقف وR/R مقبول.'
+        ])
       ]) :
       el('div', {}, specs.map((s,i) => renderSpecCard(s,i))),
   ]);
@@ -5273,6 +5603,28 @@ function renderSpecCard(s, idx) {
   const orderType = atSup ? 'أمر سوق' : hasSup ? 'أمر محدد' : 'أمر سوق';
   const orderColor= atSup ? C.green   : hasSup  ? C.purple  : C.yellow;
   const buyPrice  = hasSup && !atSup  ? s.support*1.002 : s.price;
+  const specVerdict = s.isWatch
+    ? {label:'انتظار فقط', color:C.yellow, note:s.entryNote || 'لم تكتمل شروط دخول المجازفة.'}
+    : s.entryTiming === 'ادخل الآن' && s.riskReward >= 1.45 && s.score >= 45
+      ? {label:'دخول مجازفة', color:C.green, note:'دخول مسموح بشرط الالتزام بالوقف وحجم مخاطرة صغير.'}
+      : s.entryTiming === 'مقبول' && s.riskReward >= 1.45
+        ? {label:'دخول مشروط', color:C.blue, note:'الأفضل أمر محدد قرب الدعم؛ لا تطارد السعر.'}
+        : {label:'ممنوع الآن', color:C.pink, note:'الدخول متأخر أو المخاطرة غير مناسبة.'};
+  const specCancel = 'إلغاء الفكرة إذا كسر '+fmtPrice(s.stopLoss)+' أو فقد الزخم قبل الدخول.';
+  const displayEntryTiming = s.isWatch
+    ? 'انتظر نقطة الدخول'
+    : specVerdict.label === 'ممنوع الآن'
+      ? 'لا تدخل'
+      : s.entryTiming;
+  const displayEntryNote = s.isWatch
+    ? (s.entryNote || 'انتظر اكتمال شروط الدخول قبل التنفيذ.')
+    : specVerdict.label === 'ممنوع الآن'
+      ? specVerdict.note
+      : s.entryNote;
+  const canPlaceSpecOrder = specVerdict.label === 'دخول مجازفة' || specVerdict.label === 'دخول مشروط';
+  const specPlanTitle = canPlaceSpecOrder ? '📋 أمر الشراء' : '📋 خطة المراقبة';
+  const displayOrderType = canPlaceSpecOrder ? orderType : 'انتظار';
+  const displayOrderColor = canPlaceSpecOrder ? orderColor : specVerdict.color;
 
   return el('div', {
     class:'fade-up',
@@ -5314,6 +5666,23 @@ function renderSpecCard(s, idx) {
         ]),
       ]),
     ]),
+
+    el('div', {style:{
+      background:specVerdict.color+'10',
+      border:`1px solid ${specVerdict.color}30`,
+      borderRadius:'10px',
+      padding:'9px 10px',
+      marginBottom:'9px',
+    }}, [
+      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}, [
+        el('div', {style:{fontSize:'12px', fontWeight:'900', color:specVerdict.color}}, ['قرار: '+specVerdict.label]),
+        el('div', {style:{fontSize:'9px', color:C.text2}}, ['R/R '+fmt(s.riskReward,1)+'x']),
+      ]),
+      el('div', {style:{fontSize:'10px', color:C.text2, lineHeight:'1.6'}}, [specVerdict.note]),
+      el('div', {style:{fontSize:'9px', color:C.pink, marginTop:'4px', lineHeight:'1.5'}}, [specCancel]),
+    ]),
+
+    renderNewsMini(s.id, true),
 
     // ── 2. شريط القوة + معلومات المجازفة
     el('div', {style:{marginBottom:'8px'}}, [
@@ -5363,8 +5732,8 @@ function renderSpecCard(s, idx) {
       ]),
     ]),
 
-    // ── 3. سبب الاختيار — واضح ومباشر
-    renderTradeDecisionBox(calcTradeDecision({
+    // ── 3. حاسبة الكمية — تظهر عند الضغط فقط حتى لا تزحم قرار البطاقة
+    isSelected && renderTradeDecisionBox(calcTradeDecision({
       kind:'spec',
       symbol:s.id,
       entry:buyPrice || s.price,
@@ -5376,7 +5745,7 @@ function renderSpecCard(s, idx) {
       noTrade:s.tooCloseToResistance,
     })),
 
-    renderAnalystMini(s.id, s.price, true),
+    isSelected && renderAnalystMini(s.id, s.price, true),
 
     // ── 3. سبب الاختيار — واضح ومباشر
     isSelected && s.reasons.length>0 && el('div', {style:{
@@ -5472,12 +5841,12 @@ function renderSpecCard(s, idx) {
 
     // ── 5. توقيت الدخول
     el('div', {style:{
-      background:entryColor+'11', border:'1px solid '+entryColor+'33',
+      background:specVerdict.color+'11', border:'1px solid '+specVerdict.color+'33',
       borderRadius:'8px', padding:'7px 10px', marginBottom:'8px',
       display:'flex', justifyContent:'space-between', alignItems:'center',
     }}, [
-      el('span', {style:{fontSize:'11px', fontWeight:'800', color:entryColor}}, [s.entryTiming]),
-      el('span', {style:{fontSize:'9px', color:C.text3, textAlign:'left', maxWidth:'60%'}}, [s.entryNote]),
+      el('span', {style:{fontSize:'11px', fontWeight:'800', color:specVerdict.color}}, [displayEntryTiming]),
+      el('span', {style:{fontSize:'9px', color:C.text3, textAlign:'left', maxWidth:'60%'}}, [displayEntryNote]),
     ]),
 
     // ── 6. شموع يابانية
@@ -5490,7 +5859,7 @@ function renderSpecCard(s, idx) {
       : null,
 
     // ── 7. الأرقام الحاسمة: دعم / مقاومة / هدف / وقف
-    el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px', marginBottom:'8px'}}, [
+    isSelected && el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px', marginBottom:'8px'}}, [
       // دعم
       el('div', {style:{
         background:'rgba(0,200,255,.06)', border:'1px solid rgba(0,200,255,.15)',
@@ -5541,7 +5910,7 @@ function renderSpecCard(s, idx) {
         el('div', {style:{fontSize:'8px', color:C.text3, marginTop:'1px'}}, [
           s.resistance && Math.abs(s.resistance-s.target)<0.5
             ? '📍 من المقاومة'
-            : '📐 من ATR×3.5',
+            : '📐 من ATR×2.5',
         ]),
       ]),
       el('div', {style:{
@@ -5563,24 +5932,24 @@ function renderSpecCard(s, idx) {
       ]),
     ]),
 
-    // ── 9. أمر الشراء الجاهز
-    el('div', {style:{
+    // ── 9. أمر الشراء الجاهز — يظهر عند الضغط فقط
+    isSelected && el('div', {style:{
       background:'linear-gradient(135deg,rgba(180,79,255,.08),rgba(255,45,122,.04))',
       border:'1px solid rgba(180,79,255,.3)',
       borderRadius:'10px', padding:'10px 12px', marginBottom:'8px',
     }}, [
       el('div', {style:{fontSize:'10px', fontWeight:'800', color:C.purple, marginBottom:'8px'}},
-        ['📋 أمر الشراء']),
+        [specPlanTitle]),
       el('div', {style:{borderTop:'1px solid rgba(180,79,255,.2)', marginBottom:'8px'}}),
       el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}, [
         el('span', {style:{fontSize:'10px', color:C.text3}}, ['نوع الأمر']),
         el('span', {style:{
-          fontSize:'11px', fontWeight:'800', color:orderColor,
-          background:orderColor+'18', borderRadius:'5px', padding:'2px 8px',
-        }}, [orderType]),
+          fontSize:'11px', fontWeight:'800', color:displayOrderColor,
+          background:displayOrderColor+'18', borderRadius:'5px', padding:'2px 8px',
+        }}, [displayOrderType]),
       ]),
       el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['سعر الشراء']),
+        el('span', {style:{fontSize:'10px', color:C.text3}}, [canPlaceSpecOrder ? 'سعر الشراء' : 'أفضل نقطة دخول']),
         el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, ['$'+fmt(buyPrice,2)]),
       ]),
       el('div', {style:{borderTop:'1px solid rgba(255,255,255,.05)', margin:'5px 0'}}),
@@ -5596,7 +5965,7 @@ function renderSpecCard(s, idx) {
           el('div', {style:{fontSize:'8px', color:C.text3}}, [
             s.resistance && Math.abs(s.resistance-s.target)<0.5
               ? '📍 عند المقاومة'
-              : '📐 ATR×3.5 (مقاومة قريبة جداً)',
+              : '📐 ATR×2.5 (هدف واقعي)',
           ]),
         ]),
       ]),
@@ -5714,8 +6083,22 @@ function renderHunterTab() {
 
   const isNightMode = !isMarketOpen();
   const hunters = state.hunterRecs || [];
+  const entryHunters = hunters.filter(h => !h.isRadar && h.gainerClass !== 'chase' && h.actionTone === 'buy');
+  const watchHunters = hunters.filter(h => !entryHunters.includes(h) && h.gainerClass !== 'chase' && h.action !== 'لا تطارد');
+  const avoidHunters = hunters.filter(h => h.gainerClass === 'chase' || h.action === 'لا تطارد');
   const trendColor = state.marketTrend==='bearish'?C.pink:state.marketTrend==='bullish'?C.green:C.yellow;
   const trendLabel = state.marketTrend==='bearish'?'السوق هابط 🔻':state.marketTrend==='bullish'?'السوق صاعد ✅':'السوق محايد ⚠️';
+  const sectionTitle = (title, count, color, note) => el('div', {style:{
+    margin:'10px 0 8px', padding:'8px 10px',
+    borderRadius:'9px', background:color+'0d',
+    border:`1px solid ${color}26`,
+  }}, [
+    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}}, [
+      el('div', {style:{fontSize:'11px', fontWeight:'900', color}}, [title]),
+      el('div', {style:{fontSize:'10px', fontWeight:'800', color}}, [count+' فرصة']),
+    ]),
+    note && el('div', {style:{fontSize:'9px', color:C.text2, marginTop:'3px', lineHeight:'1.45'}}, [note]),
+  ]);
 
   return el('div', {style:{padding:'12px 16px'}}, [
 
@@ -5742,6 +6125,16 @@ function renderHunterTab() {
         el('span', {style:{color:state.qqqChange>=0?C.green:C.pink, fontWeight:'700'}}, ['QQQ '+(state.qqqChange>=0?'+':'')+fmt(state.qqqChange)+'%']),
       ]),
 
+      el('div', {style:{
+        display:'flex', justifyContent:'space-between', gap:'8px',
+        fontSize:'9px', color:C.text3,
+        background:'rgba(255,255,255,.035)', borderRadius:'6px',
+        padding:'5px 8px', marginBottom:'6px',
+      }}, [
+        el('span', {}, ['آخر تحديث: '+fmtClock(state.hunterTime)]),
+        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.hunterTime,HUNTER_REFRESH_MIN):'عند فتح السوق')]),
+      ]),
+
       // تنبيه السوق الهابط
       state.marketTrend === 'bearish' && el('div', {style:{
         fontSize:'10px', color:C.pink,
@@ -5763,7 +6156,7 @@ function renderHunterTab() {
         fontSize:'10px', color:'#ff6b35',
         background:'rgba(255,107,53,.06)', borderRadius:'6px',
         padding:'5px 8px', border:'1px solid rgba(255,107,53,.2)',
-      }}, ['🎯 يصطاد الارتداد في أي حالة سوق — يتحدث كل 30 دقيقة + مرتين كاملتين يومياً']),
+      }}, ['🎯 يصطاد الارتداد في أي حالة سوق — يتحدث كل '+HUNTER_REFRESH_MIN+' دقائق + مرتين كاملتين يومياً']),
     ]),
 
     // ── القائمة
@@ -5773,7 +6166,16 @@ function renderHunterTab() {
             ? '⏳ جاري تحميل المؤشرات...'
             : 'لا توجد فرص ارتداد تستوفي الشروط الآن'
         ])
-      : el('div', {}, hunters.map((h, i) => renderHunterCard(h, i))),
+      : el('div', {}, [
+          entryHunters.length > 0 && sectionTitle('فرص دخول مسموحة', entryHunters.length, C.green, 'هذه فقط التي تعني دخول. أي بطاقة لا تقول "ادخل الآن" فهي انتظار.'),
+          ...entryHunters.map((h, i) => renderHunterCard(h, i)),
+
+          watchHunters.length > 0 && sectionTitle('رادار مراقبة وانتظار تأكيد', watchHunters.length, C.yellow, 'ليست دخول الآن؛ انتظر محفز الدخول المكتوب داخل البطاقة.'),
+          ...watchHunters.map((h, i) => renderHunterCard(h, i)),
+
+          avoidHunters.length > 0 && sectionTitle('تجنب / مطاردة', avoidHunters.length, C.pink, 'هذه تظهر للوعي فقط؛ لا تدخل قبل Pullback أو إعادة بناء الشروط.'),
+          ...avoidHunters.map((h, i) => renderHunterCard(h, i)),
+        ]),
   ]);
 }
 
@@ -5781,6 +6183,48 @@ function renderHunterCard(h, idx) {
   const isSelected = state.selected === h.id + '_hunter';
   const scoreColor = h.score >= 80 ? C.green : h.score >= 70 ? C.blue : h.score >= 60 ? C.yellow : C.orange;
   const actionColor = h.actionTone === 'buy' ? C.green : h.actionTone === 'watch' ? C.yellow : h.actionTone === 'support' ? C.blue : C.text2;
+  const analystView = getAnalystView(h.id, h.price);
+  const targetReason = h.vwap && h.vwap > h.price
+    ? 'الهدف هو VWAP؛ ارتداد قصير وليس مطاردة.'
+    : h.checks?.breakout15
+      ? 'الهدف مبني على امتداد الاختراق بعد قمة 15 دقيقة.'
+      : h.support
+        ? 'الهدف بعد ارتداد من الدعم مع وقف واضح أسفله.'
+        : 'الهدف محسوب من ATR لعدم وجود مقاومة قريبة موثوقة.';
+  const speedFactor =
+    (h.actionTone === 'buy' ? 1.35 : h.actionTone === 'support' ? 1.1 : 0.85) *
+    (h.checks?.cleanMomentum ? 1.2 : 1) *
+    (h.rvol >= 3 ? 1.25 : h.rvol >= 1.5 ? 1.1 : 0.85) *
+    (h.rs30 > 1 ? 1.15 : h.rs30 < 0 ? 0.85 : 1);
+  const estimatedDays = Math.max(1, Math.ceil((h.profitPct || 1) / Math.max(0.5, (h.atrPct || 2.5) * speedFactor)));
+  const durationText = h.isNight
+    ? 'بعد الافتتاح'
+    : estimatedDays <= 1
+      ? 'اليوم / جلسة واحدة'
+      : estimatedDays <= 3
+        ? estimatedDays + ' أيام تداول'
+        : '3-7 أيام تداول';
+  const enterVerdict = h.actionTone === 'buy'
+    ? {label:'دخول مسموح', color:C.green, note:'نفذ فقط إذا بقي فوق VWAP والحجم داعم.'}
+    : h.actionTone === 'support'
+      ? {label:'دخول قرب الدعم', color:C.blue, note:'لا تدخل إلا قريبًا من الدعم وبوقف صغير.'}
+      : h.gainerClass === 'chase' || h.action === 'لا تطارد'
+        ? {label:'لا تدخل الآن', color:C.pink, note:'السهم مرتفع لكن الدخول متأخر؛ انتظر Pullback.'}
+        : {label:'لا تدخل الآن', color:C.yellow, note:'الدخول بعد اختراق/ثبات وليس بسعر عشوائي.'};
+  const directOrder = h.actionTone === 'buy'
+    ? {label:'ادخل الآن', color:C.green, note:'السعر مناسب. نفذ مع الوقف المكتوب فقط.'}
+    : h.actionTone === 'support'
+      ? {label:'لا تدخل الآن', color:C.yellow, note:'انتظر السعر عند الدعم أو رجوع واضح؛ ليست إشارة تنفيذ فورية.'}
+      : h.gainerClass === 'chase' || h.action === 'لا تطارد'
+        ? {label:'ممنوع الدخول', color:C.pink, note:'انتظر Pullback أو تجاهل السهم.'}
+        : {label:'لا تدخل الآن', color:C.yellow, note:'انتظر محفز الدخول. لا شراء الآن.'};
+  const isFinalEntry = h.actionTone === 'buy';
+  const triggerText = h.actionTone === 'buy'
+    ? 'الثبات فوق $'+fmt(h.vwap || h.price,2)+' مع RVOL أعلى من 1.5'
+    : h.checks?.breakout15
+      ? 'إغلاق 5 دقائق فوق قمة الاختراق'
+      : 'رجوع فوق VWAP أو Higher Low جديد';
+  const invalidationText = 'كسر $'+fmt(h.stopLoss,2)+' أو فقدان VWAP مع حجم بيع';
   const trendBadge = h.marketTrend === 'bearish'
     ? el('span', {style:{fontSize:'9px', color:C.pink, background:'rgba(255,45,122,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['سوق هابط'])
     : h.marketTrend === 'bullish'
@@ -5807,6 +6251,7 @@ function renderHunterCard(h, idx) {
             el('div', {style:{fontSize:'13px', fontWeight:'800', color:C.text}}, [h.name]),
             trendBadge,
             h.isNight && el('span', {style:{fontSize:'9px', color:'#aaa', background:'rgba(255,255,255,.06)', borderRadius:'4px', padding:'1px 5px'}}, ['🌙 ليلي']),
+        h.isRadar && el('span', {style:{fontSize:'9px', color:C.yellow, background:'rgba(255,224,51,.10)', borderRadius:'4px', padding:'1px 5px'}}, ['رادار']),
         h.ahBonus && el('span', {style:{fontSize:'9px', color:C.green, background:'rgba(0,255,136,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['🔥 AH+']),
         h.checks?.isGainer && el('span', {style:{fontSize:'9px', color:C.yellow, background:'rgba(255,224,51,.1)', borderRadius:'4px', padding:'1px 5px'}}, [
           '🔥 Top '+(h.gainerRank || '20')
@@ -5827,18 +6272,20 @@ function renderHunterCard(h, idx) {
 
       el('div', {style:{
         display:'flex', justifyContent:'space-between', alignItems:'center', gap:'8px',
-        background:actionColor+'12', border:`1px solid ${actionColor}33`,
+        background:directOrder.color+'12', border:`1px solid ${directOrder.color}33`,
         borderRadius:'8px', padding:'7px 9px', marginBottom:'8px',
       }}, [
-        el('div', {style:{fontSize:'12px', fontWeight:'900', color:actionColor, whiteSpace:'nowrap'}}, [
-          h.action || 'راقب فقط'
+        el('div', {style:{fontSize:'13px', fontWeight:'900', color:directOrder.color, whiteSpace:'nowrap'}}, [
+          directOrder.label
         ]),
         el('div', {style:{fontSize:'9px', color:C.text2, textAlign:'left'}}, [
-          h.actionNote || 'انتظر اكتمال إشارة الدخول.'
+          directOrder.note
         ]),
       ]),
 
-      h.gainerNote && el('div', {style:{
+      renderNewsMini(h.id, true),
+
+      isSelected && h.gainerNote && el('div', {style:{
         background: h.gainerClass==='confirmed' ? 'rgba(255,224,51,.10)' : h.gainerClass==='chase' ? 'rgba(255,45,122,.08)' : 'rgba(0,200,255,.08)',
         border: h.gainerClass==='confirmed' ? '1px solid rgba(255,224,51,.28)' : h.gainerClass==='chase' ? '1px solid rgba(255,45,122,.22)' : '1px solid rgba(0,200,255,.22)',
         color: h.gainerClass==='confirmed' ? C.yellow : h.gainerClass==='chase' ? C.pink : C.blue,
@@ -5846,8 +6293,42 @@ function renderHunterCard(h, idx) {
         fontSize:'10px', fontWeight:'700',
       }}, [h.gainerNote]),
 
+      isSelected && el('div', {style:{
+        display:'grid', gridTemplateColumns:'1.1fr 1fr 1fr', gap:'6px',
+        marginBottom:'8px',
+      }}, [
+        el('div', {style:{
+          background:enterVerdict.color+'10', border:`1px solid ${enterVerdict.color}28`,
+          borderRadius:'8px', padding:'7px 8px',
+        }}, [
+          el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, ['نوع الإشارة']),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:enterVerdict.color}}, [enterVerdict.label]),
+          el('div', {style:{fontSize:'8px', color:C.text2, marginTop:'2px', lineHeight:'1.35'}}, [enterVerdict.note]),
+        ]),
+        el('div', {style:{
+          background:'rgba(255,255,255,.035)', border:'1px solid rgba(255,255,255,.08)',
+          borderRadius:'8px', padding:'7px 8px',
+        }}, [
+          el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, ['مدة الهدف']),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:estimatedDays<=1?C.green:estimatedDays<=3?C.orange:C.blue}}, [durationText]),
+          el('div', {style:{fontSize:'8px', color:C.text2, marginTop:'2px'}}, ['حسب ATR والحجم والزخم']),
+        ]),
+        el('div', {style:{
+          background:(analystView?.color || C.text2)+'0d', border:`1px solid ${(analystView?.color || C.text2)}24`,
+          borderRadius:'8px', padding:'7px 8px',
+        }}, [
+          el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, ['رأي المحللين']),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:analystView?.color || C.text2}}, [
+            analystView?.analysts ? analystView.verdict : 'غير متاح'
+          ]),
+          el('div', {style:{fontSize:'8px', color:C.text2, marginTop:'2px'}}, [
+            analystView?.target ? 'هدفهم $'+fmt(analystView.target,2)+' ('+((analystView.upside||0)>=0?'+':'')+fmt(analystView.upside,1)+'%)' : 'ليس شرط دخول'
+          ]),
+        ]),
+      ]),
+
       // السعر + VWAP + RS
-      el('div', {style:{display:'flex', gap:'8px', fontSize:'10px', marginBottom:'6px', flexWrap:'wrap'}}, [
+      isSelected && el('div', {style:{display:'flex', gap:'8px', fontSize:'10px', marginBottom:'6px', flexWrap:'wrap'}}, [
         el('div', {style:{color:C.text, fontWeight:'700'}}, ['$'+fmt(h.price, 2)]),
         h.change !== 0 && el('div', {style:{color:h.change>0?C.green:C.pink, fontWeight:'700'}}, [(h.change>0?'+':'')+fmt(h.change,2)+'%']),
         // After Hours
@@ -5860,6 +6341,20 @@ function renderHunterCard(h, idx) {
         h.rvol > 0 && el('div', {style:{color:h.rvol>=2?C.green:C.text2}}, ['RVOL ×'+fmt(h.rvol,1)]),
         h.rs30 !== 0 && el('div', {style:{color:h.rs30>0?C.green:C.pink}}, [
           'RS30m '+(h.rs30>0?'+':'')+fmt(h.rs30,1)+'%'
+        ]),
+      ]),
+
+      isSelected && el('div', {style:{
+        display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px',
+        marginBottom:'8px', fontSize:'9px',
+      }}, [
+        el('div', {style:{background:'#090f1b', border:'1px solid rgba(0,255,136,.12)', borderRadius:'8px', padding:'7px 8px'}}, [
+          el('div', {style:{color:C.green, fontWeight:'800', marginBottom:'3px'}}, ['محفز الدخول']),
+          el('div', {style:{color:C.text2, lineHeight:'1.45'}}, [triggerText]),
+        ]),
+        el('div', {style:{background:'#090f1b', border:'1px solid rgba(255,45,122,.14)', borderRadius:'8px', padding:'7px 8px'}}, [
+          el('div', {style:{color:C.pink, fontWeight:'800', marginBottom:'3px'}}, ['إلغاء الفكرة']),
+          el('div', {style:{color:C.text2, lineHeight:'1.45'}}, [invalidationText]),
         ]),
       ]),
 
@@ -5881,7 +6376,18 @@ function renderHunterCard(h, idx) {
         ]),
       ]),
 
-      renderTradeDecisionBox(calcTradeDecision({
+      isSelected && el('div', {style:{
+        background:'rgba(255,255,255,.028)',
+        border:'1px solid rgba(255,255,255,.08)',
+        borderRadius:'8px', padding:'7px 8px',
+        color:C.text2, fontSize:'9px', lineHeight:'1.5',
+        marginBottom:'8px',
+      }}, [
+        el('span', {style:{color:C.yellow, fontWeight:'800'}}, ['سبب الهدف: ']),
+        targetReason
+      ]),
+
+      (isFinalEntry || isSelected) && renderTradeDecisionBox(calcTradeDecision({
         kind:'hunter',
         symbol:h.id,
         entry:h.price,
@@ -5889,7 +6395,7 @@ function renderHunterCard(h, idx) {
         target:h.targetPrice,
         rr:h.rr,
         action:h.actionNote,
-        watchOnly:h.actionTone !== 'buy' && h.actionTone !== 'support',
+        watchOnly:!isFinalEntry,
         noTrade:h.isNight || h.gainerClass === 'chase' || h.action === 'لا تطارد',
         gainerClass:h.gainerClass,
       })),
@@ -6938,7 +7444,7 @@ function renderTipsTab() {
       title: '🗺️ دليل الأداة v24', color: C.blue, isHeader: true,
       lines: [
         '🎯 توصياتي — 127 سهم × 10 مؤشرات + شموع + قوة نسبية + أخبار',
-        '🎲 مجازفة — أسهم $3-$80 عالية التقلب، R/R 3.5:1 على الأقل',
+        '🎲 مجازفة — أسهم متقلبة بقرار واضح: دخول / انتظار / ممنوع',
         '📊 السوق — نظرة كاملة مع فرز بالتغيير/الحجم/السعر',
         '💼 محفظتي — سجّل صفقاتك مع وقف وهدف وR/R',
         '📈 السجل — تقييم تلقائي لكل توصية (ربح/خسارة)',
@@ -6955,16 +7461,16 @@ function renderTipsTab() {
     ]},
 
     // ── القسم 3: كيف تُرشَّح التوصيات (9 شروط)
-    {icon:'🎯', title:'الشروط التسعة للتوصية', color:C.green, lines:[
+    {icon:'🎯', title:'شروط التوصية الصارمة', color:C.green, lines:[
       '1. إشارة شراء أو شراء قوي من 10 مؤشرات',
-      '2. ثقة ≥ 60% — تعكس الآن جودة الإشارة لا فقط توفر المؤشرات',
-      '3. جودة صفقة ≥ 35%',
-      '4. هدف ربح ≥ 3% (حد أدنى مضمون)',
-      '5. R/R ≥ 1:1',
-      '6. لا أرباح خلال 5 أيام',
+      '2. دخول فعلي فقط: البطاقة لا تظهر إذا كانت مراقبة',
+      '3. ثقة الدخول ≥ 70%',
+      '4. جودة الصفقة ≥ 50%',
+      '5. هدف ربح ≥ 2% مع R/R ≥ 1.5x',
+      '6. لا أرباح قريبة حسب تقلب السهم',
       '7. لا gap-up أكثر من 8%',
       '8. فوق MA50',
-      '9. توقيت "ادخل الآن" أو "مقبول"',
+      '9. توقيت "ادخل الآن" أو "مقبول" بدون خبر سلبي',
     ]},
 
     // ── القسم 4: المؤشرات (بالترتيب المستخدم في calcSignal)
@@ -7004,7 +7510,7 @@ function renderTipsTab() {
       'ATR = متوسط تحرك السهم اليومي',
       'وقف الخسارة = السعر - (ATR × 1.5) — حد أقصى -15%',
       'سهم ATR=10% → وقف أوسع | سهم ATR=2% → وقف ضيق',
-      'المجازفة تستخدم ATR × 2 (أوسع) وهدف ATR × 3.5',
+      'المجازفة تستخدم هدف مقاومة موثوقة أو ATR × 2.5 كهدف واقعي',
     ]},
 
     // ── القسم 5: الشموع اليابانية
@@ -7039,10 +7545,10 @@ function renderTipsTab() {
     // ── القسم 8: المجازفة
     {icon:'🎲', title:'المجازفة — فلسفتها وشروطها', color:C.purple, lines:[
       'رأسمال 5-10% فقط — رهان صغير ربحه ضخم',
-      'السعر بين $3 و$80 — لا أسهم غالية',
-      'Beta ≥ 1.7 أو ATR ≥ 2.5% — تقلب حقيقي',
+      'السعر بين $3 و$100 — لا أسهم غالية جداً',
+      'Beta ≥ 1.4 أو ATR ≥ 1.8% — تقلب كافٍ للمجازفة',
       'الوقف تحت الدعم بـ 1.5% — محدد وواضح',
-      'الهدف 3.5:1 R/R — أي سهم أقل يُرفض تلقائياً',
+      'R/R الضعيف جداً يُرفض، والمتوسط يظهر مراقبة فقط',
       'المقاومة تُستخدم كهدف فقط إذا أعلى بـ 5%+',
     ]},
 
@@ -7146,12 +7652,12 @@ function renderTipsTab() {
 
     // ══ الجديد: نظام المجازفة الكامل
     {icon:'🎲', title:'نظام المجازفة — كيف يعمل الآن', color:C.purple, lines:[
-      'شرط 1: السعر $3-$80 فقط (لا أسهم غالية)',
-      'شرط 2: Beta ≥ 1.7 أو ATR ≥ 2.5% (تقلب حقيقي)',
+      'شرط 1: السعر $3-$100 فقط، مع أولوية للأسهم الأرخص والأكثر حركة',
+      'شرط 2: Beta ≥ 1.4 أو ATR ≥ 1.8% (تقلب كافٍ للمجازفة)',
       'شرط 3: MACD Hist سالب متوسع = حجب فوري ❌',
       'شرط 4: أسبوعي هابط قوي = حجب فوري ❌',
-      'شرط 5: R/R أقل من 2:1 = رفض تلقائي',
-      'الهدف: ATR×3.5 أو مقاومة أعلى بـ 5%+ فقط',
+      'شرط 5: R/R ضعيف جداً = رفض، والمتوسط يظهر كمراقبة فقط',
+      'الهدف: مقاومة موثوقة أو ATR×2.5 كهدف واقعي قصير المدى',
       'نقاط مضاعفة: المطرقة والابتلاع الصاعد أقوى من غيرهما',
     ]},
   ];
@@ -7250,7 +7756,12 @@ setInterval(async () => {
       return fresh
         ? { ...r, ...fresh, isConviction:r.isConviction }
         : { ...r, price:p.price, change:p.change, high:p.high, low:p.low, volume:p.volume };
-    });
+    }).filter(r =>
+      r?.activeBuy === true &&
+      (r.riskReward || 0) >= REC_MIN_ENTRY_RR &&
+      (r.tradeQuality || 0) >= REC_MIN_ENTRY_QUALITY &&
+      (r.confidence || 0) >= 70
+    );
   }
   if(state.speculativeRecs) {
     state.speculativeRecs = state.speculativeRecs.map(r => {
@@ -7259,7 +7770,6 @@ setInterval(async () => {
       return { ...r, price:p.price, change:p.change };
     });
   }
-  if(state.indicatorsDone) calcSpeculative();
   render();
 }, 30000);
 
@@ -7362,6 +7872,17 @@ window.retryPrices = async () => {
 
     const recs = JSON.parse(savedRecs);
     if(!Array.isArray(recs) || recs.length === 0) return;
+    const cleanRecs = recs.filter(r =>
+      r?.activeBuy === true &&
+      (r.riskReward || 0) >= REC_MIN_ENTRY_RR &&
+      (r.tradeQuality || 0) >= REC_MIN_ENTRY_QUALITY &&
+      (r.confidence || 0) >= 70
+    );
+    if(cleanRecs.length !== recs.length) {
+      localStorage.setItem('recs_full', JSON.stringify(cleanRecs));
+      localStorage.setItem('recs_time', new Date().toISOString());
+    }
+    if(cleanRecs.length === 0) return;
 
     // ✅ استرجاع sessionOneIds (توصيات الجلسة الأولى) للمقارنة الصحيحة
     const s1Date = localStorage.getItem('s1_recs_date');
@@ -7370,7 +7891,7 @@ window.retryPrices = async () => {
       if(s1) state.sessionOneIds = JSON.parse(s1);
     }
 
-    state.recs           = recs;
+    state.recs           = cleanRecs;
     state.recsTime       = new Date(savedTime);
     // ✅ إذا توصيات محفوظة من نفس اليوم → قفلها فوراً
     // المؤشرات ستُحمّل لتحديث الأسعار فقط، لكن لا إعادة حساب
