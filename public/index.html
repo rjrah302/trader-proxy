@@ -284,10 +284,10 @@ function getSessionInfo() {
     case 'short':
       return {
         label:  'السوق — نصف يوم',
-        sub:    'Juneteenth / Black Friday',
+        sub:    'جلسة مختصرة — مراقبة فقط',
         color:  '#ffa500',
-        dot:    true,
-        canRec: true,
+        dot:    false,
+        canRec: false,
       };
     case 'after':
       return {
@@ -711,7 +711,7 @@ function calcTradeDecision({kind, symbol, entry, stop, target, rr, action, watch
     note = 'لا ترفع الدخول فوق السعر المحدد، والوقف إلزامي.';
   }
 
-  return {broker, capital, riskPct, entry:e, stop:s, target:t, riskPerShare, maxRisk, qty, positionValue, potentialLoss, potentialProfit, rr:realRR, verdict, tone, note, symbol};
+  return {broker, capital, riskPct, entry:e, stop:s, target:t, riskPerShare, maxRisk, qty, positionValue, potentialLoss, potentialProfit, rr:realRR, verdict, tone, note, symbol, watchOnly, noTrade};
 }
 
 function renderBrokerSelector() {
@@ -764,7 +764,7 @@ function renderTradeDecisionBox(decision) {
           ]),
         ]),
     el('div', {style:{fontSize:'9px', color:C.text2, display:'flex', justifyContent:'space-between', gap:'8px', flexWrap:'wrap'}}, [
-      el('span', {}, ['دخول '+fmtPrice(decision.entry)]),
+      el('span', {}, [(decision.watchOnly || decision.noTrade ? 'نقطة مراقبة ' : 'دخول ')+fmtPrice(decision.entry)]),
       el('span', {style:{color:C.pink}}, ['وقف '+fmtPrice(decision.stop)]),
       el('span', {style:{color:C.green}}, ['هدف '+fmtPrice(decision.target)]),
       el('span', {style:{color:decision.rr>=1.5?C.green:C.yellow}}, ['R/R '+fmt(decision.rr,1)+'x']),
@@ -2122,7 +2122,7 @@ function calcSignal(stock) {
 // ================================================================
 
 function calcRecs() {
-  if(state.marketTrend !== 'bullish') {
+  if(state.marketTrend === 'bearish') {
     state.recs = [];
     state.recsTime = new Date();
     try {
@@ -2140,9 +2140,9 @@ function calcRecs() {
     .filter(s => s.activeBuy === true)
     // شرط 1: إشارة شراء
     .filter(s => s.signal==='شراء قوي' || s.signal==='شراء')
-    // شرط 2: ثقة كافية (60%+) — رفعنا من 50
+    // شرط 2: ثقة كافية — الدخول الفعلي داخل calcSignal يشترط 70%+
     .filter(s => s.confidence >= 60)
-    // شرط 3: جودة صفقة مقبولة — لا نسمح ببطاقة ضعيفة ثم تقول "ادخل"
+    // شرط 3: جودة صفقة مقبولة — الدخول الفعلي داخل calcSignal يشترط 50%+
     .filter(s => s.tradeQuality >= 45)
     // شرط 4: هدف ربح 2%+
     .filter(s => s.profitPct >= 2)
@@ -2214,7 +2214,7 @@ function calcRecs() {
 
   // Adaptive Market — عدد التوصيات حسب اتجاه السوق
   const maxRecs = state.marketTrend==='bullish' ? 5 :
-                  state.marketTrend==='bearish' ? 2 : 4;
+                  state.marketTrend==='bearish' ? 0 : 2;
 
   const recs = [];
   const usedSectors = new Set();
@@ -2557,8 +2557,8 @@ function calcSpeculative() {
     .filter(Boolean)
     .sort((a,b) => {
       // ترتيب: R/R أولاً × score
-      const valA = a.riskReward * 0.5 + a.score * 0.5;
-      const valB = b.riskReward * 0.5 + b.score * 0.5;
+      const valA = Math.min(a.riskReward, 4) * 18 + a.score * 0.35;
+      const valB = Math.min(b.riskReward, 4) * 18 + b.score * 0.35;
       return valB - valA;
     })
     .slice(0, 5);
@@ -4933,8 +4933,8 @@ function renderRecTab() {
       }}, [
         el('div', {style:{fontWeight:'700', color:C.text, marginBottom:'4px'}}, ['الشروط التسعة المطلوبة:']),
         '• إشارة شراء من 10 مؤشرات', el('br'),
-        '• ثقة 60%+ • جودة صفقة 35%+', el('br'),
-        '• هدف ربح 2%+ • R/R 1:1+', el('br'),
+        '• ثقة 70%+ • جودة صفقة 50%+', el('br'),
+        '• هدف ربح 2%+ • R/R 1.5x+', el('br'),
         '• لا أرباح خلال 5 أيام', el('br'),
         '• لا gap-up أكثر من 8%', el('br'),
         '• توقيت مقبول • فوق MA50',
@@ -4967,7 +4967,7 @@ function renderRecTab() {
         padding:'5px 8px', display:'flex', justifyContent:'space-between',
       }}, [
         el('span', {}, ['إعادة حساب التوصيات كل '+REC_REFRESH_MIN+' دقيقة']),
-        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.recsTime,REC_REFRESH_MIN):'عند فتح السوق')]),
+        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.recsTime,REC_REFRESH_MIN):'بعد الافتتاح والتأكيد')]),
       ]),
     ]),
 
@@ -4978,6 +4978,7 @@ function renderRecTab() {
 
 function renderRecCard(r, idx) {
   const isSelected = state.selected === r.id;
+  const marketClosed = !isMarketOpen();
   const sigColor = r.signal.includes('قوي') ? C.green :
                    r.signal.includes('شراء') ? C.blue : C.yellow;
 
@@ -4988,8 +4989,6 @@ function renderRecCard(r, idx) {
   const distToSup  = r.support>0 ? (r.price - r.support) / r.price * 100 : 0;
   const atSupport  = r.nearSupport || distToSup < 1;
   const hasSupport = r.support>0 && distToSup > 0;
-  const recStatusColor = r.activeBuy ? C.green : r.watchOnly ? C.yellow : C.pink;
-
   let orderType, orderColor, orderNote, buyPrice;
 
   if(atSupport) {
@@ -5011,6 +5010,17 @@ function renderRecCard(r, idx) {
     orderNote  = 'ادخل بسعر السوق — راقب وقف الخسارة';
     buyPrice   = r.price;
   }
+
+  const recStatusColor = marketClosed ? C.yellow : r.activeBuy ? C.green : r.watchOnly ? C.yellow : C.pink;
+  const canPlaceRecOrder = !marketClosed && r.activeBuy && !r.blockEntry && !r.tooCloseToResistance;
+  const recPlanTitle = canPlaceRecOrder ? '📋 أمر الشراء الجاهز' : '📋 خطة المراقبة';
+  const displayOrderType = canPlaceRecOrder ? orderType : 'انتظار';
+  const displayOrderColor = canPlaceRecOrder ? orderColor : C.yellow;
+  const displayOrderNote = canPlaceRecOrder
+    ? orderNote
+    : marketClosed
+      ? 'السوق مغلق؛ راقب السعر بعد الافتتاح ولا تنفذ قبل تأكيد الحجم.'
+      : 'ليست إشارة تنفيذ الآن؛ راقب نقطة الدخول والوقف فقط.';
 
   return el('div', {
     class: state.animatedRecs?.has(r.id) ? '' : 'fade-up',
@@ -5166,9 +5176,11 @@ function renderRecCard(r, idx) {
       borderRadius:'8px', padding:'8px 10px', marginBottom:'8px',
     }}, [
       el('div', {style:{fontSize:'12px', fontWeight:'800', color:recStatusColor}}, [
-        r.activeBuy?'✅ ادخل الآن': r.watchOnly?'👀 راقب فقط': r.blockEntry?'🚫 لا تدخل': r.entryTiming
+        marketClosed ? '🌙 مراقبة عند الافتتاح' : r.activeBuy?'✅ ادخل الآن': r.watchOnly?'👀 راقب فقط': r.blockEntry?'🚫 لا تدخل': r.entryTiming
       ]),
-      el('div', {style:{fontSize:'9px', color:C.text2, textAlign:'left', maxWidth:'55%'}}, [r.entryNote]),
+      el('div', {style:{fontSize:'9px', color:C.text2, textAlign:'left', maxWidth:'55%'}}, [
+        marketClosed ? 'السوق مغلق؛ لا تنفيذ الآن. أعد التأكيد بعد الافتتاح والحجم.' : r.entryNote
+      ]),
     ]),
 
     renderTradeDecisionBox(calcTradeDecision({
@@ -5179,8 +5191,8 @@ function renderRecCard(r, idx) {
       target:r.target,
       rr:r.riskReward,
       action:r.entryNote,
-      watchOnly:!r.activeBuy,
-      noTrade:r.blockEntry || r.tooCloseToResistance,
+      watchOnly:marketClosed || !r.activeBuy,
+      noTrade:marketClosed || r.blockEntry || r.tooCloseToResistance,
     })),
 
     renderNewsMini(r.id, true),
@@ -5338,23 +5350,23 @@ function renderRecCard(r, idx) {
 
     // ── 7. أمر الشراء الجاهز (يشمل الكمية والربح والخسارة)
     el('div', {style:{
-      background:'linear-gradient(135deg,rgba(0,255,136,.06),rgba(0,200,255,.04))',
-      border:'1px solid rgba(0,255,136,.25)', borderRadius:'10px',
+      background:canPlaceRecOrder?'linear-gradient(135deg,rgba(0,255,136,.06),rgba(0,200,255,.04))':'rgba(255,224,51,.06)',
+      border:canPlaceRecOrder?'1px solid rgba(0,255,136,.25)':'1px solid rgba(255,224,51,.22)', borderRadius:'10px',
       padding:'10px 12px', marginBottom: isSelected?'8px':'0',
     }}, [
-      el('div', {style:{fontSize:'10px', fontWeight:'800', color:C.green, marginBottom:'8px'}}, ['📋 أمر الشراء الجاهز']),
-      el('div', {style:{borderTop:'1px solid rgba(0,255,136,.15)', marginBottom:'8px'}}),
+      el('div', {style:{fontSize:'10px', fontWeight:'800', color:displayOrderColor, marginBottom:'8px'}}, [recPlanTitle]),
+      el('div', {style:{borderTop:'1px solid '+displayOrderColor+'24', marginBottom:'8px'}}),
 
       el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}, [
         el('span', {style:{fontSize:'10px', color:C.text3}}, ['نوع الأمر']),
         el('span', {style:{
-          fontSize:'11px', fontWeight:'800', color:orderColor,
-          background:orderColor+'18', borderRadius:'5px', padding:'2px 8px',
-          border:`1px solid ${orderColor}33`,
-        }}, [orderType]),
+          fontSize:'11px', fontWeight:'800', color:displayOrderColor,
+          background:displayOrderColor+'18', borderRadius:'5px', padding:'2px 8px',
+          border:`1px solid ${displayOrderColor}33`,
+        }}, [displayOrderType]),
       ]),
       el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}, [
-        el('span', {style:{fontSize:'10px', color:C.text3}}, ['سعر الشراء']),
+        el('span', {style:{fontSize:'10px', color:C.text3}}, [canPlaceRecOrder ? 'سعر الشراء' : 'نقطة مراقبة']),
         el('span', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, [fmtPrice(buyPrice)]),
       ]),
       el('div', {style:{borderTop:'1px solid rgba(255,255,255,.05)', margin:'5px 0'}}),
@@ -5370,9 +5382,9 @@ function renderRecCard(r, idx) {
         ]),
       ]),
       el('div', {style:{
-        fontSize:'10px', color:orderColor, background:orderColor+'0e',
+        fontSize:'10px', color:displayOrderColor, background:displayOrderColor+'0e',
         borderRadius:'6px', padding:'5px 8px',
-      }}, ['💡 '+orderNote]),
+      }}, ['💡 '+displayOrderNote]),
     ]),
 
     // ── مدة الصفقة المتوقعة
@@ -5560,7 +5572,7 @@ function renderSpecTab() {
         padding:'5px 8px', marginBottom:'6px',
       }}, [
         el('span', {}, ['آخر تحديث: '+fmtClock(state.specTime)]),
-        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.specTime,SPEC_REFRESH_MIN):'عند فتح السوق')]),
+        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.specTime,SPEC_REFRESH_MIN):'بعد الافتتاح والتأكيد')]),
       ]),
       el('div', {style:{
         fontSize:'10px', color:C.orange,
@@ -5590,6 +5602,7 @@ function renderSpecTab() {
 
 function renderSpecCard(s, idx) {
   const isSelected  = state.selected === s.id+'_spec';
+  const marketClosed = !isMarketOpen();
   const labelColor  = s.score>=80?C.green:s.score>=65?C.orange:s.score>=50?C.yellow:C.text2;
   const entryColor  = s.entryTiming==='ادخل الآن'?C.green:
                       s.entryTiming==='مقبول'?C.blue:
@@ -5603,25 +5616,31 @@ function renderSpecCard(s, idx) {
   const orderType = atSup ? 'أمر سوق' : hasSup ? 'أمر محدد' : 'أمر سوق';
   const orderColor= atSup ? C.green   : hasSup  ? C.purple  : C.yellow;
   const buyPrice  = hasSup && !atSup  ? s.support*1.002 : s.price;
-  const specVerdict = s.isWatch
-    ? {label:'انتظار فقط', color:C.yellow, note:s.entryNote || 'لم تكتمل شروط دخول المجازفة.'}
-    : s.entryTiming === 'ادخل الآن' && s.riskReward >= 1.45 && s.score >= 45
-      ? {label:'دخول مجازفة', color:C.green, note:'دخول مسموح بشرط الالتزام بالوقف وحجم مخاطرة صغير.'}
-      : s.entryTiming === 'مقبول' && s.riskReward >= 1.45
-        ? {label:'دخول مشروط', color:C.blue, note:'الأفضل أمر محدد قرب الدعم؛ لا تطارد السعر.'}
-        : {label:'ممنوع الآن', color:C.pink, note:'الدخول متأخر أو المخاطرة غير مناسبة.'};
+  const specVerdict = marketClosed
+    ? {label:'مراقبة عند الافتتاح', color:C.yellow, note:'السوق مغلق؛ لا تنفيذ الآن. أعد تأكيد السعر والحجم بعد الافتتاح.'}
+    : s.isWatch
+      ? {label:'انتظار فقط', color:C.yellow, note:s.entryNote || 'لم تكتمل شروط دخول المجازفة.'}
+      : s.entryTiming === 'ادخل الآن' && s.riskReward >= 1.45 && s.score >= 45
+        ? {label:'دخول مجازفة', color:C.green, note:'دخول مسموح بشرط الالتزام بالوقف وحجم مخاطرة صغير.'}
+        : s.entryTiming === 'مقبول' && s.riskReward >= 1.45
+          ? {label:'دخول مشروط', color:C.blue, note:'الأفضل أمر محدد قرب الدعم؛ لا تطارد السعر.'}
+          : {label:'ممنوع الآن', color:C.pink, note:'الدخول متأخر أو المخاطرة غير مناسبة.'};
   const specCancel = 'إلغاء الفكرة إذا كسر '+fmtPrice(s.stopLoss)+' أو فقد الزخم قبل الدخول.';
-  const displayEntryTiming = s.isWatch
+  const displayEntryTiming = marketClosed
+    ? 'انتظر الافتتاح'
+    : s.isWatch
     ? 'انتظر نقطة الدخول'
     : specVerdict.label === 'ممنوع الآن'
       ? 'لا تدخل'
       : s.entryTiming;
-  const displayEntryNote = s.isWatch
+  const displayEntryNote = marketClosed
+    ? 'لا تدخل خارج وقت السوق؛ الأسعار الليلية قد تتغير مع الافتتاح.'
+    : s.isWatch
     ? (s.entryNote || 'انتظر اكتمال شروط الدخول قبل التنفيذ.')
     : specVerdict.label === 'ممنوع الآن'
       ? specVerdict.note
       : s.entryNote;
-  const canPlaceSpecOrder = specVerdict.label === 'دخول مجازفة' || specVerdict.label === 'دخول مشروط';
+  const canPlaceSpecOrder = !marketClosed && (specVerdict.label === 'دخول مجازفة' || specVerdict.label === 'دخول مشروط');
   const specPlanTitle = canPlaceSpecOrder ? '📋 أمر الشراء' : '📋 خطة المراقبة';
   const displayOrderType = canPlaceSpecOrder ? orderType : 'انتظار';
   const displayOrderColor = canPlaceSpecOrder ? orderColor : specVerdict.color;
@@ -5741,8 +5760,8 @@ function renderSpecCard(s, idx) {
       target:s.target,
       rr:s.riskReward,
       action:s.entryNote,
-      watchOnly:s.isWatch || s.entryTiming === 'انتظر' || s.entryTiming === 'متأخر',
-      noTrade:s.tooCloseToResistance,
+      watchOnly:marketClosed || s.isWatch || s.entryTiming === 'انتظر' || s.entryTiming === 'متأخر',
+      noTrade:marketClosed || s.tooCloseToResistance,
     })),
 
     isSelected && renderAnalystMini(s.id, s.price, true),
@@ -6083,7 +6102,7 @@ function renderHunterTab() {
 
   const isNightMode = !isMarketOpen();
   const hunters = state.hunterRecs || [];
-  const entryHunters = hunters.filter(h => !h.isRadar && h.gainerClass !== 'chase' && h.actionTone === 'buy');
+  const entryHunters = hunters.filter(h => isMarketOpen() && !h.isNight && !h.isRadar && h.gainerClass !== 'chase' && h.actionTone === 'buy');
   const watchHunters = hunters.filter(h => !entryHunters.includes(h) && h.gainerClass !== 'chase' && h.action !== 'لا تطارد');
   const avoidHunters = hunters.filter(h => h.gainerClass === 'chase' || h.action === 'لا تطارد');
   const trendColor = state.marketTrend==='bearish'?C.pink:state.marketTrend==='bullish'?C.green:C.yellow;
@@ -6132,7 +6151,7 @@ function renderHunterTab() {
         padding:'5px 8px', marginBottom:'6px',
       }}, [
         el('span', {}, ['آخر تحديث: '+fmtClock(state.hunterTime)]),
-        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.hunterTime,HUNTER_REFRESH_MIN):'عند فتح السوق')]),
+        el('span', {}, ['القادم: '+(isMarketOpen()?nextUpdateText(state.hunterTime,HUNTER_REFRESH_MIN):'بعد الافتتاح والتأكيد')]),
       ]),
 
       // تنبيه السوق الهابط
@@ -6181,7 +6200,8 @@ function renderHunterTab() {
 
 function renderHunterCard(h, idx) {
   const isSelected = state.selected === h.id + '_hunter';
-  const scoreColor = h.score >= 80 ? C.green : h.score >= 70 ? C.blue : h.score >= 60 ? C.yellow : C.orange;
+  const displayScore = Math.round(Math.max(0, Math.min(100, Number(h.score) || 0)));
+  const scoreColor = displayScore >= 80 ? C.green : displayScore >= 70 ? C.blue : displayScore >= 60 ? C.yellow : C.orange;
   const actionColor = h.actionTone === 'buy' ? C.green : h.actionTone === 'watch' ? C.yellow : h.actionTone === 'support' ? C.blue : C.text2;
   const analystView = getAnalystView(h.id, h.price);
   const targetReason = h.vwap && h.vwap > h.price
@@ -6204,21 +6224,25 @@ function renderHunterCard(h, idx) {
       : estimatedDays <= 3
         ? estimatedDays + ' أيام تداول'
         : '3-7 أيام تداول';
-  const enterVerdict = h.actionTone === 'buy'
+  const enterVerdict = h.isNight
+    ? {label:'مراقبة بعد الافتتاح', color:C.yellow, note:'تحليل ليلي؛ لا تنفيذ قبل تأكيد VWAP والحجم بعد الفتح.'}
+    : h.actionTone === 'buy'
     ? {label:'دخول مسموح', color:C.green, note:'نفذ فقط إذا بقي فوق VWAP والحجم داعم.'}
     : h.actionTone === 'support'
       ? {label:'دخول قرب الدعم', color:C.blue, note:'لا تدخل إلا قريبًا من الدعم وبوقف صغير.'}
       : h.gainerClass === 'chase' || h.action === 'لا تطارد'
         ? {label:'لا تدخل الآن', color:C.pink, note:'السهم مرتفع لكن الدخول متأخر؛ انتظر Pullback.'}
         : {label:'لا تدخل الآن', color:C.yellow, note:'الدخول بعد اختراق/ثبات وليس بسعر عشوائي.'};
-  const directOrder = h.actionTone === 'buy'
+  const directOrder = h.isNight
+    ? {label:'لا تدخل الآن', color:C.yellow, note:'ليلي فقط؛ انتظر الافتتاح وتأكيد السعر والحجم.'}
+    : h.actionTone === 'buy'
     ? {label:'ادخل الآن', color:C.green, note:'السعر مناسب. نفذ مع الوقف المكتوب فقط.'}
     : h.actionTone === 'support'
       ? {label:'لا تدخل الآن', color:C.yellow, note:'انتظر السعر عند الدعم أو رجوع واضح؛ ليست إشارة تنفيذ فورية.'}
       : h.gainerClass === 'chase' || h.action === 'لا تطارد'
         ? {label:'ممنوع الدخول', color:C.pink, note:'انتظر Pullback أو تجاهل السهم.'}
         : {label:'لا تدخل الآن', color:C.yellow, note:'انتظر محفز الدخول. لا شراء الآن.'};
-  const isFinalEntry = h.actionTone === 'buy';
+  const isFinalEntry = !h.isNight && isMarketOpen() && h.actionTone === 'buy';
   const triggerText = h.actionTone === 'buy'
     ? 'الثبات فوق $'+fmt(h.vwap || h.price,2)+' مع RVOL أعلى من 1.5'
     : h.checks?.breakout15
@@ -6260,14 +6284,14 @@ function renderHunterCard(h, idx) {
           el('div', {style:{fontSize:'10px', color:C.text3}}, [h.id+' · '+h.sector]),
         ]),
         el('div', {style:{textAlign:'left'}}, [
-          el('div', {style:{fontSize:'20px', fontWeight:'900', color:scoreColor}}, [h.score+'']),
+          el('div', {style:{fontSize:'20px', fontWeight:'900', color:scoreColor}}, [displayScore+'']),
           el('div', {style:{fontSize:'9px', color:C.text3}}, ['/ 100']),
         ]),
       ]),
 
       // شريط Score
       el('div', {style:{height:'4px', background:'#1a2340', borderRadius:'4px', marginBottom:'8px'}}, [
-        el('div', {style:{height:'100%', width:Math.min(h.score,100)+'%', background:scoreColor, borderRadius:'4px'}}),
+        el('div', {style:{height:'100%', width:displayScore+'%', background:scoreColor, borderRadius:'4px'}}),
       ]),
 
       el('div', {style:{
