@@ -163,5 +163,95 @@
     };
   }
 
-  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision };
+  function calcRecTradeMetrics({price=0, support=null, resistance=null, atrPct=null, nearSupport=false, nearResistance=false} = {}) {
+    price = +price || 0;
+    support = support != null ? +support : null;
+    resistance = resistance != null ? +resistance : null;
+    atrPct = atrPct != null ? +atrPct : null;
+    if (price <= 0) {
+      return {
+        stopLoss: 0, target: 0, profitPct: 0, lossPct: 0, riskReward: 0,
+        roomToResistance: 999, minRoomToResistance: 3, tooCloseToResistance: false,
+        tradeQuality: 0, distToSupport: 999, entryTiming: 'انتظر',
+        entryNote: 'لا توجد بيانات سعر كافية', idealEntry: 0,
+      };
+    }
+
+    const atrMultFinal = atrPct ? (atrPct < 2 ? 1.5 : atrPct < 4 ? 2.0 : 2.5) : 1.5;
+    const atrStop = atrPct ? Math.min(atrPct * atrMultFinal, 15) : 2;
+    const atrBasedStop = price * (1 - atrStop / 100);
+    const supBasedStop = support ? support * 0.99 : null;
+    const stopLoss = Math.max(
+      supBasedStop && supBasedStop > atrBasedStop ? supBasedStop : atrBasedStop,
+      price * 0.75
+    );
+    const minTarget = price * 1.03;
+    const atrTarget = price * (1 + Math.max(atrStop * 2, 3) / 100);
+    const atrRealist = price + (atrPct ? price * atrPct / 100 * 3.5 : price * 0.08);
+    const resValid = resistance && resistance > price * 1.02 && resistance > minTarget;
+    const resTarget = resValid ? resistance : null;
+    const roomToResistance = resistance && resistance > price
+      ? (resistance - price) / price * 100
+      : 999;
+    const minRoomToResistance = Math.max(3, (atrPct || 2) * 0.8);
+    const tooCloseToResistance = resistance && roomToResistance < minRoomToResistance;
+    const target = resTarget
+      ? Math.min(resTarget * 0.98, atrRealist > minTarget ? atrRealist : resTarget * 0.98)
+      : Math.max(atrTarget, minTarget);
+    const profitPct = (target - price) / price * 100;
+    const lossPct = (price - stopLoss) / price * 100;
+    const riskReward = lossPct > 0 ? profitPct / lossPct : 0;
+
+    let tradeQuality = 0;
+    if (riskReward >= 3.0) tradeQuality += 40;
+    else if (riskReward >= 2.0) tradeQuality += 30;
+    else if (riskReward >= 1.5) tradeQuality += 20;
+    else if (riskReward >= 1.0) tradeQuality += 10;
+    if (nearSupport) tradeQuality += 25;
+    if (profitPct >= 5) tradeQuality += 20;
+    else if (profitPct >= 3) tradeQuality += 15;
+    else if (profitPct >= 2) tradeQuality += 8;
+    if (tooCloseToResistance) tradeQuality -= 25;
+    if (atrPct != null && atrPct < 2) tradeQuality += 15;
+    else if (atrPct != null && atrPct < 3) tradeQuality += 8;
+    tradeQuality = Math.min(100, Math.max(0, tradeQuality));
+
+    const distToSupport = support > 0 ? (price - support) / price * 100 : 999;
+    let entryTiming, entryNote;
+    if (tooCloseToResistance || nearResistance) {
+      entryTiming = 'انتظر';
+      entryNote = 'السعر قريب من المقاومة — انتظر كسرها أو تراجع';
+    } else if (nearSupport) {
+      entryTiming = 'ادخل الآن';
+      entryNote = 'السعر عند الدعم — أفضل نقطة دخول';
+    } else if (distToSupport <= 5) {
+      entryTiming = 'مقبول';
+      entryNote = support ? 'انتظر تراجعاً بسيطاً نحو $' + support.toFixed(2) + ' أفضل' : 'قريب من منطقة دخول مقبولة';
+    } else if (distToSupport <= 10) {
+      entryTiming = 'انتظر';
+      entryNote = support ? 'السعر بعيد عن الدعم — انتظر تراجعاً لـ $' + support.toFixed(2) : 'انتظر نقطة دخول أوضح';
+    } else {
+      entryTiming = 'متأخر';
+      entryNote = support ? 'الدخول الآن محفوف بالمخاطر — الدعم عند $' + support.toFixed(2) : 'الدخول الآن متأخر';
+    }
+    const idealEntry = nearSupport ? price : (support ? support * 1.01 : price);
+
+    return {
+      stopLoss:+stopLoss.toFixed(2),
+      target:+target.toFixed(2),
+      profitPct:+profitPct.toFixed(2),
+      lossPct:+lossPct.toFixed(2),
+      riskReward:+riskReward.toFixed(2),
+      roomToResistance:+roomToResistance.toFixed(2),
+      minRoomToResistance:+minRoomToResistance.toFixed(2),
+      tooCloseToResistance:!!tooCloseToResistance,
+      tradeQuality,
+      distToSupport:+distToSupport.toFixed(2),
+      entryTiming,
+      entryNote,
+      idealEntry:+idealEntry.toFixed(2),
+    };
+  }
+
+  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics };
 });
