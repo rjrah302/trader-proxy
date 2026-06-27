@@ -84,5 +84,84 @@
     return {broker, capital, riskPct, entry:e, stop:s, target:t, riskPerShare, maxRisk, qty, positionValue, potentialLoss, potentialProfit, rr:realRR, verdict, tone, note, symbol, watchOnly, noTrade, kind};
   }
 
-  return { estimateTradeDuration, calcTradeDecision };
+  function buildRecCardDecision({
+    confidence=0,
+    tradeQuality=0,
+    riskReward=0,
+    profitPct=0,
+    entryTiming='انتظر',
+    entryNote='',
+    isCooldown=false,
+    tooCloseToResistance=false,
+    trendOk=true,
+    newsOk=true,
+    newsBlocked=false,
+    signal='انتظار',
+    macdHist=null,
+    volR=0,
+    change=0,
+    nearSupport=false,
+    distToSupport=999,
+    nearResistance=false,
+    minEntryRR=1.5,
+    minEntryQuality=50,
+    minEntryADX=18,
+    priceText='السعر الحالي',
+    idealEntryText='الدعم',
+  } = {}) {
+    const signalQuality = confidence >= 70 ? 'HIGH' : confidence >= 50 ? 'MEDIUM' : 'LOW';
+    const rrOkForEntry = riskReward >= minEntryRR;
+    const qualityOkForEntry = tradeQuality >= minEntryQuality;
+    const timingOkForEntry = entryTiming === 'ادخل الآن' || entryTiming === 'مقبول';
+    const entryBlockReasons = [];
+
+    if (!rrOkForEntry) entryBlockReasons.push('R/R أقل من ' + minEntryRR + 'x');
+    if (!qualityOkForEntry) entryBlockReasons.push('جودة الصفقة أقل من ' + minEntryQuality + '%');
+    if (!trendOk) entryBlockReasons.push('ADX ضعيف ولا يوجد دعم كاف');
+    if (!newsOk) entryBlockReasons.push('خبر سلبي مؤثر');
+    if (!timingOkForEntry) entryBlockReasons.push('التوقيت غير مناسب');
+
+    const activeBuy = !isCooldown && !tooCloseToResistance && signalQuality === 'HIGH' &&
+      rrOkForEntry && qualityOkForEntry && trendOk && newsOk && timingOkForEntry;
+    const blockEntry = isCooldown || signalQuality === 'LOW' || entryTiming === 'متأخر' || newsBlocked;
+    const earlyMomentum = (macdHist != null && macdHist > 0) || (volR >= 1.2 && (change || 0) > 0);
+    const earlyNear = nearSupport || distToSupport <= 6;
+    const conditionalBuy = !activeBuy && !blockEntry && !tooCloseToResistance &&
+      newsOk && signal !== 'بيع' && signal !== 'بيع قوي' &&
+      riskReward >= 1.3 && profitPct >= 2 && confidence >= 58 && tradeQuality >= 35 &&
+      (entryTiming === 'مقبول' || entryTiming === 'انتظر' || earlyNear) &&
+      (earlyMomentum || earlyNear);
+    const ignitionReady = earlyMomentum && (volR >= 1.5 || nearSupport || distToSupport <= 4);
+    const earlyMoveOk = change <= 12 || ignitionReady || (volR >= 2 && !nearResistance);
+    const earlyRadar = !activeBuy && !conditionalBuy && !blockEntry && !tooCloseToResistance &&
+      newsOk && riskReward >= 1.15 && profitPct >= 2 && confidence >= 50 &&
+      (earlyNear || earlyMomentum) && earlyMoveOk;
+    const watchOnly = !activeBuy && !blockEntry;
+    const recStage = activeBuy ? 'confirmed' : conditionalBuy ? 'conditional' : earlyRadar ? 'early' : 'reject';
+
+    const decision = activeBuy
+      ? {label:'ادخل الآن', tone:'buy', note:entryNote}
+      : conditionalBuy
+        ? {label:'ادخل بشرط', tone:'conditional', note:'ادخل فقط إذا ثبت فوق ' + priceText + ' أو رجع قرب ' + idealEntryText + ' مع حجم داعم.'}
+        : earlyRadar
+          ? {label:'استعد', tone:'early', note:'بداية حركة محتملة؛ انتظر تأكيد الحجم أو رجوع فوق نقطة الدخول.'}
+          : {label:'مرفوض', tone:'reject', note:'لم تكتمل شروط التوصية.'};
+
+    const finalEntryNote = activeBuy
+      ? entryNote
+      : conditionalBuy || earlyRadar
+        ? decision.note
+        : entryBlockReasons.length
+          ? 'لا تدخل الآن — ' + entryBlockReasons.join('، ')
+          : entryNote;
+
+    return {
+      signalQuality, rrOkForEntry, qualityOkForEntry, timingOkForEntry,
+      entryBlockReasons, activeBuy, blockEntry, watchOnly, conditionalBuy,
+      earlyRadar, recStage, recDecision: decision, finalEntryNote,
+      earlyMomentum, earlyNear, ignitionReady, earlyMoveOk,
+    };
+  }
+
+  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision };
 });
