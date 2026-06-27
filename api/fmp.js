@@ -7,9 +7,16 @@ const ALLOWED_PREFIXES = [
 
 function cacheSeconds(path) {
   if (path.includes('/historical-chart/') || path.includes('/quote') || path.includes('/aftermarket-quote')) return 20;
-  if (path.includes('/news/') || path.includes('/earning-calendar')) return 300;
+  if (path.includes('/news/') || path.includes('/earning-calendar') || path.includes('/earning_calendar')) return 300;
   if (path.includes('/historical-price') || path.includes('/profile') || path.includes('/rating') || path.includes('/price-target')) return 900;
   return 60;
+}
+
+function isOptionalEndpoint(path) {
+  return path.includes('/earning-calendar')
+    || path.includes('/earning_calendar')
+    || path.includes('/rating/')
+    || path.includes('/ratings');
 }
 
 module.exports = async function handler(req, res) {
@@ -41,6 +48,9 @@ module.exports = async function handler(req, res) {
 
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', `s-maxage=${maxAge}, stale-while-revalidate=${Math.max(maxAge * 3, 60)}`);
+    if ((upstream.status === 403 || upstream.status === 404) && isOptionalEndpoint(url.pathname)) {
+      return res.status(200).json([]);
+    }
     return res.status(upstream.status).send(text);
   } catch (e) {
     return res.status(200).json({ ok: false, error: e.message || 'FMP proxy error' });
