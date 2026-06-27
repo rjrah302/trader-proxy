@@ -805,6 +805,7 @@ function renderTradeDecisionBox(decision) {
 
 // ── 0. اتجاه السوق العام (SPY + QQQ)
 async function fetchMarketTrend() {
+  if (state.marketSnapshotTime && Date.now() - new Date(state.marketSnapshotTime).getTime() < 30000) return;
   try {
     const fetchOne = async (sym) => {
       // نجرب stable ثم v3
@@ -890,6 +891,36 @@ async function fetchPrices() {
   }
 
   // ── محاولة 1: الـ proxy /api/stocks
+  // Server snapshot: one deployed-site request for prices + SPY/QQQ market trend.
+  if (USE_SERVER_FMP_PROXY) {
+    try {
+      const res = await fetch('/api/snapshot?symbols=' + encodeURIComponent(symbols.join(',')));
+      const json = await res.json().catch(() => null);
+      const data = json?.quoteResponse?.result || [];
+      let got = 0;
+      data.forEach(q => { if(storeProxy(q)) got++; });
+
+      if (json?.market) {
+        if (json.market.spyChange !== null && json.market.spyChange !== undefined) state.spyChange = +json.market.spyChange;
+        if (json.market.qqqChange !== null && json.market.qqqChange !== undefined) state.qqqChange = +json.market.qqqChange;
+        if (json.market.trend) state.marketTrend = json.market.trend;
+        state.marketSnapshotTime = json.time || new Date().toISOString();
+      }
+
+      if (got > 0) {
+        state.dataCheck.prices.real = ALL_STOCKS.filter(s => state.prices[s.id]?.isReal).length;
+        state.loadingPrices = false;
+        localStorage.setItem('cached_prices', JSON.stringify(state.prices));
+        localStorage.setItem('cached_prices_time', new Date().toISOString());
+        console.log('[Snapshot] server prices:', got+'/'+symbols.length, '| trend:', state.marketTrend);
+        render();
+        return;
+      }
+    } catch(e) {
+      console.warn('[Snapshot] fallback:', e.message);
+    }
+  }
+
   const proxyErrors = [];
   for(let i=0; i<symbols.length; i+=BATCH) {
     const batch = symbols.slice(i, i+BATCH).join(',');
