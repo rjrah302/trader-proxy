@@ -144,6 +144,27 @@ const USD_RATE  = 3.75;
 // نستخدم الـ proxy الموجود /api/stocks للأسعار
 // وFMP مباشرة للمؤشرات التقنية (تدعم CORS)
 const FMP_BASE  = 'https://financialmodelingprep.com';
+const USE_SERVER_FMP_PROXY = location.protocol !== 'file:';
+
+// On the deployed site, route FMP traffic through the backend so the browser
+// does less direct work and Vercel can cache short-lived market responses.
+if (USE_SERVER_FMP_PROXY && typeof window !== 'undefined' && window.fetch) {
+  const _nativeFetch = window.fetch.bind(window);
+  window.fetch = function(input, init) {
+    const raw = typeof input === 'string' ? input : input?.url;
+    if (raw && raw.startsWith(FMP_BASE)) {
+      try {
+        const url = new URL(raw);
+        const apiKey = url.searchParams.get('apikey') || API_KEY;
+        url.searchParams.delete('apikey');
+        const proxyUrl = '/api/fmp?path=' + encodeURIComponent(url.pathname + url.search)
+          + (apiKey ? '&apikey=' + encodeURIComponent(apiKey) : '');
+        return _nativeFetch(proxyUrl, init);
+      } catch(e) {}
+    }
+    return _nativeFetch(input, init);
+  };
+}
 
 // وقت السوق الأمريكي بالدقائق من منتصف الليل UTC
 function getMarketTimes() {
