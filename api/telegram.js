@@ -1,11 +1,11 @@
 // ================================================================
-// telegram.js — RamiMarketX Bot v2
+// telegram.js â€” RamiMarketX Bot v2
 // ================================================================
 const { initializeApp, cert, getApps } = require('firebase-admin/app');
 const { getFirestore }                  = require('firebase-admin/firestore');
 const RamiAnalysis                       = require('../public/sharedAnalysis.js');
 
-// ── Firebase
+// â”€â”€ Firebase
 let db;
 function getDB() {
   if (!db) {
@@ -18,14 +18,14 @@ function getDB() {
   return db;
 }
 
-// ── Constants
+// â”€â”€ Constants
 const TG_TOKEN   = process.env.TELEGRAM_BOT_TOKEN;
 const TG_CHAT_ID = process.env.TG_CHAT_ID || '6195578236';
 const FMP_KEY    = process.env.FMP_API_KEY;
 const TG_API     = `https://api.telegram.org/bot${TG_TOKEN}`;
 
 // ================================================================
-// ═══════════════════ TELEGRAM HELPERS ═══════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• TELEGRAM HELPERS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 async function tgSend(text, chatId = TG_CHAT_ID) {
   try {
@@ -37,7 +37,7 @@ async function tgSend(text, chatId = TG_CHAT_ID) {
   } catch (e) { console.error('tgSend:', e.message); }
 }
 
-// إرسال رسالة مع أزرار Inline
+// Ø¥Ø±Ø³Ø§Ù„ Ø±Ø³Ø§Ù„Ø© Ù…Ø¹ Ø£Ø²Ø±Ø§Ø± Inline
 async function tgSendButtons(text, buttons, chatId = TG_CHAT_ID) {
   try {
     await fetch(`${TG_API}/sendMessage`, {
@@ -53,7 +53,7 @@ async function tgSendButtons(text, buttons, chatId = TG_CHAT_ID) {
   } catch (e) { console.error('tgSendButtons:', e.message); }
 }
 
-// تعديل رسالة موجودة (لإزالة الأزرار بعد الضغط)
+// ØªØ¹Ø¯ÙŠÙ„ Ø±Ø³Ø§Ù„Ø© Ù…ÙˆØ¬ÙˆØ¯Ø© (Ù„Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ø£Ø²Ø±Ø§Ø± Ø¨Ø¹Ø¯ Ø§Ù„Ø¶ØºØ·)
 async function tgEditButtons(chatId, messageId, text) {
   try {
     await fetch(`${TG_API}/editMessageText`, {
@@ -69,7 +69,7 @@ async function tgEditButtons(chatId, messageId, text) {
   } catch (e) {}
 }
 
-// الرد على callback_query
+// Ø§Ù„Ø±Ø¯ Ø¹Ù„Ù‰ callback_query
 async function tgAnswerCallback(callbackId, text = '') {
   try {
     await fetch(`${TG_API}/answerCallbackQuery`, {
@@ -81,7 +81,7 @@ async function tgAnswerCallback(callbackId, text = '') {
 }
 
 // ================================================================
-// ═══════════════════ FIREBASE HELPERS ═══════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• FIREBASE HELPERS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 async function fbGet(doc) {
   try {
@@ -96,7 +96,7 @@ async function fbSet(doc, data) {
   } catch (e) { console.error('fbSet:', e.message); }
 }
 
-// ── قراءة سجل التوصيات من users/default (الأداة الرئيسية)
+// â”€â”€ Ù‚Ø±Ø§Ø¡Ø© Ø³Ø¬Ù„ Ø§Ù„ØªÙˆØµÙŠØ§Øª Ù…Ù† users/default (Ø§Ù„Ø£Ø¯Ø§Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©)
 async function fbGetHistory() {
   try {
     const s = await getDB()
@@ -107,7 +107,7 @@ async function fbGetHistory() {
 }
 
 // ================================================================
-// ═══════════════════ FMP HELPERS ════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• FMP HELPERS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 async function getStock(sym) {
   try {
@@ -150,7 +150,7 @@ async function getStock(sym) {
   } catch (e) { return null; }
 }
 
-// جلب أسعار متعددة دفعة واحدة
+// Ø¬Ù„Ø¨ Ø£Ø³Ø¹Ø§Ø± Ù…ØªØ¹Ø¯Ø¯Ø© Ø¯ÙØ¹Ø© ÙˆØ§Ø­Ø¯Ø©
 async function getMultipleStocks(symbols) {
   const results = {};
   const BATCH   = 8;
@@ -165,7 +165,7 @@ async function getMultipleStocks(symbols) {
 }
 
 // ================================================================
-// ═══════════════════ TECHNICAL INDICATORS ═══════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• TECHNICAL INDICATORS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 function calcEMA(arr, p) {
   if (!arr || arr.length < p) return null;
@@ -221,7 +221,7 @@ function calcWeeklyTrend(closes) {
 function calcSupRes(closes, highs, lows, price) {
   if (!closes || closes.length < 20) return { support: null, resistance: null };
 
-  // نفس خوارزمية الأداة — قمم وقيعان حقيقية مع clusters
+  // Ù†ÙØ³ Ø®ÙˆØ§Ø±Ø²Ù…ÙŠØ© Ø§Ù„Ø£Ø¯Ø§Ø© â€” Ù‚Ù…Ù… ÙˆÙ‚ÙŠØ¹Ø§Ù† Ø­Ù‚ÙŠÙ‚ÙŠØ© Ù…Ø¹ clusters
   const h = highs && highs.length >= closes.length ? highs : closes;
   const l = lows  && lows.length  >= closes.length ? lows  : closes;
 
@@ -244,7 +244,7 @@ function calcSupRes(closes, highs, lows, price) {
   const resistance = strong.filter(c => c.price > price).sort((a, b) => a.price - b.price)[0]?.price
     ?? +Math.max(...h.slice(-20)).toFixed(2);
   const support    = strong.filter(c => c.price < price).sort((a, b) => b.price - a.price)[0]?.price
-    ?? +Math.min(...l.slice(-60)).toFixed(2); // ← 60 يوم للـ fallback
+    ?? +Math.min(...l.slice(-60)).toFixed(2); // â† 60 ÙŠÙˆÙ… Ù„Ù„Ù€ fallback
 
   return { support: +support.toFixed(2), resistance: +resistance.toFixed(2) };
 }
@@ -268,7 +268,7 @@ function calcGreenCandles(closes) {
   return green;
 }
 
-// ── تحليل شامل لسهم
+// â”€â”€ ØªØ­Ù„ÙŠÙ„ Ø´Ø§Ù…Ù„ Ù„Ø³Ù‡Ù…
 function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, lows = null) {
   if (!quote || !closes.length) return null;
 
@@ -281,62 +281,62 @@ function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, low
   const atrPct = calcATR(closes);
   const green  = calcGreenCandles(closes);
 
-  // ── نقاط الإشارة
+  // â”€â”€ Ù†Ù‚Ø§Ø· Ø§Ù„Ø¥Ø´Ø§Ø±Ø©
   let buy = 0, sell = 0;
   const signals = [], risks = [];
 
-  if (macd.hist > 0 && macd.dir === 'expanding')  { buy += 2; signals.push('MACD زخم صاعد قوي ↑'); }
-  else if (macd.hist > 0)                          { buy++;    signals.push('MACD صاعد يضعف'); }
-  else if (macd.hist < 0 && macd.dir === 'expanding') { sell += 2; risks.push('MACD هابط يتوسع ↓'); }
-  else if (macd.hist < 0)                          { sell++;   risks.push('MACD هابط'); }
+  if (macd.hist > 0 && macd.dir === 'expanding')  { buy += 2; signals.push('MACD Ø²Ø®Ù… ØµØ§Ø¹Ø¯ Ù‚ÙˆÙŠ â†‘'); }
+  else if (macd.hist > 0)                          { buy++;    signals.push('MACD ØµØ§Ø¹Ø¯ ÙŠØ¶Ø¹Ù'); }
+  else if (macd.hist < 0 && macd.dir === 'expanding') { sell += 2; risks.push('MACD Ù‡Ø§Ø¨Ø· ÙŠØªÙˆØ³Ø¹ â†“'); }
+  else if (macd.hist < 0)                          { sell++;   risks.push('MACD Ù‡Ø§Ø¨Ø·'); }
 
   if (rsi !== null) {
-    if (rsi < 30)       { buy += 2;  signals.push('RSI '+rsi+' — تشبع بيع شديد 🔥'); }
-    else if (rsi < 40)  { buy++;     signals.push('RSI '+rsi+' — منطقة شراء'); }
-    else if (rsi > 75)  { sell += 2; risks.push('RSI '+rsi+' — تشبع شراء ⚠️'); }
-    else if (rsi > 65)  { sell++;    risks.push('RSI '+rsi+' — مرتفع'); }
+    if (rsi < 30)       { buy += 2;  signals.push('RSI '+rsi+' â€” ØªØ´Ø¨Ø¹ Ø¨ÙŠØ¹ Ø´Ø¯ÙŠØ¯ ðŸ”¥'); }
+    else if (rsi < 40)  { buy++;     signals.push('RSI '+rsi+' â€” Ù…Ù†Ø·Ù‚Ø© Ø´Ø±Ø§Ø¡'); }
+    else if (rsi > 75)  { sell += 2; risks.push('RSI '+rsi+' â€” ØªØ´Ø¨Ø¹ Ø´Ø±Ø§Ø¡ âš ï¸'); }
+    else if (rsi > 65)  { sell++;    risks.push('RSI '+rsi+' â€” Ù…Ø±ØªÙØ¹'); }
   }
 
-  if (weekly === 'bullish') { buy++;   signals.push('أسبوعي صاعد ✅'); }
-  else                      { sell++;  risks.push('أسبوعي هابط ❌'); }
+  if (weekly === 'bullish') { buy++;   signals.push('Ø£Ø³Ø¨ÙˆØ¹ÙŠ ØµØ§Ø¹Ø¯ âœ…'); }
+  else                      { sell++;  risks.push('Ø£Ø³Ø¨ÙˆØ¹ÙŠ Ù‡Ø§Ø¨Ø· âŒ'); }
 
-  if (green >= 4) { buy++;   signals.push(green+' شموع خضراء من 5'); }
-  else if (green <= 1) { sell++; risks.push('شموع حمراء متتالية'); }
+  if (green >= 4) { buy++;   signals.push(green+' Ø´Ù…ÙˆØ¹ Ø®Ø¶Ø±Ø§Ø¡ Ù…Ù† 5'); }
+  else if (green <= 1) { sell++; risks.push('Ø´Ù…ÙˆØ¹ Ø­Ù…Ø±Ø§Ø¡ Ù…ØªØªØ§Ù„ÙŠØ©'); }
 
-  // ✅ حجب: RSI مرتفع + قريب من المقاومة
+  // âœ… Ø­Ø¬Ø¨: RSI Ù…Ø±ØªÙØ¹ + Ù‚Ø±ÙŠØ¨ Ù…Ù† Ø§Ù„Ù…Ù‚Ø§ÙˆÙ…Ø©
   const nearRes = levels.resistance && price >= levels.resistance * 0.98;
-  if (rsi !== null && rsi > 70 && nearRes) { sell += 4; risks.push('RSI مرتفع + قريب من المقاومة ⛔'); }
-  else if (rsi !== null && rsi > 72)       { sell += 2; risks.push('RSI مرتفع جداً ⚠️'); }
+  if (rsi !== null && rsi > 70 && nearRes) { sell += 4; risks.push('RSI Ù…Ø±ØªÙØ¹ + Ù‚Ø±ÙŠØ¨ Ù…Ù† Ø§Ù„Ù…Ù‚Ø§ÙˆÙ…Ø© â›”'); }
+  else if (rsi !== null && rsi > 72)       { sell += 2; risks.push('RSI Ù…Ø±ØªÙØ¹ Ø¬Ø¯Ø§Ù‹ âš ï¸'); }
 
   const score   = buy - sell;
   let verdict, vIcon;
-  if      (score >= 3) { verdict = 'إشارة شراء قوية';        vIcon = '✅'; }
-  else if (score >= 1) { verdict = 'إيجابي — يمكن الدخول';   vIcon = '⚠️'; }
-  else if (score === 0){ verdict = 'إشارات متضاربة — انتظر'; vIcon = '⏳'; }
-  else                  { verdict = 'سلبي — تجنب الدخول';    vIcon = '❌'; }
+  if      (score >= 3) { verdict = 'Ø¥Ø´Ø§Ø±Ø© Ø´Ø±Ø§Ø¡ Ù‚ÙˆÙŠØ©';        vIcon = 'âœ…'; }
+  else if (score >= 1) { verdict = 'Ø¥ÙŠØ¬Ø§Ø¨ÙŠ â€” ÙŠÙ…ÙƒÙ† Ø§Ù„Ø¯Ø®ÙˆÙ„';   vIcon = 'âš ï¸'; }
+  else if (score === 0){ verdict = 'Ø¥Ø´Ø§Ø±Ø§Øª Ù…ØªØ¶Ø§Ø±Ø¨Ø© â€” Ø§Ù†ØªØ¸Ø±'; vIcon = 'â³'; }
+  else                  { verdict = 'Ø³Ù„Ø¨ÙŠ â€” ØªØ¬Ù†Ø¨ Ø§Ù„Ø¯Ø®ÙˆÙ„';    vIcon = 'âŒ'; }
 
-  // ── اكتشاف التغييرات الجوهرية (للتنبيه)
+  // â”€â”€ Ø§ÙƒØªØ´Ø§Ù Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª Ø§Ù„Ø¬ÙˆÙ‡Ø±ÙŠØ© (Ù„Ù„ØªÙ†Ø¨ÙŠÙ‡)
   const changes = [];
   if (prevAnalysis) {
-    // MACD تحول
+    // MACD ØªØ­ÙˆÙ„
     if (prevAnalysis.macdHist < 0 && macd.hist > 0)
-      changes.push('🚀 MACD تحوّل إيجابياً — إشارة شراء جديدة!');
+      changes.push('ðŸš€ MACD ØªØ­ÙˆÙ‘Ù„ Ø¥ÙŠØ¬Ø§Ø¨ÙŠØ§Ù‹ â€” Ø¥Ø´Ø§Ø±Ø© Ø´Ø±Ø§Ø¡ Ø¬Ø¯ÙŠØ¯Ø©!');
     if (prevAnalysis.macdHist > 0 && macd.hist < 0)
-      changes.push('⚠️ MACD تحوّل سلبياً — كن حذراً');
-    // MACD اتجاه
+      changes.push('âš ï¸ MACD ØªØ­ÙˆÙ‘Ù„ Ø³Ù„Ø¨ÙŠØ§Ù‹ â€” ÙƒÙ† Ø­Ø°Ø±Ø§Ù‹');
+    // MACD Ø§ØªØ¬Ø§Ù‡
     if (prevAnalysis.macdDir === 'contracting' && macd.dir === 'expanding' && macd.hist > 0)
-      changes.push('📈 زخم MACD بدأ يتوسع — الزخم يتسارع');
+      changes.push('ðŸ“ˆ Ø²Ø®Ù… MACD Ø¨Ø¯Ø£ ÙŠØªÙˆØ³Ø¹ â€” Ø§Ù„Ø²Ø®Ù… ÙŠØªØ³Ø§Ø±Ø¹');
     // RSI
     if (prevAnalysis.rsi > 40 && rsi < 35)
-      changes.push('🎯 RSI دخل منطقة تشبع البيع — فرصة اقتربت');
+      changes.push('ðŸŽ¯ RSI Ø¯Ø®Ù„ Ù…Ù†Ø·Ù‚Ø© ØªØ´Ø¨Ø¹ Ø§Ù„Ø¨ÙŠØ¹ â€” ÙØ±ØµØ© Ø§Ù‚ØªØ±Ø¨Øª');
     if (prevAnalysis.rsi < 70 && rsi > 75)
-      changes.push('🔔 RSI دخل منطقة تشبع الشراء — راقب الخروج');
-    // السعر عند الدعم
+      changes.push('ðŸ”” RSI Ø¯Ø®Ù„ Ù…Ù†Ø·Ù‚Ø© ØªØ´Ø¨Ø¹ Ø§Ù„Ø´Ø±Ø§Ø¡ â€” Ø±Ø§Ù‚Ø¨ Ø§Ù„Ø®Ø±ÙˆØ¬');
+    // Ø§Ù„Ø³Ø¹Ø± Ø¹Ù†Ø¯ Ø§Ù„Ø¯Ø¹Ù…
     if (levels.support && price <= levels.support * 1.015 && prevAnalysis.price > levels.support * 1.015)
-      changes.push('🛡 السعر لامس الدعم $' + levels.support + ' — نقطة دخول محتملة');
-    // تحول الاتجاه الأسبوعي
+      changes.push('ðŸ›¡ Ø§Ù„Ø³Ø¹Ø± Ù„Ø§Ù…Ø³ Ø§Ù„Ø¯Ø¹Ù… $' + levels.support + ' â€” Ù†Ù‚Ø·Ø© Ø¯Ø®ÙˆÙ„ Ù…Ø­ØªÙ…Ù„Ø©');
+    // ØªØ­ÙˆÙ„ Ø§Ù„Ø§ØªØ¬Ø§Ù‡ Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ÙŠ
     if (prevAnalysis.weekly === 'bearish' && weekly === 'bullish')
-      changes.push('🌟 الاتجاه الأسبوعي تحوّل صاعداً!');
+      changes.push('ðŸŒŸ Ø§Ù„Ø§ØªØ¬Ø§Ù‡ Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ÙŠ ØªØ­ÙˆÙ‘Ù„ ØµØ§Ø¹Ø¯Ø§Ù‹!');
   }
 
   return {
@@ -356,15 +356,15 @@ function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, low
     score,
     verdict,
     vIcon,
-    changes,  // التغييرات الجوهرية — للتنبيه
+    changes,  // Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª Ø§Ù„Ø¬ÙˆÙ‡Ø±ÙŠØ© â€” Ù„Ù„ØªÙ†Ø¨ÙŠÙ‡
   };
 }
 
 // ================================================================
-// ═══════════════════ MESSAGE BUILDERS ═══════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• MESSAGE BUILDERS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 
-// رسالة تحليل سهم كامل (عند الطلب)
+// Ø±Ø³Ø§Ù„Ø© ØªØ­Ù„ÙŠÙ„ Ø³Ù‡Ù… ÙƒØ§Ù…Ù„ (Ø¹Ù†Ø¯ Ø§Ù„Ø·Ù„Ø¨)
 function estimateTradeDuration({kind='rec', profitPct=0, atrPct=0, macdHist=0, macdHistDir=null, weeklyTrend=null, actionTone=null, rvol=1, isNight=false}) {
   return RamiAnalysis.estimateTradeDuration({
     kind, profitPct, atrPct, macdHist, macdHistDir, weeklyTrend, actionTone, rvol, isNight
@@ -372,32 +372,38 @@ function estimateTradeDuration({kind='rec', profitPct=0, atrPct=0, macdHist=0, m
 }
 
 function formatTelegramDuration(duration) {
-  if (!duration) return '3-7 أيام تداول';
-  if (duration.label === 'بعد الافتتاح') return 'بعد الافتتاح';
-  if (duration.days <= 1) return 'اليوم / جلسة واحدة';
-  if (duration.days <= 3) return `${duration.days} أيام تداول`;
-  if (duration.days <= 7) return '3-7 أيام تداول';
-  return 'أكثر من أسبوع';
+  if (!duration) return '3-7 Ø£ÙŠØ§Ù… ØªØ¯Ø§ÙˆÙ„';
+  if (duration.label === 'Ø¨Ø¹Ø¯ Ø§Ù„Ø§ÙØªØªØ§Ø­') return 'Ø¨Ø¹Ø¯ Ø§Ù„Ø§ÙØªØªØ§Ø­';
+  if (duration.days <= 1) return 'Ø§Ù„ÙŠÙˆÙ… / Ø¬Ù„Ø³Ø© ÙˆØ§Ø­Ø¯Ø©';
+  if (duration.days <= 3) return `${duration.days} Ø£ÙŠØ§Ù… ØªØ¯Ø§ÙˆÙ„`;
+  if (duration.days <= 7) return '3-7 Ø£ÙŠØ§Ù… ØªØ¯Ø§ÙˆÙ„';
+  return 'Ø£ÙƒØ«Ø± Ù…Ù† Ø£Ø³Ø¨ÙˆØ¹';
 }
 
 function formatDecisionLabel(decision) {
-  const label = decision?.recDecision?.label || 'راقب';
-  if (label === 'ادخل الآن') return '✅ ادخل الآن';
-  if (label === 'ادخل بشرط') return '🟦 ادخل بشرط';
-  if (label === 'استعد') return '🟡 استعد';
-  if (label === 'مرفوض') return '⛔ لا تدخل الآن';
+  const label = decision?.recDecision?.label || 'Ø±Ø§Ù‚Ø¨';
+  if (label === 'Ø§Ø¯Ø®Ù„ Ø§Ù„Ø¢Ù†') return 'âœ… Ø§Ø¯Ø®Ù„ Ø§Ù„Ø¢Ù†';
+  if (label === 'Ø§Ø¯Ø®Ù„ Ø¨Ø´Ø±Ø·') return 'ðŸŸ¦ Ø§Ø¯Ø®Ù„ Ø¨Ø´Ø±Ø·';
+  if (label === 'Ø§Ø³ØªØ¹Ø¯') return 'ðŸŸ¡ Ø§Ø³ØªØ¹Ø¯';
+  if (label === 'Ù…Ø±ÙÙˆØ¶') return 'â›” Ù„Ø§ ØªØ¯Ø®Ù„ Ø§Ù„Ø¢Ù†';
   return label;
 }
 
 function buildAnalysisMsg(sym, name, a, levels) {
-  const stopLoss = a.support ? +(a.support * 0.985).toFixed(2) : null;
-  // ✅ إذا قريب من المقاومة → الهدف 5% فوقها (بعد كسرها)
-  const isNearRes = a.resistance && a.price >= a.resistance * 0.98;
-  const target    = isNearRes
-    ? +(a.resistance * 1.05).toFixed(2)
-    : a.resistance || +(a.price * 1.08).toFixed(2);
   const atr      = a.atrPct;
-  const profitPct = target && a.price ? +(((target - a.price) / a.price) * 100).toFixed(2) : 0;
+  const recMetrics = RamiAnalysis.calcRecTradeMetrics({
+    price: a.price,
+    support: a.support,
+    resistance: a.resistance,
+    atrPct: atr,
+    nearSupport: !!(a.support && a.price <= a.support * 1.03),
+    nearResistance: !!(a.resistance && a.price >= a.resistance * 0.98),
+  });
+  const stopLoss = recMetrics.stopLoss || null;
+  // âœ… Ø¥Ø°Ø§ Ù‚Ø±ÙŠØ¨ Ù…Ù† Ø§Ù„Ù…Ù‚Ø§ÙˆÙ…Ø© â†’ Ø§Ù„Ù‡Ø¯Ù 5% ÙÙˆÙ‚Ù‡Ø§ (Ø¨Ø¹Ø¯ ÙƒØ³Ø±Ù‡Ø§)
+  const isNearRes = recMetrics.tooCloseToResistance || (a.resistance && a.price >= a.resistance * 0.98);
+  const target = recMetrics.target || null;
+  const profitPct = recMetrics.profitPct;
   const duration = estimateTradeDuration({
     kind: 'rec',
     profitPct,
@@ -407,22 +413,13 @@ function buildAnalysisMsg(sym, name, a, levels) {
     weeklyTrend: a.weekly,
   });
   const durationLabel = formatTelegramDuration(duration);
-  const riskReward = stopLoss && target > a.price && a.price > stopLoss
-    ? +((target - a.price) / (a.price - stopLoss)).toFixed(2)
-    : 0;
+  const riskReward = recMetrics.riskReward;
   const profitPctForDecision = profitPct;
-  const tradeQuality =
-    (riskReward >= 2 ? 30 : riskReward >= 1.5 ? 20 : riskReward >= 1 ? 10 : 0) +
-    (profitPctForDecision >= 5 ? 20 : profitPctForDecision >= 3 ? 15 : profitPctForDecision >= 2 ? 8 : 0) +
-    (a.support && a.price <= a.support * 1.03 ? 25 : 0);
+  const tradeQuality = recMetrics.tradeQuality;
   const confidence = Math.max(10, Math.min(99, 50 + (a.score || 0) * 10));
-  const distToSupport = a.support ? (a.price - a.support) / a.price * 100 : 999;
-  const entryTiming = isNearRes ? 'انتظر' : distToSupport <= 3 ? 'ادخل الآن' : distToSupport <= 6 ? 'مقبول' : distToSupport <= 10 ? 'انتظر' : 'متأخر';
-  const entryNote = isNearRes
-    ? 'السعر قريب من المقاومة — انتظر كسرها'
-    : distToSupport <= 3
-      ? 'السعر قريب من الدعم — نقطة دخول أفضل'
-      : 'انتظر رجوع السعر قرب الدعم';
+  const distToSupport = recMetrics.distToSupport;
+  const entryTiming = recMetrics.entryTiming;
+  const entryNote = recMetrics.entryNote;
   const unifiedDecision = RamiAnalysis.buildRecCardDecision({
     confidence,
     tradeQuality,
@@ -435,7 +432,7 @@ function buildAnalysisMsg(sym, name, a, levels) {
     trendOk: true,
     newsOk: true,
     newsBlocked: false,
-    signal: a.score >= 3 ? 'شراء قوي' : a.score >= 1 ? 'شراء' : 'انتظار',
+    signal: a.score >= 3 ? 'Ø´Ø±Ø§Ø¡ Ù‚ÙˆÙŠ' : a.score >= 1 ? 'Ø´Ø±Ø§Ø¡' : 'Ø§Ù†ØªØ¸Ø§Ø±',
     macdHist: a.macdHist,
     volR: 1,
     change: a.change,
@@ -446,102 +443,102 @@ function buildAnalysisMsg(sym, name, a, levels) {
     idealEntryText: a.support ? '$' + a.support : '$' + a.price,
   });
 
-  let m = `📊 <b>${name || sym} (${sym})</b>\n`;
-  m    += `💰 <b>$${a.price}</b> ${a.change >= 0 ? '📈' : '📉'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
-  m    += `──────────────\n`;
+  let m = `ðŸ“Š <b>${name || sym} (${sym})</b>\n`;
+  m    += `ðŸ’° <b>$${a.price}</b> ${a.change >= 0 ? 'ðŸ“ˆ' : 'ðŸ“‰'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
+  m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
   m    += `<b>${formatDecisionLabel(unifiedDecision)}</b>\n`;
   m    += `${unifiedDecision.finalEntryNote}\n`;
-  m    += `R/R: <b>${riskReward ? riskReward + 'x' : 'غير متاح'}</b> | جودة: <b>${Math.min(100, Math.round(tradeQuality))}%</b>\n`;
-  m    += `──────────────\n`;
+  m    += `R/R: <b>${riskReward ? riskReward + 'x' : 'ØºÙŠØ± Ù…ØªØ§Ø­'}</b> | Ø¬ÙˆØ¯Ø©: <b>${Math.min(100, Math.round(tradeQuality))}%</b>\n`;
+  m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
 
   if (a.macdHist != null) {
-    const mIcon = a.macdHist > 0 ? '✅' : '❌';
-    const mDir  = a.macdDir === 'expanding' ? '↑ يتوسع' : '↓ يضيق';
+    const mIcon = a.macdHist > 0 ? 'âœ…' : 'âŒ';
+    const mDir  = a.macdDir === 'expanding' ? 'â†‘ ÙŠØªÙˆØ³Ø¹' : 'â†“ ÙŠØ¶ÙŠÙ‚';
     m += `MACD: ${mIcon} ${a.macdHist > 0 ? '+' : ''}${a.macdHist} ${mDir}\n`;
   }
   if (a.rsi != null) {
-    const rIcon = a.rsi < 35 ? '✅' : a.rsi > 70 ? '❌' : '⚠️';
-    const rNote = a.rsi < 35 ? 'تشبع بيع' : a.rsi > 70 ? 'تشبع شراء' : 'محايد';
-    m += `RSI: ${rIcon} ${a.rsi} — ${rNote}\n`;
+    const rIcon = a.rsi < 35 ? 'âœ…' : a.rsi > 70 ? 'âŒ' : 'âš ï¸';
+    const rNote = a.rsi < 35 ? 'ØªØ´Ø¨Ø¹ Ø¨ÙŠØ¹' : a.rsi > 70 ? 'ØªØ´Ø¨Ø¹ Ø´Ø±Ø§Ø¡' : 'Ù…Ø­Ø§ÙŠØ¯';
+    m += `RSI: ${rIcon} ${a.rsi} â€” ${rNote}\n`;
   }
-  m += `أسبوعي: ${a.weekly === 'bullish' ? '✅ صاعد' : '❌ هابط'}\n`;
-  m += `شموع: 🕯 ${a.green} خضراء من آخر 5\n`;
-  m += `──────────────\n`;
-  if (a.support)    m += `🟢 دعم: <b>$${a.support}</b>\n`;
-  if (a.resistance) m += `🔴 مقاومة: <b>$${a.resistance}</b>\n`;
-  if (isNearRes)    m += `⚠️ السعر قريب من المقاومة — انتظر كسرها\n`;
-  if (stopLoss)     m += `🛑 وقف مقترح: <b>$${stopLoss}</b>\n`;
-  if (target)       m += `🎯 هدف مقترح: <b>$${target}</b> (+${profitPct}%)\n`;
-  m += `⏱️ مدة الاحتفاظ: <b>${durationLabel}</b>\n`;
-  m += `──────────────\n`;
-  m += `🤖 <b>التحليل:</b>\n`;
-  a.signals.forEach(s => { m += `✅ ${s}\n`; });
-  a.risks.forEach(r   => { m += `❌ ${r}\n`; });
-  m += `──────────────\n`;
+  m += `Ø£Ø³Ø¨ÙˆØ¹ÙŠ: ${a.weekly === 'bullish' ? 'âœ… ØµØ§Ø¹Ø¯' : 'âŒ Ù‡Ø§Ø¨Ø·'}\n`;
+  m += `Ø´Ù…ÙˆØ¹: ðŸ•¯ ${a.green} Ø®Ø¶Ø±Ø§Ø¡ Ù…Ù† Ø¢Ø®Ø± 5\n`;
+  m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+  if (a.support)    m += `ðŸŸ¢ Ø¯Ø¹Ù…: <b>$${a.support}</b>\n`;
+  if (a.resistance) m += `ðŸ”´ Ù…Ù‚Ø§ÙˆÙ…Ø©: <b>$${a.resistance}</b>\n`;
+  if (isNearRes)    m += `âš ï¸ Ø§Ù„Ø³Ø¹Ø± Ù‚Ø±ÙŠØ¨ Ù…Ù† Ø§Ù„Ù…Ù‚Ø§ÙˆÙ…Ø© â€” Ø§Ù†ØªØ¸Ø± ÙƒØ³Ø±Ù‡Ø§\n`;
+  if (stopLoss)     m += `ðŸ›‘ ÙˆÙ‚Ù Ù…Ù‚ØªØ±Ø­: <b>$${stopLoss}</b>\n`;
+  if (target)       m += `ðŸŽ¯ Ù‡Ø¯Ù Ù…Ù‚ØªØ±Ø­: <b>$${target}</b> (+${profitPct}%)\n`;
+  m += `â±ï¸ Ù…Ø¯Ø© Ø§Ù„Ø§Ø­ØªÙØ§Ø¸: <b>${durationLabel}</b>\n`;
+  m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+  m += `ðŸ¤– <b>Ø§Ù„ØªØ­Ù„ÙŠÙ„:</b>\n`;
+  a.signals.forEach(s => { m += `âœ… ${s}\n`; });
+  a.risks.forEach(r   => { m += `âŒ ${r}\n`; });
+  m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
   m += `${a.vIcon} ${a.verdict}\n`;
-  m += `──────────────\n`;
-  m += `هل اشتريت ${sym}؟\n`;
-  m += `1️⃣ نعم — سجّل الصفقة\n`;
-  m += `2️⃣ لا — أضفه للمراقبة`;
+  m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+  m += `Ù‡Ù„ Ø§Ø´ØªØ±ÙŠØª ${sym}ØŸ\n`;
+  m += `1ï¸âƒ£ Ù†Ø¹Ù… â€” Ø³Ø¬Ù‘Ù„ Ø§Ù„ØµÙÙ‚Ø©\n`;
+  m += `2ï¸âƒ£ Ù„Ø§ â€” Ø£Ø¶ÙÙ‡ Ù„Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©`;
   return m;
 }
 
-// رسالة تحديث سهم في المراقبة (كل 10 دقائق)
+// Ø±Ø³Ø§Ù„Ø© ØªØ­Ø¯ÙŠØ« Ø³Ù‡Ù… ÙÙŠ Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø© (ÙƒÙ„ 10 Ø¯Ù‚Ø§Ø¦Ù‚)
 function buildWatchUpdateMsg(sym, a, prevA) {
   const hasChanges = a.changes && a.changes.length > 0;
 
-  let m = `👁 <b>تحديث ${sym}</b> — ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}\n`;
-  m    += `──────────────\n`;
-  m    += `💰 $${a.price} ${a.change >= 0 ? '▲' : '▼'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
+  let m = `ðŸ‘ <b>ØªØ­Ø¯ÙŠØ« ${sym}</b> â€” ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}\n`;
+  m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+  m    += `ðŸ’° $${a.price} ${a.change >= 0 ? 'â–²' : 'â–¼'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
 
   if (a.macdHist != null) {
-    const mIcon = a.macdHist > 0 ? '✅' : '❌';
-    const mDir  = a.macdDir === 'expanding' ? '↑' : '↓';
+    const mIcon = a.macdHist > 0 ? 'âœ…' : 'âŒ';
+    const mDir  = a.macdDir === 'expanding' ? 'â†‘' : 'â†“';
     m += `MACD: ${mIcon} ${a.macdHist > 0 ? '+' : ''}${a.macdHist} ${mDir}\n`;
   }
   if (a.rsi != null) {
-    const rIcon = a.rsi < 35 ? '🔥' : a.rsi > 70 ? '⚠️' : '•';
+    const rIcon = a.rsi < 35 ? 'ðŸ”¥' : a.rsi > 70 ? 'âš ï¸' : 'â€¢';
     m += `RSI: ${rIcon} ${a.rsi}\n`;
   }
-  m += `أسبوعي: ${a.weekly === 'bullish' ? '✅ صاعد' : '❌ هابط'}\n`;
-  m += `──────────────\n`;
+  m += `Ø£Ø³Ø¨ÙˆØ¹ÙŠ: ${a.weekly === 'bullish' ? 'âœ… ØµØ§Ø¹Ø¯' : 'âŒ Ù‡Ø§Ø¨Ø·'}\n`;
+  m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
 
   if (hasChanges) {
-    m += `<b>⚡ تغيرات مهمة:</b>\n`;
+    m += `<b>âš¡ ØªØºÙŠØ±Ø§Øª Ù…Ù‡Ù…Ø©:</b>\n`;
     a.changes.forEach(c => { m += `${c}\n`; });
-    m += `──────────────\n`;
+    m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
   }
 
   m += `${a.vIcon} ${a.verdict}`;
   return m;
 }
 
-// رسالة تحديث سهم في المحفظة
+// Ø±Ø³Ø§Ù„Ø© ØªØ­Ø¯ÙŠØ« Ø³Ù‡Ù… ÙÙŠ Ø§Ù„Ù…Ø­ÙØ¸Ø©
 function buildPortfolioUpdateMsg(sym, a, trade) {
   const pnl    = +((a.price - trade.entry) / trade.entry * 100).toFixed(2);
-  const pnlIcon = pnl >= 0 ? '📈' : '📉';
+  const pnlIcon = pnl >= 0 ? 'ðŸ“ˆ' : 'ðŸ“‰';
   const toTarget = trade.target ? +((trade.target - a.price) / a.price * 100).toFixed(2) : null;
   const toStop   = trade.stop   ? +((a.price - trade.stop)  / a.price * 100).toFixed(2) : null;
   const hasChanges = a.changes && a.changes.length > 0;
 
-  let m = `💼 <b>تحديث ${sym}</b> — محفظتك\n`;
-  m    += `──────────────\n`;
-  m    += `💰 $${a.price} ${a.change >= 0 ? '▲' : '▼'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
-  m    += `${pnlIcon} P&L: <b>${pnl >= 0 ? '+' : ''}${pnl}%</b> (دخول $${trade.entry})\n`;
-  if (toTarget != null) m += `🎯 للهدف: ${toTarget > 0 ? '+' : ''}${toTarget}% ($${trade.target})\n`;
-  if (toStop   != null) m += `🛑 للوقف: -${toStop}% ($${trade.stop})\n`;
-  m += `──────────────\n`;
+  let m = `ðŸ’¼ <b>ØªØ­Ø¯ÙŠØ« ${sym}</b> â€” Ù…Ø­ÙØ¸ØªÙƒ\n`;
+  m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+  m    += `ðŸ’° $${a.price} ${a.change >= 0 ? 'â–²' : 'â–¼'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
+  m    += `${pnlIcon} P&L: <b>${pnl >= 0 ? '+' : ''}${pnl}%</b> (Ø¯Ø®ÙˆÙ„ $${trade.entry})\n`;
+  if (toTarget != null) m += `ðŸŽ¯ Ù„Ù„Ù‡Ø¯Ù: ${toTarget > 0 ? '+' : ''}${toTarget}% ($${trade.target})\n`;
+  if (toStop   != null) m += `ðŸ›‘ Ù„Ù„ÙˆÙ‚Ù: -${toStop}% ($${trade.stop})\n`;
+  m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
 
   if (a.macdHist != null) {
-    const mIcon = a.macdHist > 0 ? '✅' : '❌';
-    m += `MACD: ${mIcon} ${a.macdHist > 0 ? '+' : ''}${a.macdHist} ${a.macdDir === 'expanding' ? '↑' : '↓'}\n`;
+    const mIcon = a.macdHist > 0 ? 'âœ…' : 'âŒ';
+    m += `MACD: ${mIcon} ${a.macdHist > 0 ? '+' : ''}${a.macdHist} ${a.macdDir === 'expanding' ? 'â†‘' : 'â†“'}\n`;
   }
-  if (a.rsi != null) m += `RSI: ${a.rsi < 35 ? '🔥' : a.rsi > 70 ? '⚠️' : '•'} ${a.rsi}\n`;
-  m += `──────────────\n`;
+  if (a.rsi != null) m += `RSI: ${a.rsi < 35 ? 'ðŸ”¥' : a.rsi > 70 ? 'âš ï¸' : 'â€¢'} ${a.rsi}\n`;
+  m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
 
   if (hasChanges) {
     a.changes.forEach(c => { m += `${c}\n`; });
-    m += `──────────────\n`;
+    m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
   }
 
   m += `${a.vIcon} ${a.verdict}`;
@@ -550,13 +547,13 @@ function buildPortfolioUpdateMsg(sym, a, trade) {
 
 
 // ================================================================
-// ═══════════════════ REPORT GENERATOR ═══════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• REPORT GENERATOR â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 async function generateReport() {
   try {
     let history = await fbGetHistory();
     if (!history.length) {
-      await tgSend('📊 لا يوجد سجل توصيات بعد\nافتح الأداة في يوم تداول وانتظر توليد التوصيات');
+      await tgSend('ðŸ“Š Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø³Ø¬Ù„ ØªÙˆØµÙŠØ§Øª Ø¨Ø¹Ø¯\nØ§ÙØªØ­ Ø§Ù„Ø£Ø¯Ø§Ø© ÙÙŠ ÙŠÙˆÙ… ØªØ¯Ø§ÙˆÙ„ ÙˆØ§Ù†ØªØ¸Ø± ØªÙˆÙ„ÙŠØ¯ Ø§Ù„ØªÙˆØµÙŠØ§Øª');
       return;
     }
 
@@ -576,8 +573,8 @@ async function generateReport() {
       const exp     = closed.length ? +((winRate / 100 * avgWin) + ((1 - winRate / 100) * avgLoss)).toFixed(2) : 0;
       const best    = [...wins].sort((a, b) => (b.pnlPct || 0) - (a.pnlPct || 0))[0];
       const worst   = [...losses].sort((a, b) => (a.pnlPct || 0) - (b.pnlPct || 0))[0];
-      const openR   = closed.filter(h => h.session === 'افتتاح');
-      const midR    = closed.filter(h => h.session === 'منتصف');
+      const openR   = closed.filter(h => h.session === 'Ø§ÙØªØªØ§Ø­');
+      const midR    = closed.filter(h => h.session === 'Ù…Ù†ØªØµÙ');
       const openWR  = openR.length ? Math.round(openR.filter(h => h.result === 'win').length / openR.length * 100) : null;
       const midWR   = midR.length  ? Math.round(midR.filter(h => h.result === 'win').length  / midR.length  * 100) : null;
       const withRR  = recs.filter(h => h.riskReward);
@@ -592,15 +589,15 @@ async function generateReport() {
 
     function getVerdict(exp, winRate, isSpec = false) {
       if (isSpec) {
-        if (exp >= 3 && winRate >= 55) return '✅ المجازفة مربحة جداً — استمر';
-        if (exp >= 1 && winRate >= 45) return '⚠️ المجازفة متعادلة — راجع الشروط';
-        return '❌ المجازفة خاسرة — شدد الشروط';
+        if (exp >= 3 && winRate >= 55) return 'âœ… Ø§Ù„Ù…Ø¬Ø§Ø²ÙØ© Ù…Ø±Ø¨Ø­Ø© Ø¬Ø¯Ø§Ù‹ â€” Ø§Ø³ØªÙ…Ø±';
+        if (exp >= 1 && winRate >= 45) return 'âš ï¸ Ø§Ù„Ù…Ø¬Ø§Ø²ÙØ© Ù…ØªØ¹Ø§Ø¯Ù„Ø© â€” Ø±Ø§Ø¬Ø¹ Ø§Ù„Ø´Ø±ÙˆØ·';
+        return 'âŒ Ø§Ù„Ù…Ø¬Ø§Ø²ÙØ© Ø®Ø§Ø³Ø±Ø© â€” Ø´Ø¯Ø¯ Ø§Ù„Ø´Ø±ÙˆØ·';
       }
-      if (exp >= 2 && winRate >= 60) return '✅ الأداة ممتازة — استمر';
-      if (exp >= 1 && winRate >= 50) return '✅ الأداة مربحة — جيد';
-      if (exp >= 0 && winRate >= 45) return '⚠️ الأداة متعادلة — راجع المعادلات';
-      if (winRate >= 40)             return '⚠️ أداء ضعيف — خفف المخاطرة';
-      return '❌ الأداة خاسرة — أوقف وراجع الكود';
+      if (exp >= 2 && winRate >= 60) return 'âœ… Ø§Ù„Ø£Ø¯Ø§Ø© Ù…Ù…ØªØ§Ø²Ø© â€” Ø§Ø³ØªÙ…Ø±';
+      if (exp >= 1 && winRate >= 50) return 'âœ… Ø§Ù„Ø£Ø¯Ø§Ø© Ù…Ø±Ø¨Ø­Ø© â€” Ø¬ÙŠØ¯';
+      if (exp >= 0 && winRate >= 45) return 'âš ï¸ Ø§Ù„Ø£Ø¯Ø§Ø© Ù…ØªØ¹Ø§Ø¯Ù„Ø© â€” Ø±Ø§Ø¬Ø¹ Ø§Ù„Ù…Ø¹Ø§Ø¯Ù„Ø§Øª';
+      if (winRate >= 40)             return 'âš ï¸ Ø£Ø¯Ø§Ø¡ Ø¶Ø¹ÙŠÙ â€” Ø®ÙÙ Ø§Ù„Ù…Ø®Ø§Ø·Ø±Ø©';
+      return 'âŒ Ø§Ù„Ø£Ø¯Ø§Ø© Ø®Ø§Ø³Ø±Ø© â€” Ø£ÙˆÙ‚Ù ÙˆØ±Ø§Ø¬Ø¹ Ø§Ù„ÙƒÙˆØ¯';
     }
 
     const rw = calcStats(recWeek);
@@ -612,65 +609,65 @@ async function generateReport() {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
 
-    // رسالة 1 — التوصيات
-    let msg1 = `📊 <b>التوصيات</b>\n📅 ${dateStr}\n━━━━━━━━━━━━━━━━\n\n`;
-    msg1 += `🗓 <b>هذا الأسبوع (${rw.total} توصية)</b>\n──────────────\n`;
+    // Ø±Ø³Ø§Ù„Ø© 1 â€” Ø§Ù„ØªÙˆØµÙŠØ§Øª
+    let msg1 = `ðŸ“Š <b>Ø§Ù„ØªÙˆØµÙŠØ§Øª</b>\nðŸ“… ${dateStr}\nâ”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n`;
+    msg1 += `ðŸ—“ <b>Ù‡Ø°Ø§ Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ (${rw.total} ØªÙˆØµÙŠØ©)</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
     if (!rw.wins && !rw.losses) {
-      msg1 += `⏳ لا توجد نتائج مغلقة بعد\n`;
+      msg1 += `â³ Ù„Ø§ ØªÙˆØ¬Ø¯ Ù†ØªØ§Ø¦Ø¬ Ù…ØºÙ„Ù‚Ø© Ø¨Ø¹Ø¯\n`;
     } else {
-      msg1 += `✅ ${rw.wins} ناجحة  ❌ ${rw.losses} خاسرة  ⏳ ${rw.pending} معلقة\n`;
-      msg1 += `🎯 نسبة النجاح: <b>${rw.winRate}%</b>\n`;
-      msg1 += `💰 متوسط الربح: <b>+${rw.avgWin}%</b>\n`;
-      msg1 += `📉 متوسط الخسارة: <b>${rw.avgLoss}%</b>\n`;
-      msg1 += `🧮 التوقع الرياضي: <b>${rw.exp >= 0 ? '+' : ''}${rw.exp}%</b>\n`;
-      if (rw.openWR !== null) msg1 += `──────────────\n🌅 الافتتاح: ${rw.openWR}% (${rw.openCount})\n`;
-      if (rw.midWR  !== null) msg1 += `🌇 المنتصف: ${rw.midWR}% (${rw.midCount})\n`;
-      if (rw.best)  msg1 += `──────────────\n🏆 أفضل: <b>${rw.best.id}</b> +${rw.best.pnlPct}%\n`;
-      if (rw.worst) msg1 += `💀 أسوأ: <b>${rw.worst.id}</b> ${rw.worst.pnlPct}%\n`;
+      msg1 += `âœ… ${rw.wins} Ù†Ø§Ø¬Ø­Ø©  âŒ ${rw.losses} Ø®Ø§Ø³Ø±Ø©  â³ ${rw.pending} Ù…Ø¹Ù„Ù‚Ø©\n`;
+      msg1 += `ðŸŽ¯ Ù†Ø³Ø¨Ø© Ø§Ù„Ù†Ø¬Ø§Ø­: <b>${rw.winRate}%</b>\n`;
+      msg1 += `ðŸ’° Ù…ØªÙˆØ³Ø· Ø§Ù„Ø±Ø¨Ø­: <b>+${rw.avgWin}%</b>\n`;
+      msg1 += `ðŸ“‰ Ù…ØªÙˆØ³Ø· Ø§Ù„Ø®Ø³Ø§Ø±Ø©: <b>${rw.avgLoss}%</b>\n`;
+      msg1 += `ðŸ§® Ø§Ù„ØªÙˆÙ‚Ø¹ Ø§Ù„Ø±ÙŠØ§Ø¶ÙŠ: <b>${rw.exp >= 0 ? '+' : ''}${rw.exp}%</b>\n`;
+      if (rw.openWR !== null) msg1 += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nðŸŒ… Ø§Ù„Ø§ÙØªØªØ§Ø­: ${rw.openWR}% (${rw.openCount})\n`;
+      if (rw.midWR  !== null) msg1 += `ðŸŒ‡ Ø§Ù„Ù…Ù†ØªØµÙ: ${rw.midWR}% (${rw.midCount})\n`;
+      if (rw.best)  msg1 += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nðŸ† Ø£ÙØ¶Ù„: <b>${rw.best.id}</b> +${rw.best.pnlPct}%\n`;
+      if (rw.worst) msg1 += `ðŸ’€ Ø£Ø³ÙˆØ£: <b>${rw.worst.id}</b> ${rw.worst.pnlPct}%\n`;
     }
-    msg1 += `\n${getVerdict(rw.exp, rw.winRate)}\n\n━━━━━━━━━━━━━━━━\n\n`;
-    msg1 += `📈 <b>الكلي (${ra.total} توصية)</b>\n──────────────\n`;
-    msg1 += `✅ ${ra.wins}  ❌ ${ra.losses}  ⏳ ${ra.pending}\n`;
-    msg1 += `🎯 نسبة النجاح: <b>${ra.winRate}%</b>\n`;
-    msg1 += `🧮 التوقع الرياضي: <b>${ra.exp >= 0 ? '+' : ''}${ra.exp}%</b>\n`;
+    msg1 += `\n${getVerdict(rw.exp, rw.winRate)}\n\nâ”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n`;
+    msg1 += `ðŸ“ˆ <b>Ø§Ù„ÙƒÙ„ÙŠ (${ra.total} ØªÙˆØµÙŠØ©)</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+    msg1 += `âœ… ${ra.wins}  âŒ ${ra.losses}  â³ ${ra.pending}\n`;
+    msg1 += `ðŸŽ¯ Ù†Ø³Ø¨Ø© Ø§Ù„Ù†Ø¬Ø§Ø­: <b>${ra.winRate}%</b>\n`;
+    msg1 += `ðŸ§® Ø§Ù„ØªÙˆÙ‚Ø¹ Ø§Ù„Ø±ÙŠØ§Ø¶ÙŠ: <b>${ra.exp >= 0 ? '+' : ''}${ra.exp}%</b>\n`;
     msg1 += `\n${getVerdict(ra.exp, ra.winRate)}`;
     await tgSend(msg1);
 
-    // رسالة 2 — المجازفة
+    // Ø±Ø³Ø§Ù„Ø© 2 â€” Ø§Ù„Ù…Ø¬Ø§Ø²ÙØ©
     if (sa.total > 0) {
-      let msg2 = `🎲 <b>المجازفة</b>\n━━━━━━━━━━━━━━━━\n\n`;
-      msg2 += `🗓 <b>هذا الأسبوع (${sw.total} فرصة)</b>\n──────────────\n`;
+      let msg2 = `ðŸŽ² <b>Ø§Ù„Ù…Ø¬Ø§Ø²ÙØ©</b>\nâ”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n`;
+      msg2 += `ðŸ—“ <b>Ù‡Ø°Ø§ Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ (${sw.total} ÙØ±ØµØ©)</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
       if (!sw.wins && !sw.losses) {
-        msg2 += `⏳ لا توجد نتائج بعد\n`;
+        msg2 += `â³ Ù„Ø§ ØªÙˆØ¬Ø¯ Ù†ØªØ§Ø¦Ø¬ Ø¨Ø¹Ø¯\n`;
       } else {
-        msg2 += `✅ ${sw.wins} ناجحة  ❌ ${sw.losses} خاسرة  ⏳ ${sw.pending} معلقة\n`;
-        msg2 += `🎯 نسبة النجاح: <b>${sw.winRate}%</b>\n`;
-        msg2 += `💰 متوسط الربح: <b>+${sw.avgWin}%</b>\n`;
-        msg2 += `🧮 التوقع الرياضي: <b>${sw.exp >= 0 ? '+' : ''}${sw.exp}%</b>\n`;
-        if (sw.avgRR) msg2 += `📐 متوسط R/R: <b>1:${sw.avgRR}</b>\n`;
-        if (sw.best)  msg2 += `──────────────\n🏆 أفضل: <b>${sw.best.id}</b> +${sw.best.pnlPct}%\n`;
+        msg2 += `âœ… ${sw.wins} Ù†Ø§Ø¬Ø­Ø©  âŒ ${sw.losses} Ø®Ø§Ø³Ø±Ø©  â³ ${sw.pending} Ù…Ø¹Ù„Ù‚Ø©\n`;
+        msg2 += `ðŸŽ¯ Ù†Ø³Ø¨Ø© Ø§Ù„Ù†Ø¬Ø§Ø­: <b>${sw.winRate}%</b>\n`;
+        msg2 += `ðŸ’° Ù…ØªÙˆØ³Ø· Ø§Ù„Ø±Ø¨Ø­: <b>+${sw.avgWin}%</b>\n`;
+        msg2 += `ðŸ§® Ø§Ù„ØªÙˆÙ‚Ø¹ Ø§Ù„Ø±ÙŠØ§Ø¶ÙŠ: <b>${sw.exp >= 0 ? '+' : ''}${sw.exp}%</b>\n`;
+        if (sw.avgRR) msg2 += `ðŸ“ Ù…ØªÙˆØ³Ø· R/R: <b>1:${sw.avgRR}</b>\n`;
+        if (sw.best)  msg2 += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nðŸ† Ø£ÙØ¶Ù„: <b>${sw.best.id}</b> +${sw.best.pnlPct}%\n`;
       }
-      msg2 += `\n${getVerdict(sw.exp, sw.winRate, true)}\n\n━━━━━━━━━━━━━━━━\n\n`;
-      msg2 += `📈 <b>الكلي (${sa.total} فرصة)</b>\n──────────────\n`;
-      msg2 += `✅ ${sa.wins}  ❌ ${sa.losses}  ⏳ ${sa.pending}\n`;
-      msg2 += `🎯 نسبة النجاح: <b>${sa.winRate}%</b>\n`;
-      if (sa.avgRR) msg2 += `📐 متوسط R/R: <b>1:${sa.avgRR}</b>\n`;
+      msg2 += `\n${getVerdict(sw.exp, sw.winRate, true)}\n\nâ”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n\n`;
+      msg2 += `ðŸ“ˆ <b>Ø§Ù„ÙƒÙ„ÙŠ (${sa.total} ÙØ±ØµØ©)</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+      msg2 += `âœ… ${sa.wins}  âŒ ${sa.losses}  â³ ${sa.pending}\n`;
+      msg2 += `ðŸŽ¯ Ù†Ø³Ø¨Ø© Ø§Ù„Ù†Ø¬Ø§Ø­: <b>${sa.winRate}%</b>\n`;
+      if (sa.avgRR) msg2 += `ðŸ“ Ù…ØªÙˆØ³Ø· R/R: <b>1:${sa.avgRR}</b>\n`;
       msg2 += `\n${getVerdict(sa.exp, sa.winRate, true)}`;
       await tgSend(msg2);
     }
 
   } catch(e) {
     console.error('generateReport:', e.message);
-    await tgSend(`⚠️ خطأ في التقرير: ${e.message}`);
+    await tgSend(`âš ï¸ Ø®Ø·Ø£ ÙÙŠ Ø§Ù„ØªÙ‚Ø±ÙŠØ±: ${e.message}`);
   }
 }
 
 // ================================================================
-// ═══════════════════ MONITOR (كل 10 دقائق) ══════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• MONITOR (ÙƒÙ„ 10 Ø¯Ù‚Ø§Ø¦Ù‚) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 async function runMonitor() {
   try {
-    // جلب البيانات
+    // Ø¬Ù„Ø¨ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª
     const [watchData, portData, prevStateData] = await Promise.all([
       fbGet('watchlist'),
       fbGet('portfolio'),
@@ -681,7 +678,7 @@ async function runMonitor() {
     const portfolio  = (portData.trades   || []).filter(t => !t.closed);
     const prevState  = prevStateData.stocks || {};
 
-    // جمع كل الرموز
+    // Ø¬Ù…Ø¹ ÙƒÙ„ Ø§Ù„Ø±Ù…ÙˆØ²
     const allSymbols = [...new Set([
       ...watchList,
       ...portfolio.map(t => t.symbol),
@@ -689,12 +686,12 @@ async function runMonitor() {
 
     if (allSymbols.length === 0) return;
 
-    // جلب البيانات من FMP
+    // Ø¬Ù„Ø¨ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ù…Ù† FMP
     const stocksData = await getMultipleStocks(allSymbols);
     const newState   = {};
     const messages   = [];
 
-    // ── معالجة قائمة المراقبة
+    // â”€â”€ Ù…Ø¹Ø§Ù„Ø¬Ø© Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©
     for (const sym of watchList) {
       const d = stocksData[sym];
       if (!d?.quote) continue;
@@ -712,13 +709,13 @@ async function runMonitor() {
         updatedAt: new Date().toISOString(),
       };
 
-      // أرسل فقط إذا فيه تغييرات مهمة
+      // Ø£Ø±Ø³Ù„ ÙÙ‚Ø· Ø¥Ø°Ø§ ÙÙŠÙ‡ ØªØºÙŠÙŠØ±Ø§Øª Ù…Ù‡Ù…Ø©
       if (a.changes && a.changes.length > 0) {
         messages.push(buildWatchUpdateMsg(sym, a, prev));
       }
     }
 
-    // ── معالجة المحفظة
+    // â”€â”€ Ù…Ø¹Ø§Ù„Ø¬Ø© Ø§Ù„Ù…Ø­ÙØ¸Ø©
     for (const trade of portfolio) {
       const sym = trade.symbol;
       const d   = stocksData[sym];
@@ -739,51 +736,51 @@ async function runMonitor() {
 
       const pnl = +((a.price - trade.entry) / trade.entry * 100).toFixed(2);
 
-      // تنبيه وصول الهدف
+      // ØªÙ†Ø¨ÙŠÙ‡ ÙˆØµÙˆÙ„ Ø§Ù„Ù‡Ø¯Ù
       if (trade.target && a.price >= trade.target) {
         messages.push(
-          `🎯 <b>${sym} وصل الهدف!</b>\n` +
-          `$${trade.entry} → $${a.price}\n` +
-          `ربح: +${pnl}% 🎉\n` +
-          `اكتب: <code>خرجت ${sym}</code>`
+          `ðŸŽ¯ <b>${sym} ÙˆØµÙ„ Ø§Ù„Ù‡Ø¯Ù!</b>\n` +
+          `$${trade.entry} â†’ $${a.price}\n` +
+          `Ø±Ø¨Ø­: +${pnl}% ðŸŽ‰\n` +
+          `Ø§ÙƒØªØ¨: <code>Ø®Ø±Ø¬Øª ${sym}</code>`
         );
         continue;
       }
 
-      // تنبيه اقتراب الوقف
+      // ØªÙ†Ø¨ÙŠÙ‡ Ø§Ù‚ØªØ±Ø§Ø¨ Ø§Ù„ÙˆÙ‚Ù
       if (trade.stop && a.price <= trade.stop * 1.02 && a.price > trade.stop) {
         messages.push(
-          `⚠️ <b>${sym} اقترب من الوقف!</b>\n` +
-          `السعر: $${a.price} | وقف: $${trade.stop}\n` +
-          `P&L: ${pnl}%\nكن مستعداً للخروج`
+          `âš ï¸ <b>${sym} Ø§Ù‚ØªØ±Ø¨ Ù…Ù† Ø§Ù„ÙˆÙ‚Ù!</b>\n` +
+          `Ø§Ù„Ø³Ø¹Ø±: $${a.price} | ÙˆÙ‚Ù: $${trade.stop}\n` +
+          `P&L: ${pnl}%\nÙƒÙ† Ù…Ø³ØªØ¹Ø¯Ø§Ù‹ Ù„Ù„Ø®Ø±ÙˆØ¬`
         );
         continue;
       }
 
-      // تنبيه كسر الوقف
+      // ØªÙ†Ø¨ÙŠÙ‡ ÙƒØ³Ø± Ø§Ù„ÙˆÙ‚Ù
       if (trade.stop && a.price <= trade.stop) {
         messages.push(
-          `🚨 <b>${sym} كسر الوقف!</b>\n` +
+          `ðŸš¨ <b>${sym} ÙƒØ³Ø± Ø§Ù„ÙˆÙ‚Ù!</b>\n` +
           `$${a.price} < $${trade.stop}\n` +
-          `خسارة: ${pnl}%\n` +
-          `اخرج فوراً! اكتب: <code>خرجت ${sym}</code>`
+          `Ø®Ø³Ø§Ø±Ø©: ${pnl}%\n` +
+          `Ø§Ø®Ø±Ø¬ ÙÙˆØ±Ø§Ù‹! Ø§ÙƒØªØ¨: <code>Ø®Ø±Ø¬Øª ${sym}</code>`
         );
         continue;
       }
 
-      // تحديث دوري إذا فيه تغييرات مهمة
+      // ØªØ­Ø¯ÙŠØ« Ø¯ÙˆØ±ÙŠ Ø¥Ø°Ø§ ÙÙŠÙ‡ ØªØºÙŠÙŠØ±Ø§Øª Ù…Ù‡Ù…Ø©
       if (a.changes && a.changes.length > 0) {
         messages.push(buildPortfolioUpdateMsg(sym, a, trade));
       }
     }
 
-    // حفظ الحالة الجديدة
+    // Ø­ÙØ¸ Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø©
     await fbSet('monitor_state', { stocks: newState, lastRun: new Date().toISOString() });
 
-    // إرسال الرسائل
+    // Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø±Ø³Ø§Ø¦Ù„
     for (const msg of messages) {
       await tgSend(msg);
-      await new Promise(r => setTimeout(r, 500)); // تأخير بسيط بين الرسائل
+      await new Promise(r => setTimeout(r, 500)); // ØªØ£Ø®ÙŠØ± Ø¨Ø³ÙŠØ· Ø¨ÙŠÙ† Ø§Ù„Ø±Ø³Ø§Ø¦Ù„
     }
 
   } catch (e) {
@@ -792,16 +789,16 @@ async function runMonitor() {
 }
 
 // ================================================================
-// ═══════════════════ SESSION STATE ══════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• SESSION STATE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 const sess = {};
 
 // ================================================================
-// ═══════════════════ MESSAGE HANDLER ════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• MESSAGE HANDLER â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 
 // ================================================================
-// ═══════════════════ CALLBACK HANDLER ═══════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• CALLBACK HANDLER â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 async function handleCallback(callbackId, data, cid) {
   await tgAnswerCallback(callbackId);
@@ -811,154 +808,154 @@ async function handleCallback(callbackId, data, cid) {
   const sym    = parts.slice(1).join('_').toUpperCase();
   const s      = sess[cid] || {};
 
-  // اشتريت
+  // Ø§Ø´ØªØ±ÙŠØª
   if (action === 'bought') {
     sess[cid] = { ...s, step: 'ask_price' };
-    await tgSend(`بكم اشتريت <b>${sym}</b>؟\n(اكتب 0 للسعر الحالي $${s.price?.toFixed(2)})`);
+    await tgSend(`Ø¨ÙƒÙ… Ø§Ø´ØªØ±ÙŠØª <b>${sym}</b>ØŸ\n(Ø§ÙƒØªØ¨ 0 Ù„Ù„Ø³Ø¹Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ $${s.price?.toFixed(2)})`);
     return;
   }
 
-  // أضف للمراقبة
+  // Ø£Ø¶Ù Ù„Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©
   if (action === 'watch') {
     const wData = await fbGet('watchlist');
     const list  = wData.symbols || [];
     if (!list.includes(sym)) { list.push(sym); await fbSet('watchlist', { symbols: list }); }
     const tips = [];
-    if (s.analysis?.rsi > 60)             tips.push('انتظر RSI يهبط دون 50');
-    if (s.analysis?.rsi < 40)             tips.push('RSI منخفض — فرصة قريبة');
-    if (s.analysis?.macdHist < 0)         tips.push('انتظر MACD يتحول إيجابياً');
-    if (s.analysis?.weekly === 'bearish') tips.push('الأسبوعي هابط — تحلى بالصبر');
-    if (!tips.length)                      tips.push('راقب كسر المقاومة كإشارة دخول');
-    let m = `👁 <b>${sym} أضيف للمراقبة</b>\n──────────────\n`;
-    tips.forEach(t => { m += `• ${t}\n`; });
-    m += `──────────────\n⏰ سأنبهك عند تغير مهم 👀`;
+    if (s.analysis?.rsi > 60)             tips.push('Ø§Ù†ØªØ¸Ø± RSI ÙŠÙ‡Ø¨Ø· Ø¯ÙˆÙ† 50');
+    if (s.analysis?.rsi < 40)             tips.push('RSI Ù…Ù†Ø®ÙØ¶ â€” ÙØ±ØµØ© Ù‚Ø±ÙŠØ¨Ø©');
+    if (s.analysis?.macdHist < 0)         tips.push('Ø§Ù†ØªØ¸Ø± MACD ÙŠØªØ­ÙˆÙ„ Ø¥ÙŠØ¬Ø§Ø¨ÙŠØ§Ù‹');
+    if (s.analysis?.weekly === 'bearish') tips.push('Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ÙŠ Ù‡Ø§Ø¨Ø· â€” ØªØ­Ù„Ù‰ Ø¨Ø§Ù„ØµØ¨Ø±');
+    if (!tips.length)                      tips.push('Ø±Ø§Ù‚Ø¨ ÙƒØ³Ø± Ø§Ù„Ù…Ù‚Ø§ÙˆÙ…Ø© ÙƒØ¥Ø´Ø§Ø±Ø© Ø¯Ø®ÙˆÙ„');
+    let m = `ðŸ‘ <b>${sym} Ø£Ø¶ÙŠÙ Ù„Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+    tips.forEach(t => { m += `â€¢ ${t}\n`; });
+    m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nâ° Ø³Ø£Ù†Ø¨Ù‡Ùƒ Ø¹Ù†Ø¯ ØªØºÙŠØ± Ù…Ù‡Ù… ðŸ‘€`;
     await tgSend(m);
     sess[cid] = {};
     return;
   }
 
-  // أسعار أسبوع أو شهر
+  // Ø£Ø³Ø¹Ø§Ø± Ø£Ø³Ø¨ÙˆØ¹ Ø£Ùˆ Ø´Ù‡Ø±
   if (action === 'prices7' || action === 'prices30') {
     const isMonth = action === 'prices30';
-    await tgSend(`⏳ جاري جلب أسعار <b>${sym}</b>...`);
+    await tgSend(`â³ Ø¬Ø§Ø±ÙŠ Ø¬Ù„Ø¨ Ø£Ø³Ø¹Ø§Ø± <b>${sym}</b>...`);
     const d = await getStock(sym);
-    if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات`); return; }
+    if (!d?.quote) { await tgSend(`âš ï¸ ${sym} â€” Ù„Ù… Ø£Ø¬Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª`); return; }
     const count = isMonth ? 30 : 7;
     const lastN = d.dates.slice(-count);
     const clsN  = d.closes.slice(-count);
     if (!lastN.length || !clsN.length) {
       const cur = +d.quote.price;
       const curChg = +(d.quote.changePercentage || 0).toFixed(2);
-      await tgSend(`💰 <b>${d.quote.name || sym} (${sym})</b>\nالسعر الحالي: <b>$${cur.toFixed(2)}</b> ${curChg >= 0 ? '▲' : '▼'} ${curChg >= 0 ? '+' : ''}${curChg}%\n⚠️ لا توجد بيانات تاريخية كافية لعرض ${isMonth ? 'الشهر' : 'الأسبوع'}.`);
+      await tgSend(`ðŸ’° <b>${d.quote.name || sym} (${sym})</b>\nØ§Ù„Ø³Ø¹Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ: <b>$${cur.toFixed(2)}</b> ${curChg >= 0 ? 'â–²' : 'â–¼'} ${curChg >= 0 ? '+' : ''}${curChg}%\nâš ï¸ Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª ØªØ§Ø±ÙŠØ®ÙŠØ© ÙƒØ§ÙÙŠØ© Ù„Ø¹Ø±Ø¶ ${isMonth ? 'Ø§Ù„Ø´Ù‡Ø±' : 'Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹'}.`);
       return;
     }
-    const days  = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
-    let m = `📅 <b>${sym}</b> — آخر ${isMonth ? '30 يوم' : '7 أيام'}\n──────────────\n`;
+    const days  = ['Ø§Ù„Ø£Ø­Ø¯','Ø§Ù„Ø§Ø«Ù†ÙŠÙ†','Ø§Ù„Ø«Ù„Ø§Ø«Ø§Ø¡','Ø§Ù„Ø£Ø±Ø¨Ø¹Ø§Ø¡','Ø§Ù„Ø®Ù…ÙŠØ³','Ø§Ù„Ø¬Ù…Ø¹Ø©','Ø§Ù„Ø³Ø¨Øª'];
+    let m = `ðŸ“… <b>${sym}</b> â€” Ø¢Ø®Ø± ${isMonth ? '30 ÙŠÙˆÙ…' : '7 Ø£ÙŠØ§Ù…'}\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
     for (let i = 0; i < lastN.length; i++) {
       const date    = new Date(lastN[i]);
       const dayName = days[date.getDay()];
       const price   = clsN[i];
       const prev    = i > 0 ? clsN[i-1] : price;
       const chg     = +((price - prev) / prev * 100).toFixed(2);
-      const icon    = chg > 0 ? '▲' : chg < 0 ? '▼' : '➡️';
-      m += `${dayName} ${lastN[i]}\n$${price.toFixed(2)} ${icon} ${chg >= 0 ? '+' : ''}${chg}%\n──────────────\n`;
+      const icon    = chg > 0 ? 'â–²' : chg < 0 ? 'â–¼' : 'âž¡ï¸';
+      m += `${dayName} ${lastN[i]}\n$${price.toFixed(2)} ${icon} ${chg >= 0 ? '+' : ''}${chg}%\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
     }
     const cur    = d.quote.price;
     const curChg = +(d.quote.changePercentage || 0).toFixed(2);
-    m += `💰 الآن: <b>$${cur?.toFixed(2)}</b> ${curChg >= 0 ? '▲' : '▼'} ${curChg >= 0 ? '+' : ''}${curChg}%`;
+    m += `ðŸ’° Ø§Ù„Ø¢Ù†: <b>$${cur?.toFixed(2)}</b> ${curChg >= 0 ? 'â–²' : 'â–¼'} ${curChg >= 0 ? '+' : ''}${curChg}%`;
     await tgSend(m);
     return;
   }
 
-  // خروج
+  // Ø®Ø±ÙˆØ¬
   if (action === 'exit') {
     sess[cid] = {};
-    await tgSend(`🚪 تم الخروج`);
+    await tgSend(`ðŸšª ØªÙ… Ø§Ù„Ø®Ø±ÙˆØ¬`);
     return;
   }
 
-  // ── القائمة الرئيسية
+  // â”€â”€ Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©
   if (action === 'menu') {
-    // تحليل سهم
+    // ØªØ­Ù„ÙŠÙ„ Ø³Ù‡Ù…
     if (sym === 'ANALYZE') {
       sess[cid] = { step: 'waiting_sym' };
-      await tgSend('📊 اكتب رمز السهم:\nمثال: <code>NVDA</code>');
+      await tgSend('ðŸ“Š Ø§ÙƒØªØ¨ Ø±Ù…Ø² Ø§Ù„Ø³Ù‡Ù…:\nÙ…Ø«Ø§Ù„: <code>NVDA</code>');
       return;
     }
 
-    // محفظتي
+    // Ù…Ø­ÙØ¸ØªÙŠ
     if (sym === 'PORTFOLIO') {
       const data   = await fbGet('portfolio');
       const port   = (data.trades || []).filter(t => !t.closed);
-      if (!port.length) { await tgSend('📂 محفظتك فارغة'); return; }
+      if (!port.length) { await tgSend('ðŸ“‚ Ù…Ø­ÙØ¸ØªÙƒ ÙØ§Ø±ØºØ©'); return; }
       const stocks = await getMultipleStocks(port.map(t => t.symbol));
-      let m = '💼 <b>محفظتك الآن:</b>\n──────────────\n';
+      let m = 'ðŸ’¼ <b>Ù…Ø­ÙØ¸ØªÙƒ Ø§Ù„Ø¢Ù†:</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n';
       let totalPnl = 0;
       for (const t of port) {
         const cur = stocks[t.symbol]?.quote?.price || t.entry;
         const pnl = +((cur - t.entry) / t.entry * 100).toFixed(2);
         totalPnl += pnl;
         const toTarget = t.target ? +((t.target - cur) / cur * 100).toFixed(1) : null;
-        m += `${pnl >= 0 ? '✅' : '❌'} <b>${t.symbol}</b> $${t.entry} → $${cur?.toFixed(2)} (${pnl >= 0 ? '+' : ''}${pnl}%)`;
-        if (toTarget != null) m += ` | للهدف: ${toTarget > 0 ? '+' : ''}${toTarget}%`;
+        m += `${pnl >= 0 ? 'âœ…' : 'âŒ'} <b>${t.symbol}</b> $${t.entry} â†’ $${cur?.toFixed(2)} (${pnl >= 0 ? '+' : ''}${pnl}%)`;
+        if (toTarget != null) m += ` | Ù„Ù„Ù‡Ø¯Ù: ${toTarget > 0 ? '+' : ''}${toTarget}%`;
         m += '\n';
       }
-      m += `──────────────
-متوسط P&L: ${totalPnl >= 0 ? '+' : ''}${+(totalPnl / port.length).toFixed(2)}%`;
+      m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+Ù…ØªÙˆØ³Ø· P&L: ${totalPnl >= 0 ? '+' : ''}${+(totalPnl / port.length).toFixed(2)}%`;
       await tgSend(m);
       return;
     }
 
-    // مراقبتي
+    // Ù…Ø±Ø§Ù‚Ø¨ØªÙŠ
     if (sym === 'WATCHLIST') {
       const data   = await fbGet('watchlist');
       const list   = data.symbols || [];
-      if (!list.length) { await tgSend('👁 قائمة المراقبة فارغة'); return; }
+      if (!list.length) { await tgSend('ðŸ‘ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø© ÙØ§Ø±ØºØ©'); return; }
       const stocks = await getMultipleStocks(list);
-      let m = '👁 <b>قائمة المراقبة:</b>\n──────────────\n';
+      let m = 'ðŸ‘ <b>Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©:</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n';
       for (const s of list) {
         const q = stocks[s]?.quote;
         if (q) {
           const chg = +(q.changePercentage || 0).toFixed(2);
-          m += `• <b>${s}</b> $${q.price?.toFixed(2)} ${chg >= 0 ? '▲' : '▼'} ${chg >= 0 ? '+' : ''}${chg}%
+          m += `â€¢ <b>${s}</b> $${q.price?.toFixed(2)} ${chg >= 0 ? 'â–²' : 'â–¼'} ${chg >= 0 ? '+' : ''}${chg}%
 `;
-        } else { m += `• <b>${s}</b>
+        } else { m += `â€¢ <b>${s}</b>
 `; }
       }
-      m += `──────────────
-يراقبها البوت يومياً 👀`;
+      m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ÙŠØ±Ø§Ù‚Ø¨Ù‡Ø§ Ø§Ù„Ø¨ÙˆØª ÙŠÙˆÙ…ÙŠØ§Ù‹ ðŸ‘€`;
       await tgSend(m);
       return;
     }
 
-    // تقرير الأداة
+    // ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ø£Ø¯Ø§Ø©
     if (sym === 'REPORT') {
-      await tgSend('⏳ جاري تحضير تقرير الأداة...');
+      await tgSend('â³ Ø¬Ø§Ø±ÙŠ ØªØ­Ø¶ÙŠØ± ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ø£Ø¯Ø§Ø©...');
       await generateReport();
       return;
     }
 
-    // مساعدة
+    // Ù…Ø³Ø§Ø¹Ø¯Ø©
     if (sym === 'HELP') {
       await tgSend(
-        `❓ <b>المساعدة</b>
-──────────────
+        `â“ <b>Ø§Ù„Ù…Ø³Ø§Ø¹Ø¯Ø©</b>
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 ` +
-        `📊 تحليل سهم: اكتب رمزه مثل <code>NVDA</code>
+        `ðŸ“Š ØªØ­Ù„ÙŠÙ„ Ø³Ù‡Ù…: Ø§ÙƒØªØ¨ Ø±Ù…Ø²Ù‡ Ù…Ø«Ù„ <code>NVDA</code>
 ` +
-        `💼 محفظتي: اكتب <code>محفظتي</code>
+        `ðŸ’¼ Ù…Ø­ÙØ¸ØªÙŠ: Ø§ÙƒØªØ¨ <code>Ù…Ø­ÙØ¸ØªÙŠ</code>
 ` +
-        `👁 مراقبتي: اكتب <code>مراقبتي</code>
+        `ðŸ‘ Ù…Ø±Ø§Ù‚Ø¨ØªÙŠ: Ø§ÙƒØªØ¨ <code>Ù…Ø±Ø§Ù‚Ø¨ØªÙŠ</code>
 ` +
-        `📈 تقرير: اكتب <code>تقرير</code>
+        `ðŸ“ˆ ØªÙ‚Ø±ÙŠØ±: Ø§ÙƒØªØ¨ <code>ØªÙ‚Ø±ÙŠØ±</code>
 ` +
-        `🚪 إغلاق صفقة: <code>خرجت AAPL</code>
+        `ðŸšª Ø¥ØºÙ„Ø§Ù‚ ØµÙÙ‚Ø©: <code>Ø®Ø±Ø¬Øª AAPL</code>
 ` +
-        `🗑 حذف من المراقبة: <code>حذف AAPL</code>
+        `ðŸ—‘ Ø­Ø°Ù Ù…Ù† Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©: <code>Ø­Ø°Ù AAPL</code>
 ` +
-        `──────────────
+        `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 ` +
-        `اكتب <code>1</code> للقائمة الرئيسية`
+        `Ø§ÙƒØªØ¨ <code>1</code> Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©`
       );
       return;
     }
@@ -970,80 +967,80 @@ async function handleMessage(text, cid) {
   const s   = sess[cid] || {};
   const low = text.toLowerCase().trim();
 
-  // ── /start أو تحية
-  if (text === '/start' || text === 'مرحبا' || text === 'هلا' || text === '/help' || text === '1') {
+  // â”€â”€ /start Ø£Ùˆ ØªØ­ÙŠØ©
+  if (text === '/start' || text === 'Ù…Ø±Ø­Ø¨Ø§' || text === 'Ù‡Ù„Ø§' || text === '/help' || text === '1') {
     sess[cid] = {};
     await tgSendButtons(
-      `🦅 <b>RamiMarketX — مرحباً رامي!</b>\nاختر من القائمة:`,
+      `ðŸ¦… <b>RamiMarketX â€” Ù…Ø±Ø­Ø¨Ø§Ù‹ Ø±Ø§Ù…ÙŠ!</b>\nØ§Ø®ØªØ± Ù…Ù† Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©:`,
       [
-        [{ text: '📊 تحليل سهم',     callback_data: 'menu_analyze'   }],
-        [{ text: '💼 محفظتي',         callback_data: 'menu_portfolio' }],
-        [{ text: '👁 مراقبتي',        callback_data: 'menu_watchlist' }],
-        [{ text: '📈 تقرير الأداة',   callback_data: 'menu_report'    }],
-        [{ text: '❓ مساعدة',          callback_data: 'menu_help'      }],
+        [{ text: 'ðŸ“Š ØªØ­Ù„ÙŠÙ„ Ø³Ù‡Ù…',     callback_data: 'menu_analyze'   }],
+        [{ text: 'ðŸ’¼ Ù…Ø­ÙØ¸ØªÙŠ',         callback_data: 'menu_portfolio' }],
+        [{ text: 'ðŸ‘ Ù…Ø±Ø§Ù‚Ø¨ØªÙŠ',        callback_data: 'menu_watchlist' }],
+        [{ text: 'ðŸ“ˆ ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ø£Ø¯Ø§Ø©',   callback_data: 'menu_report'    }],
+        [{ text: 'â“ Ù…Ø³Ø§Ø¹Ø¯Ø©',          callback_data: 'menu_help'      }],
       ]
     );
     return;
   }
 
-  // ── محفظتي
-  if (text === 'محفظتي' || text === 'portfolio') {
+  // â”€â”€ Ù…Ø­ÙØ¸ØªÙŠ
+  if (text === 'Ù…Ø­ÙØ¸ØªÙŠ' || text === 'portfolio') {
     const data = await fbGet('portfolio');
     const port = (data.trades || []).filter(t => !t.closed);
-    if (port.length === 0) { await tgSend('📂 محفظتك فارغة'); return; }
+    if (port.length === 0) { await tgSend('ðŸ“‚ Ù…Ø­ÙØ¸ØªÙƒ ÙØ§Ø±ØºØ©'); return; }
 
-    // جلب الأسعار الحالية
+    // Ø¬Ù„Ø¨ Ø§Ù„Ø£Ø³Ø¹Ø§Ø± Ø§Ù„Ø­Ø§Ù„ÙŠØ©
     const syms   = port.map(t => t.symbol);
     const stocks = await getMultipleStocks(syms);
 
-    let m = '💼 <b>محفظتك الآن:</b>\n──────────────\n';
+    let m = 'ðŸ’¼ <b>Ù…Ø­ÙØ¸ØªÙƒ Ø§Ù„Ø¢Ù†:</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n';
     let totalPnl = 0;
     for (const t of port) {
       const cur  = stocks[t.symbol]?.quote?.price || t.entry;
       const pnl  = +((cur - t.entry) / t.entry * 100).toFixed(2);
-      const icon = pnl >= 0 ? '✅' : '❌';
+      const icon = pnl >= 0 ? 'âœ…' : 'âŒ';
       totalPnl  += pnl;
       const toTarget = t.target ? +((t.target - cur) / cur * 100).toFixed(1) : null;
-      m += `${icon} <b>${t.symbol}</b> $${t.entry} → $${cur?.toFixed(2)} (${pnl >= 0 ? '+' : ''}${pnl}%)`;
-      if (toTarget != null) m += ` | للهدف: ${toTarget > 0 ? '+' : ''}${toTarget}%`;
+      m += `${icon} <b>${t.symbol}</b> $${t.entry} â†’ $${cur?.toFixed(2)} (${pnl >= 0 ? '+' : ''}${pnl}%)`;
+      if (toTarget != null) m += ` | Ù„Ù„Ù‡Ø¯Ù: ${toTarget > 0 ? '+' : ''}${toTarget}%`;
       m += '\n';
     }
-    m += `──────────────\n`;
-    m += `متوسط P&L: ${totalPnl >= 0 ? '+' : ''}${+(totalPnl / port.length).toFixed(2)}%`;
+    m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+    m += `Ù…ØªÙˆØ³Ø· P&L: ${totalPnl >= 0 ? '+' : ''}${+(totalPnl / port.length).toFixed(2)}%`;
     await tgSend(m);
     return;
   }
 
-  // ── مراقبتي
-  if (text === 'مراقبتي' || text === 'watchlist') {
+  // â”€â”€ Ù…Ø±Ø§Ù‚Ø¨ØªÙŠ
+  if (text === 'Ù…Ø±Ø§Ù‚Ø¨ØªÙŠ' || text === 'watchlist') {
     const data = await fbGet('watchlist');
     const list = data.symbols || [];
-    if (list.length === 0) { await tgSend('👁 قائمة المراقبة فارغة'); return; }
+    if (list.length === 0) { await tgSend('ðŸ‘ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø© ÙØ§Ø±ØºØ©'); return; }
 
-    // جلب الأسعار الحالية
+    // Ø¬Ù„Ø¨ Ø§Ù„Ø£Ø³Ø¹Ø§Ø± Ø§Ù„Ø­Ø§Ù„ÙŠØ©
     const stocks = await getMultipleStocks(list);
-    let m = '👁 <b>قائمة المراقبة:</b>\n──────────────\n';
+    let m = 'ðŸ‘ <b>Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©:</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n';
     for (const sym of list) {
       const q = stocks[sym]?.quote;
       if (q) {
         const chg  = +(q.changePercentage || 0).toFixed(2);
-        const icon = chg >= 0 ? '▲' : '▼';
-        m += `• <b>${sym}</b> $${q.price?.toFixed(2)} ${icon} ${chg >= 0 ? '+' : ''}${chg}%\n`;
+        const icon = chg >= 0 ? 'â–²' : 'â–¼';
+        m += `â€¢ <b>${sym}</b> $${q.price?.toFixed(2)} ${icon} ${chg >= 0 ? '+' : ''}${chg}%\n`;
       } else {
-        m += `• <b>${sym}</b>\n`;
+        m += `â€¢ <b>${sym}</b>\n`;
       }
     }
-    m += `──────────────\n`;
-    m += `البوت يراقبها كل 10 دقائق 👀`;
+    m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+    m += `Ø§Ù„Ø¨ÙˆØª ÙŠØ±Ø§Ù‚Ø¨Ù‡Ø§ ÙƒÙ„ 10 Ø¯Ù‚Ø§Ø¦Ù‚ ðŸ‘€`;
     await tgSend(m);
     return;
   }
 
-  // ── تقرير الأداء
-  if (text === 'تقرير' || text === 'أداء' || text === 'performance') {
+  // â”€â”€ ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ø£Ø¯Ø§Ø¡
+  if (text === 'ØªÙ‚Ø±ÙŠØ±' || text === 'Ø£Ø¯Ø§Ø¡' || text === 'performance') {
     const history = await fbGetHistory();
     if (!history.length) {
-      await tgSend('📊 لا يوجد سجل توصيات بعد\nافتح الأداة وانتظر يوم تداول كامل');
+      await tgSend('ðŸ“Š Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø³Ø¬Ù„ ØªÙˆØµÙŠØ§Øª Ø¨Ø¹Ø¯\nØ§ÙØªØ­ Ø§Ù„Ø£Ø¯Ø§Ø© ÙˆØ§Ù†ØªØ¸Ø± ÙŠÙˆÙ… ØªØ¯Ø§ÙˆÙ„ ÙƒØ§Ù…Ù„');
       return;
     }
 
@@ -1056,41 +1053,41 @@ async function handleMessage(text, cid) {
     const avgLoss  = losses.length ? +(losses.reduce((s, h) => s + (h.pnlPct || 0), 0) / losses.length).toFixed(2) : 0;
     const exp      = closed.length ? +((winRate / 100 * avgWin) + ((1 - winRate / 100) * avgLoss)).toFixed(2) : 0;
 
-    // أفضل وأسوأ توصية
+    // Ø£ÙØ¶Ù„ ÙˆØ£Ø³ÙˆØ£ ØªÙˆØµÙŠØ©
     const best  = wins.sort((a, b)   => (b.pnlPct || 0) - (a.pnlPct || 0))[0];
     const worst = losses.sort((a, b) => (a.pnlPct || 0) - (b.pnlPct || 0))[0];
 
-    // مقارنة الجلستين
-    const openRecs = closed.filter(h => h.session === 'افتتاح');
-    const midRecs  = closed.filter(h => h.session === 'منتصف');
+    // Ù…Ù‚Ø§Ø±Ù†Ø© Ø§Ù„Ø¬Ù„Ø³ØªÙŠÙ†
+    const openRecs = closed.filter(h => h.session === 'Ø§ÙØªØªØ§Ø­');
+    const midRecs  = closed.filter(h => h.session === 'Ù…Ù†ØªØµÙ');
     const openWR   = openRecs.length ? Math.round(openRecs.filter(h => h.result === 'win').length / openRecs.length * 100) : 0;
     const midWR    = midRecs.length  ? Math.round(midRecs.filter(h => h.result === 'win').length  / midRecs.length  * 100) : 0;
 
-    let m = `📊 <b>تقرير أداء تريدر برو X</b>\n`;
-    m    += `──────────────\n`;
-    m    += `✅ ناجحة: ${wins.length} | ❌ خاسرة: ${losses.length} | ⏳ معلقة: ${pending.length}\n`;
-    m    += `──────────────\n`;
-    m    += `🎯 نسبة النجاح: <b>${winRate}%</b>\n`;
-    m    += `💰 متوسط الربح: <b>+${avgWin}%</b>\n`;
-    m    += `📉 متوسط الخسارة: <b>${avgLoss}%</b>\n`;
-    m    += `🧮 التوقع الرياضي: <b>${exp >= 0 ? '+' : ''}${exp}%</b>\n`;
-    m    += `──────────────\n`;
-    m    += `🌅 الافتتاح: ${openWR}% نجاح (${openRecs.length} صفقة)\n`;
-    m    += `🌇 المنتصف: ${midWR}% نجاح (${midRecs.length} صفقة)\n`;
-    m    += `──────────────\n`;
-    if (best)  m += `🏆 أفضل: ${best.id} +${best.pnlPct}%\n`;
-    if (worst) m += `💀 أسوأ: ${worst.id} ${worst.pnlPct}%\n`;
-    m    += `──────────────\n`;
-    const verdict = exp >= 1.5 ? '✅ الأداة مربحة — استمر' :
-                    exp >= 0   ? '⚠️ الأداة متعادلة — راجع المعادلات' :
-                                 '❌ الأداة خاسرة — توقف وراجع';
+    let m = `ðŸ“Š <b>ØªÙ‚Ø±ÙŠØ± Ø£Ø¯Ø§Ø¡ ØªØ±ÙŠØ¯Ø± Ø¨Ø±Ùˆ X</b>\n`;
+    m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+    m    += `âœ… Ù†Ø§Ø¬Ø­Ø©: ${wins.length} | âŒ Ø®Ø§Ø³Ø±Ø©: ${losses.length} | â³ Ù…Ø¹Ù„Ù‚Ø©: ${pending.length}\n`;
+    m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+    m    += `ðŸŽ¯ Ù†Ø³Ø¨Ø© Ø§Ù„Ù†Ø¬Ø§Ø­: <b>${winRate}%</b>\n`;
+    m    += `ðŸ’° Ù…ØªÙˆØ³Ø· Ø§Ù„Ø±Ø¨Ø­: <b>+${avgWin}%</b>\n`;
+    m    += `ðŸ“‰ Ù…ØªÙˆØ³Ø· Ø§Ù„Ø®Ø³Ø§Ø±Ø©: <b>${avgLoss}%</b>\n`;
+    m    += `ðŸ§® Ø§Ù„ØªÙˆÙ‚Ø¹ Ø§Ù„Ø±ÙŠØ§Ø¶ÙŠ: <b>${exp >= 0 ? '+' : ''}${exp}%</b>\n`;
+    m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+    m    += `ðŸŒ… Ø§Ù„Ø§ÙØªØªØ§Ø­: ${openWR}% Ù†Ø¬Ø§Ø­ (${openRecs.length} ØµÙÙ‚Ø©)\n`;
+    m    += `ðŸŒ‡ Ø§Ù„Ù…Ù†ØªØµÙ: ${midWR}% Ù†Ø¬Ø§Ø­ (${midRecs.length} ØµÙÙ‚Ø©)\n`;
+    m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+    if (best)  m += `ðŸ† Ø£ÙØ¶Ù„: ${best.id} +${best.pnlPct}%\n`;
+    if (worst) m += `ðŸ’€ Ø£Ø³ÙˆØ£: ${worst.id} ${worst.pnlPct}%\n`;
+    m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+    const verdict = exp >= 1.5 ? 'âœ… Ø§Ù„Ø£Ø¯Ø§Ø© Ù…Ø±Ø¨Ø­Ø© â€” Ø§Ø³ØªÙ…Ø±' :
+                    exp >= 0   ? 'âš ï¸ Ø§Ù„Ø£Ø¯Ø§Ø© Ù…ØªØ¹Ø§Ø¯Ù„Ø© â€” Ø±Ø§Ø¬Ø¹ Ø§Ù„Ù…Ø¹Ø§Ø¯Ù„Ø§Øª' :
+                                 'âŒ Ø§Ù„Ø£Ø¯Ø§Ø© Ø®Ø§Ø³Ø±Ø© â€” ØªÙˆÙ‚Ù ÙˆØ±Ø§Ø¬Ø¹';
     m += verdict;
     await tgSend(m);
     return;
   }
 
-  // ── إغلاق صفقة
-  if (low.startsWith('خرجت') || low.startsWith('بعت')) {
+  // â”€â”€ Ø¥ØºÙ„Ø§Ù‚ ØµÙÙ‚Ø©
+  if (low.startsWith('Ø®Ø±Ø¬Øª') || low.startsWith('Ø¨Ø¹Øª')) {
     const parts = text.split(/\s+/);
     const sym   = parts[1]?.toUpperCase();
     if (sym) {
@@ -1107,7 +1104,7 @@ async function handleMessage(text, cid) {
         trade.pnlPct     = pnl;
         await fbSet('portfolio', { trades: port });
 
-        // ── تحديث السجل في Firebase
+        // â”€â”€ ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø³Ø¬Ù„ ÙÙŠ Firebase
         const history = await fbGetHistory();
         const rec     = history.findLast(h => h.id === sym && h.result === 'pending');
         if (rec) {
@@ -1115,7 +1112,7 @@ async function handleMessage(text, cid) {
           rec.resultDate  = new Date().toISOString();
           rec.resultPrice = cur;
           rec.pnlPct      = pnl;
-          // حفظ في users/default
+          // Ø­ÙØ¸ ÙÙŠ users/default
           try {
             await getDB().collection('users').doc('default')
               .collection('data').doc('rec_history')
@@ -1124,70 +1121,70 @@ async function handleMessage(text, cid) {
         }
 
         await tgSend(
-          `✅ <b>${sym} مغلقة</b>\n` +
-          `دخول: $${trade.entry} → خروج: $${cur?.toFixed(2)}\n` +
-          `${pnl >= 0 ? '💰 ربح: +' : '📉 خسارة: '}${pnl}%\n` +
-          `──────────────\n` +
-          `السجل حُدّث ✅\nاكتب <code>تقرير</code> لترى الأداء الكلي`
+          `âœ… <b>${sym} Ù…ØºÙ„Ù‚Ø©</b>\n` +
+          `Ø¯Ø®ÙˆÙ„: $${trade.entry} â†’ Ø®Ø±ÙˆØ¬: $${cur?.toFixed(2)}\n` +
+          `${pnl >= 0 ? 'ðŸ’° Ø±Ø¨Ø­: +' : 'ðŸ“‰ Ø®Ø³Ø§Ø±Ø©: '}${pnl}%\n` +
+          `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n` +
+          `Ø§Ù„Ø³Ø¬Ù„ Ø­ÙØ¯Ù‘Ø« âœ…\nØ§ÙƒØªØ¨ <code>ØªÙ‚Ø±ÙŠØ±</code> Ù„ØªØ±Ù‰ Ø§Ù„Ø£Ø¯Ø§Ø¡ Ø§Ù„ÙƒÙ„ÙŠ`
         );
       } else {
-        await tgSend(`⚠️ ${sym} غير موجود في محفظتك`);
+        await tgSend(`âš ï¸ ${sym} ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ù…Ø­ÙØ¸ØªÙƒ`);
       }
     }
     sess[cid] = {};
     return;
   }
 
-  // ── حذف من المراقبة
-  if (low.startsWith('حذف') || low.startsWith('أزل')) {
+  // â”€â”€ Ø­Ø°Ù Ù…Ù† Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©
+  if (low.startsWith('Ø­Ø°Ù') || low.startsWith('Ø£Ø²Ù„')) {
     const sym = text.split(/\s+/)[1]?.toUpperCase();
     if (sym) {
       const data = await fbGet('watchlist');
       const list = (data.symbols || []).filter(s => s !== sym);
       await fbSet('watchlist', { symbols: list });
-      await tgSend(`🗑 <b>${sym}</b> حُذف من قائمة المراقبة`);
+      await tgSend(`ðŸ—‘ <b>${sym}</b> Ø­ÙØ°Ù Ù…Ù† Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©`);
     }
     return;
   }
 
-  // ── انتظار رمز السهم من القائمة
+  // â”€â”€ Ø§Ù†ØªØ¸Ø§Ø± Ø±Ù…Ø² Ø§Ù„Ø³Ù‡Ù… Ù…Ù† Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©
   if (s.step === 'waiting_sym') {
     const sym2 = text.toUpperCase().replace(/[^A-Z0-9.\-]/g, '');
     if (sym2.length >= 1 && sym2.length <= 10) {
       sess[cid] = { step: 'ask_bought', sym: sym2 };
-      await tgSend(`⏳ جاري تحليل <b>${sym2}</b>...`);
+      await tgSend(`â³ Ø¬Ø§Ø±ÙŠ ØªØ­Ù„ÙŠÙ„ <b>${sym2}</b>...`);
       const d = await getStock(sym2);
-      if (!d?.quote) { await tgSend(`⚠️ ${sym2} — لم أجد بيانات`); sess[cid] = {}; return; }
+      if (!d?.quote) { await tgSend(`âš ï¸ ${sym2} â€” Ù„Ù… Ø£Ø¬Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª`); sess[cid] = {}; return; }
       const a = analyzeStock(sym2, d.quote, d.closes, null, d.highs, d.lows);
       if (!a) {
-        await tgSend(`💰 <b>${d.quote.name || sym2} (${sym2})</b>\nالسعر الحالي: <b>$${(+d.quote.price).toFixed(2)}</b>\n⚠️ لم تتوفر بيانات تاريخية كافية للتحليل الفني.`);
+        await tgSend(`ðŸ’° <b>${d.quote.name || sym2} (${sym2})</b>\nØ§Ù„Ø³Ø¹Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ: <b>$${(+d.quote.price).toFixed(2)}</b>\nâš ï¸ Ù„Ù… ØªØªÙˆÙØ± Ø¨ÙŠØ§Ù†Ø§Øª ØªØ§Ø±ÙŠØ®ÙŠØ© ÙƒØ§ÙÙŠØ© Ù„Ù„ØªØ­Ù„ÙŠÙ„ Ø§Ù„ÙÙ†ÙŠ.`);
         sess[cid] = {};
         return;
       }
       sess[cid] = { step: 'ask_bought', sym: sym2, price: d.quote.price, analysis: a };
       const buttons = [
-        [{ text: '✅ اشتريت',          callback_data: `bought_${sym2}` }],
-        [{ text: '👁 أضف للمراقبة',   callback_data: `watch_${sym2}` }],
+        [{ text: 'âœ… Ø§Ø´ØªØ±ÙŠØª',          callback_data: `bought_${sym2}` }],
+        [{ text: 'ðŸ‘ Ø£Ø¶Ù Ù„Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©',   callback_data: `watch_${sym2}` }],
         [
-          { text: '📅 أسعار الأسبوع', callback_data: `prices7_${sym2}` },
-          { text: '📆 أسعار الشهر',   callback_data: `prices30_${sym2}` },
+          { text: 'ðŸ“… Ø£Ø³Ø¹Ø§Ø± Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹', callback_data: `prices7_${sym2}` },
+          { text: 'ðŸ“† Ø£Ø³Ø¹Ø§Ø± Ø§Ù„Ø´Ù‡Ø±',   callback_data: `prices30_${sym2}` },
         ],
-        [{ text: '🚪 خروج',            callback_data: `exit_${sym2}` }],
+        [{ text: 'ðŸšª Ø®Ø±ÙˆØ¬',            callback_data: `exit_${sym2}` }],
       ];
       await tgSendButtons(buildAnalysisMsg(sym2, d.quote.name || sym2, a), buttons);
     } else {
-      await tgSend('⚠️ رمز غير صحيح — اكتب مثل: <code>NVDA</code>');
+      await tgSend('âš ï¸ Ø±Ù…Ø² ØºÙŠØ± ØµØ­ÙŠØ­ â€” Ø§ÙƒØªØ¨ Ù…Ø«Ù„: <code>NVDA</code>');
     }
     return;
   }
 
-  // ── خطوات تسجيل الصفقة
+  // â”€â”€ Ø®Ø·ÙˆØ§Øª ØªØ³Ø¬ÙŠÙ„ Ø§Ù„ØµÙÙ‚Ø©
   if (s.step === 'ask_bought') {
-    if (text === '1' || text === 'نعم') {
+    if (text === '1' || text === 'Ù†Ø¹Ù…') {
       sess[cid] = { ...s, step: 'ask_price' };
-      await tgSend(`بكم اشتريت <b>${s.sym}</b>؟\n(اكتب 0 للسعر الحالي $${s.price?.toFixed(2)})`);
+      await tgSend(`Ø¨ÙƒÙ… Ø§Ø´ØªØ±ÙŠØª <b>${s.sym}</b>ØŸ\n(Ø§ÙƒØªØ¨ 0 Ù„Ù„Ø³Ø¹Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ $${s.price?.toFixed(2)})`);
     } else {
-      // أضف للمراقبة
+      // Ø£Ø¶Ù Ù„Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©
       const data = await fbGet('watchlist');
       const list = data.symbols || [];
       if (!list.includes(s.sym)) {
@@ -1195,15 +1192,15 @@ async function handleMessage(text, cid) {
         await fbSet('watchlist', { symbols: list });
       }
       const tips = [];
-      if (s.analysis?.rsi > 60)         tips.push('انتظر RSI يهبط دون 50');
-      if (s.analysis?.rsi < 40)         tips.push('RSI منخفض — فرصة قريبة');
-      if (s.analysis?.macdHist < 0)     tips.push('انتظر MACD يتحول إيجابياً');
-      if (s.analysis?.weekly === 'bearish') tips.push('الأسبوعي هابط — تحلى بالصبر');
-      if (!tips.length)                  tips.push('راقب كسر المقاومة كإشارة دخول');
+      if (s.analysis?.rsi > 60)         tips.push('Ø§Ù†ØªØ¸Ø± RSI ÙŠÙ‡Ø¨Ø· Ø¯ÙˆÙ† 50');
+      if (s.analysis?.rsi < 40)         tips.push('RSI Ù…Ù†Ø®ÙØ¶ â€” ÙØ±ØµØ© Ù‚Ø±ÙŠØ¨Ø©');
+      if (s.analysis?.macdHist < 0)     tips.push('Ø§Ù†ØªØ¸Ø± MACD ÙŠØªØ­ÙˆÙ„ Ø¥ÙŠØ¬Ø§Ø¨ÙŠØ§Ù‹');
+      if (s.analysis?.weekly === 'bearish') tips.push('Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ÙŠ Ù‡Ø§Ø¨Ø· â€” ØªØ­Ù„Ù‰ Ø¨Ø§Ù„ØµØ¨Ø±');
+      if (!tips.length)                  tips.push('Ø±Ø§Ù‚Ø¨ ÙƒØ³Ø± Ø§Ù„Ù…Ù‚Ø§ÙˆÙ…Ø© ÙƒØ¥Ø´Ø§Ø±Ø© Ø¯Ø®ÙˆÙ„');
 
-      let m = `👁 <b>${s.sym} أضيف للمراقبة</b>\n──────────────\n`;
-      tips.forEach(t => { m += `• ${t}\n`; });
-      m += `──────────────\n⏰ سأنبهك عند تغير مهم 👀\nاكتب <code>مراقبتي</code> لرؤية قائمتك`;
+      let m = `ðŸ‘ <b>${s.sym} Ø£Ø¶ÙŠÙ Ù„Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
+      tips.forEach(t => { m += `â€¢ ${t}\n`; });
+      m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nâ° Ø³Ø£Ù†Ø¨Ù‡Ùƒ Ø¹Ù†Ø¯ ØªØºÙŠØ± Ù…Ù‡Ù… ðŸ‘€\nØ§ÙƒØªØ¨ <code>Ù…Ø±Ø§Ù‚Ø¨ØªÙŠ</code> Ù„Ø±Ø¤ÙŠØ© Ù‚Ø§Ø¦Ù…ØªÙƒ`;
       await tgSend(m);
       sess[cid] = {};
     }
@@ -1213,7 +1210,7 @@ async function handleMessage(text, cid) {
   if (s.step === 'ask_price') {
     const entry = parseFloat(text) === 0 ? s.price : (parseFloat(text) || s.price);
     sess[cid]   = { ...s, step: 'ask_qty', entry };
-    await tgSend(`كم سهم اشتريت من <b>${s.sym}</b>؟`);
+    await tgSend(`ÙƒÙ… Ø³Ù‡Ù… Ø§Ø´ØªØ±ÙŠØª Ù…Ù† <b>${s.sym}</b>ØŸ`);
     return;
   }
 
@@ -1241,49 +1238,49 @@ async function handleMessage(text, cid) {
     });
     await fbSet('portfolio', { trades: port });
 
-    // إزالة من المراقبة إذا كان فيها
+    // Ø¥Ø²Ø§Ù„Ø© Ù…Ù† Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø© Ø¥Ø°Ø§ ÙƒØ§Ù† ÙÙŠÙ‡Ø§
     const wData = await fbGet('watchlist');
     const wList = (wData.symbols || []).filter(x => x !== s.sym);
     await fbSet('watchlist', { symbols: wList });
 
     sess[cid] = {};
     await tgSend(
-      `✅ <b>تم تسجيل ${s.sym}</b>\n──────────────\n` +
-      `دخول: <b>$${s.entry?.toFixed(2)}</b> × ${qty} سهم\n` +
-      `رأس المال: <b>$${(s.entry * qty).toFixed(0)}</b>\n──────────────\n` +
-      `🛑 وقف: <b>$${stop}</b> (-${(atr * 2).toFixed(1)}%)\n` +
-      `🎯 هدف: <b>$${target}</b> (+${pct}%)\n` +
-      `⏱️ مدة: ${durationLabel}\n` +
-      `──────────────\n` +
-      `👀 سأراقبه وأنبهك تلقائياً`
+      `âœ… <b>ØªÙ… ØªØ³Ø¬ÙŠÙ„ ${s.sym}</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n` +
+      `Ø¯Ø®ÙˆÙ„: <b>$${s.entry?.toFixed(2)}</b> Ã— ${qty} Ø³Ù‡Ù…\n` +
+      `Ø±Ø£Ø³ Ø§Ù„Ù…Ø§Ù„: <b>$${(s.entry * qty).toFixed(0)}</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n` +
+      `ðŸ›‘ ÙˆÙ‚Ù: <b>$${stop}</b> (-${(atr * 2).toFixed(1)}%)\n` +
+      `ðŸŽ¯ Ù‡Ø¯Ù: <b>$${target}</b> (+${pct}%)\n` +
+      `â±ï¸ Ù…Ø¯Ø©: ${durationLabel}\n` +
+      `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n` +
+      `ðŸ‘€ Ø³Ø£Ø±Ø§Ù‚Ø¨Ù‡ ÙˆØ£Ù†Ø¨Ù‡Ùƒ ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹`
     );
     return;
   }
 
-  // ── أسعار آخر أسبوع أو شهر
-  const priceMatch = text.match(/^([A-Za-z0-9.\-]{1,10})\s+(أسعار|سعر|تاريخ|history|شهر|month|week|أسبوع|اسبوع)$/i);
+  // â”€â”€ Ø£Ø³Ø¹Ø§Ø± Ø¢Ø®Ø± Ø£Ø³Ø¨ÙˆØ¹ Ø£Ùˆ Ø´Ù‡Ø±
+  const priceMatch = text.match(/^([A-Za-z0-9.\-]{1,10})\s+(Ø£Ø³Ø¹Ø§Ø±|Ø³Ø¹Ø±|ØªØ§Ø±ÙŠØ®|history|Ø´Ù‡Ø±|month|week|Ø£Ø³Ø¨ÙˆØ¹|Ø§Ø³Ø¨ÙˆØ¹)$/i);
   if (priceMatch) {
     const sym = priceMatch[1].toUpperCase();
-    await tgSend(`⏳ جاري جلب أسعار <b>${sym}</b>...`);
+    await tgSend(`â³ Ø¬Ø§Ø±ÙŠ Ø¬Ù„Ø¨ Ø£Ø³Ø¹Ø§Ø± <b>${sym}</b>...`);
     const d = await getStock(sym);
-    if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات`); return; }
+    if (!d?.quote) { await tgSend(`âš ï¸ ${sym} â€” Ù„Ù… Ø£Ø¬Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª`); return; }
 
-    // آخر 7 أيام أو 30 يوم
-    const isMonth = /شهر|month/i.test(priceMatch[2]);
+    // Ø¢Ø®Ø± 7 Ø£ÙŠØ§Ù… Ø£Ùˆ 30 ÙŠÙˆÙ…
+    const isMonth = /Ø´Ù‡Ø±|month/i.test(priceMatch[2]);
     const count   = isMonth ? 30 : 7;
     const lastN   = d.dates.slice(-count);
     const clsN    = d.closes.slice(-count);
     if (!lastN.length || !clsN.length) {
       const cur = +d.quote.price;
       const curChg = +(d.quote.changePercentage || 0).toFixed(2);
-      await tgSend(`💰 <b>${d.quote.name || sym} (${sym})</b>\nالسعر الحالي: <b>$${cur.toFixed(2)}</b> ${curChg >= 0 ? '▲' : '▼'} ${curChg >= 0 ? '+' : ''}${curChg}%\n⚠️ لا توجد بيانات تاريخية كافية لعرض ${isMonth ? 'الشهر' : 'الأسبوع'}.`);
+      await tgSend(`ðŸ’° <b>${d.quote.name || sym} (${sym})</b>\nØ§Ù„Ø³Ø¹Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ: <b>$${cur.toFixed(2)}</b> ${curChg >= 0 ? 'â–²' : 'â–¼'} ${curChg >= 0 ? '+' : ''}${curChg}%\nâš ï¸ Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª ØªØ§Ø±ÙŠØ®ÙŠØ© ÙƒØ§ÙÙŠØ© Ù„Ø¹Ø±Ø¶ ${isMonth ? 'Ø§Ù„Ø´Ù‡Ø±' : 'Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹'}.`);
       return;
     }
-    const days    = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+    const days    = ['Ø§Ù„Ø£Ø­Ø¯','Ø§Ù„Ø§Ø«Ù†ÙŠÙ†','Ø§Ù„Ø«Ù„Ø§Ø«Ø§Ø¡','Ø§Ù„Ø£Ø±Ø¨Ø¹Ø§Ø¡','Ø§Ù„Ø®Ù…ÙŠØ³','Ø§Ù„Ø¬Ù…Ø¹Ø©','Ø§Ù„Ø³Ø¨Øª'];
 
-    let m = `📅 <b>${d.quote.name || sym} (${sym})</b> — آخر ${isMonth ? '30 يوم' : '7 أيام'}
+    let m = `ðŸ“… <b>${d.quote.name || sym} (${sym})</b> â€” Ø¢Ø®Ø± ${isMonth ? '30 ÙŠÙˆÙ…' : '7 Ø£ÙŠØ§Ù…'}
 `;
-    m    += `──────────────
+    m    += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 `;
 
     for (let i = 0; i < lastN.length; i++) {
@@ -1292,74 +1289,74 @@ async function handleMessage(text, cid) {
       const price   = clsN[i];
       const prev    = i > 0 ? clsN[i-1] : price;
       const chg     = +((price - prev) / prev * 100).toFixed(2);
-      const icon    = chg > 0 ? '▲' : chg < 0 ? '▼' : '➡️';
+      const icon    = chg > 0 ? 'â–²' : chg < 0 ? 'â–¼' : 'âž¡ï¸';
       m += `${dayName} ${lastN[i]}
 `;
       m += `$${price.toFixed(2)} ${icon} ${chg >= 0 ? '+' : ''}${chg}%
 `;
-      m += `──────────────
+      m += `â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 `;
     }
 
-    // السعر الحالي
+    // Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ
     const cur    = d.quote.price;
     const curChg = +(d.quote.changePercentage || 0).toFixed(2);
-    m += `💰 الآن: <b>$${cur?.toFixed(2)}</b> ${curChg >= 0 ? '▲' : '▼'} ${curChg >= 0 ? '+' : ''}${curChg}%`;
+    m += `ðŸ’° Ø§Ù„Ø¢Ù†: <b>$${cur?.toFixed(2)}</b> ${curChg >= 0 ? 'â–²' : 'â–¼'} ${curChg >= 0 ? '+' : ''}${curChg}%`;
     await tgSend(m);
     return;
   }
 
-  // ── تحليل سهم بالطلب
+  // â”€â”€ ØªØ­Ù„ÙŠÙ„ Ø³Ù‡Ù… Ø¨Ø§Ù„Ø·Ù„Ø¨
   const sym = text.toUpperCase().replace(/[^A-Z0-9.\-]/g, '');
   if (sym.length >= 1 && sym.length <= 10) {
-    await tgSend(`⏳ جاري تحليل <b>${sym}</b>...`);
+    await tgSend(`â³ Ø¬Ø§Ø±ÙŠ ØªØ­Ù„ÙŠÙ„ <b>${sym}</b>...`);
     const d = await getStock(sym);
-    if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات. تحقق من الرمز`); return; }
+    if (!d?.quote) { await tgSend(`âš ï¸ ${sym} â€” Ù„Ù… Ø£Ø¬Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª. ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ø±Ù…Ø²`); return; }
 
     const q    = d.quote;
     const name = q.name || sym;
     const a    = analyzeStock(sym, q, d.closes);
     if (!a) {
-      await tgSend(`💰 <b>${name} (${sym})</b>\nالسعر الحالي: <b>$${(+q.price).toFixed(2)}</b>\n⚠️ لم تتوفر بيانات تاريخية كافية للتحليل الفني.`);
+      await tgSend(`ðŸ’° <b>${name} (${sym})</b>\nØ§Ù„Ø³Ø¹Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ: <b>$${(+q.price).toFixed(2)}</b>\nâš ï¸ Ù„Ù… ØªØªÙˆÙØ± Ø¨ÙŠØ§Ù†Ø§Øª ØªØ§Ø±ÙŠØ®ÙŠØ© ÙƒØ§ÙÙŠØ© Ù„Ù„ØªØ­Ù„ÙŠÙ„ Ø§Ù„ÙÙ†ÙŠ.`);
       return;
     }
 
     sess[cid] = { step: 'ask_bought', sym, price: q.price, analysis: a };
 
-    // أزرار Inline تحت التحليل
+    // Ø£Ø²Ø±Ø§Ø± Inline ØªØ­Øª Ø§Ù„ØªØ­Ù„ÙŠÙ„
     const buttons = [
-      [{ text: '✅ اشتريت', callback_data: `bought_${sym}` }],
-      [{ text: '👁 أضف للمراقبة', callback_data: `watch_${sym}` }],
+      [{ text: 'âœ… Ø§Ø´ØªØ±ÙŠØª', callback_data: `bought_${sym}` }],
+      [{ text: 'ðŸ‘ Ø£Ø¶Ù Ù„Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©', callback_data: `watch_${sym}` }],
       [
-        { text: '📅 أسعار الأسبوع', callback_data: `prices7_${sym}` },
-        { text: '📆 أسعار الشهر',   callback_data: `prices30_${sym}` },
+        { text: 'ðŸ“… Ø£Ø³Ø¹Ø§Ø± Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹', callback_data: `prices7_${sym}` },
+        { text: 'ðŸ“† Ø£Ø³Ø¹Ø§Ø± Ø§Ù„Ø´Ù‡Ø±',   callback_data: `prices30_${sym}` },
       ],
-      [{ text: '🚪 خروج', callback_data: `exit_${sym}` }],
+      [{ text: 'ðŸšª Ø®Ø±ÙˆØ¬', callback_data: `exit_${sym}` }],
     ];
 
     await tgSendButtons(buildAnalysisMsg(sym, name, a), buttons);
     return;
   }
 
-  // ── مساعدة افتراضية
+  // â”€â”€ Ù…Ø³Ø§Ø¹Ø¯Ø© Ø§ÙØªØ±Ø§Ø¶ÙŠØ©
   await tgSend(
-    `🦅 <b>RamiMarketX</b>\n──────────────\n` +
-    `اكتب رمز السهم: <code>NVDA</code>\n` +
-    `محفظتك: <code>محفظتي</code>\n` +
-    `مراقبتي: <code>مراقبتي</code>\n` +
-    `تقرير الأداء: <code>تقرير</code>\n` +
-    `إغلاق: <code>خرجت AAPL</code>\n` +
-    `حذف من المراقبة: <code>حذف AAPL</code>`
+    `ðŸ¦… <b>RamiMarketX</b>\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n` +
+    `Ø§ÙƒØªØ¨ Ø±Ù…Ø² Ø§Ù„Ø³Ù‡Ù…: <code>NVDA</code>\n` +
+    `Ù…Ø­ÙØ¸ØªÙƒ: <code>Ù…Ø­ÙØ¸ØªÙŠ</code>\n` +
+    `Ù…Ø±Ø§Ù‚Ø¨ØªÙŠ: <code>Ù…Ø±Ø§Ù‚Ø¨ØªÙŠ</code>\n` +
+    `ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ø£Ø¯Ø§Ø¡: <code>ØªÙ‚Ø±ÙŠØ±</code>\n` +
+    `Ø¥ØºÙ„Ø§Ù‚: <code>Ø®Ø±Ø¬Øª AAPL</code>\n` +
+    `Ø­Ø°Ù Ù…Ù† Ø§Ù„Ù…Ø±Ø§Ù‚Ø¨Ø©: <code>Ø­Ø°Ù AAPL</code>`
   );
 }
 
 // ================================================================
-// ═══════════════════ MAIN HANDLER ═══════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• MAIN HANDLER â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ================================================================
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  // ── Cron: مراقبة كل 10 دقائق
+  // â”€â”€ Cron: Ù…Ø±Ø§Ù‚Ø¨Ø© ÙƒÙ„ 10 Ø¯Ù‚Ø§Ø¦Ù‚
   if (req.method === 'GET' && req.query.action === 'monitor') {
     await runMonitor();
     res.status(200).json({ ok: true, action: 'monitor', time: new Date().toISOString() });
@@ -1379,7 +1376,7 @@ module.exports = async function handler(req, res) {
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
-    // ── callback_query (ضغط زر)
+    // â”€â”€ callback_query (Ø¶ØºØ· Ø²Ø±)
     if (body?.callback_query) {
       const cb  = body.callback_query;
       const cid = String(cb.message?.chat?.id);
