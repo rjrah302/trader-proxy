@@ -5,7 +5,10 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
 
-  const apiKey  = process.env.FMP_API_KEY || '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
+  const apiKey  = process.env.FMP_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ ok: false, error: 'Missing FMP_API_KEY' });
+  }
   const symbols = (req.query.symbols || 'AAPL').split(',').map(s => s.trim()).filter(Boolean);
 
   const BATCH = 10;
