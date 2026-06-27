@@ -139,7 +139,7 @@ button:active{transform:scale(.96);opacity:.8}
 // ================================================================
 // ═══════════════════ CONFIG ═════════════════════════════════════
 // ================================================================
-const API_KEY   = '9FDbZgjuTfNCiuOoTlUR4jweViwYAZiG';
+const API_KEY   = '';
 const USD_RATE  = 3.75;
 // نستخدم الـ proxy الموجود /api/stocks للأسعار
 // وFMP مباشرة للمؤشرات التقنية (تدعم CORS)
@@ -155,10 +155,8 @@ if (USE_SERVER_FMP_PROXY && typeof window !== 'undefined' && window.fetch) {
     if (raw && raw.startsWith(FMP_BASE)) {
       try {
         const url = new URL(raw);
-        const apiKey = url.searchParams.get('apikey') || API_KEY;
         url.searchParams.delete('apikey');
-        const proxyUrl = '/api/fmp?path=' + encodeURIComponent(url.pathname + url.search)
-          + (apiKey ? '&apikey=' + encodeURIComponent(apiKey) : '');
+        const proxyUrl = '/api/fmp?path=' + encodeURIComponent(url.pathname + url.search);
         return _nativeFetch(proxyUrl, init);
       } catch(e) {}
     }
