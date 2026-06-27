@@ -3,6 +3,7 @@
 // ================================================================
 const { initializeApp, cert, getApps } = require('firebase-admin/app');
 const { getFirestore }                  = require('firebase-admin/firestore');
+const RamiAnalysis                       = require('../public/sharedAnalysis.js');
 
 // ── Firebase
 let db;
@@ -364,6 +365,21 @@ function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, low
 // ================================================================
 
 // رسالة تحليل سهم كامل (عند الطلب)
+function estimateTradeDuration({kind='rec', profitPct=0, atrPct=0, macdHist=0, macdHistDir=null, weeklyTrend=null, actionTone=null, rvol=1, isNight=false}) {
+  return RamiAnalysis.estimateTradeDuration({
+    kind, profitPct, atrPct, macdHist, macdHistDir, weeklyTrend, actionTone, rvol, isNight
+  });
+}
+
+function formatTelegramDuration(duration) {
+  if (!duration) return '3-7 أيام تداول';
+  if (duration.label === 'بعد الافتتاح') return 'بعد الافتتاح';
+  if (duration.days <= 1) return 'اليوم / جلسة واحدة';
+  if (duration.days <= 3) return `${duration.days} أيام تداول`;
+  if (duration.days <= 7) return '3-7 أيام تداول';
+  return 'أكثر من أسبوع';
+}
+
 function buildAnalysisMsg(sym, name, a, levels) {
   const stopLoss = a.support ? +(a.support * 0.985).toFixed(2) : null;
   // ✅ إذا قريب من المقاومة → الهدف 5% فوقها (بعد كسرها)
@@ -372,11 +388,16 @@ function buildAnalysisMsg(sym, name, a, levels) {
     ? +(a.resistance * 1.05).toFixed(2)
     : a.resistance || +(a.price * 1.08).toFixed(2);
   const atr      = a.atrPct;
-  // ✅ تعديل: مدة تأخذ MACD والأسبوعي
-  const momentum = a.macdHist>0 && a.macdDir==='expanding' ? 1.3 :
-                   a.macdHist>0 ? 1.0 : 0.7;
-  const trend    = a.weekly==='bullish' ? 1.2 : 0.8;
-  const days     = atr ? Math.max(1, Math.ceil(((target - a.price) / a.price * 100) / (atr * momentum * trend))) : 3;
+  const profitPct = target && a.price ? +(((target - a.price) / a.price) * 100).toFixed(2) : 0;
+  const duration = estimateTradeDuration({
+    kind: 'rec',
+    profitPct,
+    atrPct: atr,
+    macdHist: a.macdHist,
+    macdHistDir: a.macdDir,
+    weeklyTrend: a.weekly,
+  });
+  const durationLabel = formatTelegramDuration(duration);
 
   let m = `📊 <b>${name || sym} (${sym})</b>\n`;
   m    += `💰 <b>$${a.price}</b> ${a.change >= 0 ? '📈' : '📉'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
@@ -399,7 +420,7 @@ function buildAnalysisMsg(sym, name, a, levels) {
   if (a.resistance) m += `🔴 مقاومة: <b>$${a.resistance}</b>\n`;
   if (isNearRes)    m += `⚠️ السعر قريب من المقاومة — انتظر كسرها\n`;
   if (stopLoss)     m += `🛑 وقف مقترح: <b>$${stopLoss}</b>\n`;
-  m += `⏱️ مدة الاحتفاظ: <b>${days <= 1 ? '🔥 يومي' : days <= 3 ? `⚡ ${days} أيام` : `📅 ${days} أيام`}</b>\n`;
+  m += `⏱️ مدة الاحتفاظ: <b>${durationLabel}</b>\n`;
   m += `──────────────\n`;
   m += `🤖 <b>التحليل:</b>\n`;
   a.signals.forEach(s => { m += `✅ ${s}\n`; });
@@ -1150,7 +1171,15 @@ async function handleMessage(text, cid) {
     const stop   = +(s.entry * (1 - atr * 2 / 100)).toFixed(2);
     const target = +(s.entry * (1 + atr * 3.5 / 100)).toFixed(2);
     const pct    = +((target - s.entry) / s.entry * 100).toFixed(1);
-    const days   = Math.ceil(parseFloat(pct) / atr);
+    const duration = estimateTradeDuration({
+      kind: 'spec',
+      profitPct: pct,
+      atrPct: atr,
+      macdHist: s.analysis?.macdHist,
+      macdHistDir: s.analysis?.macdDir,
+      weeklyTrend: s.analysis?.weekly,
+    });
+    const durationLabel = formatTelegramDuration(duration);
 
     const data = await fbGet('portfolio');
     const port = data.trades || [];
@@ -1172,7 +1201,7 @@ async function handleMessage(text, cid) {
       `رأس المال: <b>$${(s.entry * qty).toFixed(0)}</b>\n──────────────\n` +
       `🛑 وقف: <b>$${stop}</b> (-${(atr * 2).toFixed(1)}%)\n` +
       `🎯 هدف: <b>$${target}</b> (+${pct}%)\n` +
-      `⏱️ مدة: ${days <= 1 ? '🔥 يومي' : days <= 3 ? `⚡ ${days} أيام` : `📅 ${days} أيام`}\n` +
+      `⏱️ مدة: ${durationLabel}\n` +
       `──────────────\n` +
       `👀 سأراقبه وأنبهك تلقائياً`
     );
