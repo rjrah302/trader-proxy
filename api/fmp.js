@@ -27,7 +27,7 @@ module.exports = async function handler(req, res) {
       return res.status(403).json({ ok: false, error: 'Blocked FMP path' });
     }
 
-    const apiKey = process.env.FMP_API_KEY || req.query.apikey;
+    const apiKey = process.env.FMP_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ ok: false, error: 'Missing FMP_API_KEY' });
     }
