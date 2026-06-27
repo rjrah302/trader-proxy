@@ -2083,48 +2083,48 @@ function calcSignal(stock) {
   const idealEntry = nearSupport ? price : (support ? support*1.01 : price);
 
   // ══ حالة الدخول
-  const signalQuality = confidence>=70 ? 'HIGH' : confidence>=50 ? 'MEDIUM' : 'LOW';
-  const rrOkForEntry = riskReward >= REC_MIN_ENTRY_RR;
-  const qualityOkForEntry = tradeQuality >= REC_MIN_ENTRY_QUALITY;
   const trendOkForEntry = ind.adx == null || ind.adx >= REC_MIN_ENTRY_ADX || nearSupport;
   const newsOkForEntry = !newsImpact.block && newsImpact.level !== 'neg';
-  const timingOkForEntry = entryTiming==='ادخل الآن' || entryTiming==='مقبول';
-  const entryBlockReasons = [];
-  if(!rrOkForEntry) entryBlockReasons.push('R/R أقل من '+REC_MIN_ENTRY_RR+'x');
-  if(!qualityOkForEntry) entryBlockReasons.push('جودة الصفقة أقل من '+REC_MIN_ENTRY_QUALITY+'%');
-  if(!trendOkForEntry) entryBlockReasons.push('ADX ضعيف ولا يوجد دعم كاف');
-  if(!newsOkForEntry) entryBlockReasons.push('خبر سلبي مؤثر');
-  if(!timingOkForEntry) entryBlockReasons.push('التوقيت غير مناسب');
-  const activeBuy  = !isCooldown && !tooCloseToResistance && signalQuality==='HIGH' && rrOkForEntry && qualityOkForEntry && trendOkForEntry && newsOkForEntry && timingOkForEntry;
-  const blockEntry = isCooldown || signalQuality==='LOW' || entryTiming==='متأخر' || newsImpact.block;
-  const watchOnly  = !activeBuy && !blockEntry;
-  const earlyMomentum = (ind.macdHist != null && ind.macdHist > 0) || (volR >= 1.2 && (p.change || 0) > 0);
-  const earlyNear = nearSupport || distToSupport <= 6;
-  const conditionalBuy = !activeBuy && !blockEntry && !tooCloseToResistance &&
-    newsOkForEntry && signal !== 'بيع' && signal !== 'بيع قوي' &&
-    riskReward >= 1.3 && profitPct >= 2 && confidence >= 58 && tradeQuality >= 35 &&
-    (entryTiming === 'مقبول' || entryTiming === 'انتظر' || earlyNear) &&
-    (earlyMomentum || earlyNear);
-  const ignitionReady = earlyMomentum && (volR >= 1.5 || nearSupport || distToSupport <= 4);
-  const earlyMoveOk = change <= 12 || ignitionReady || (volR >= 2 && !nearResistance);
-  const earlyRadar = !activeBuy && !conditionalBuy && !blockEntry && !tooCloseToResistance &&
-    newsOkForEntry && riskReward >= 1.15 && profitPct >= 2 && confidence >= 50 &&
-    (earlyNear || earlyMomentum) && earlyMoveOk;
-  const recStage = activeBuy ? 'confirmed' : conditionalBuy ? 'conditional' : earlyRadar ? 'early' : 'reject';
-  const recDecision = activeBuy
-    ? {label:'ادخل الآن', color:C.green, note:entryNote}
-    : conditionalBuy
-      ? {label:'ادخل بشرط', color:C.blue, note:'ادخل فقط إذا ثبت فوق '+fmtPrice(price)+' أو رجع قرب '+fmtPrice(idealEntry)+' مع حجم داعم.'}
-      : earlyRadar
-        ? {label:'استعد', color:C.yellow, note:'بداية حركة محتملة؛ انتظر تأكيد الحجم أو رجوع فوق نقطة الدخول.'}
-        : {label:'مرفوض', color:C.pink, note:'لم تكتمل شروط التوصية.'};
-  const finalEntryNote = activeBuy
-    ? entryNote
-    : conditionalBuy || earlyRadar
-      ? recDecision.note
-    : entryBlockReasons.length
-      ? 'لا تدخل الآن — '+entryBlockReasons.join('، ')
-      : entryNote;
+  const recDecisionCore = window.RamiAnalysis.buildRecCardDecision({
+    confidence,
+    tradeQuality,
+    riskReward,
+    profitPct,
+    entryTiming,
+    entryNote,
+    isCooldown,
+    tooCloseToResistance,
+    trendOk: trendOkForEntry,
+    newsOk: newsOkForEntry,
+    newsBlocked: newsImpact.block,
+    signal,
+    macdHist: ind.macdHist,
+    volR,
+    change,
+    nearSupport,
+    distToSupport,
+    nearResistance,
+    minEntryRR: REC_MIN_ENTRY_RR,
+    minEntryQuality: REC_MIN_ENTRY_QUALITY,
+    minEntryADX: REC_MIN_ENTRY_ADX,
+    priceText: fmtPrice(price),
+    idealEntryText: fmtPrice(idealEntry),
+  });
+  const activeBuy = recDecisionCore.activeBuy;
+  const blockEntry = recDecisionCore.blockEntry;
+  const watchOnly = recDecisionCore.watchOnly;
+  const conditionalBuy = recDecisionCore.conditionalBuy;
+  const earlyRadar = recDecisionCore.earlyRadar;
+  const recStage = recDecisionCore.recStage;
+  const entryBlockReasons = recDecisionCore.entryBlockReasons;
+  const ignitionReady = recDecisionCore.ignitionReady;
+  const recDecision = {
+    ...recDecisionCore.recDecision,
+    color: recDecisionCore.recDecision.tone === 'buy' ? C.green :
+           recDecisionCore.recDecision.tone === 'conditional' ? C.blue :
+           recDecisionCore.recDecision.tone === 'early' ? C.yellow : C.pink,
+  };
+  const finalEntryNote = recDecisionCore.finalEntryNote;
 
   return {
     id: stock.id, name: stock.name, sector: stock.sector, cat: stock.cat,
