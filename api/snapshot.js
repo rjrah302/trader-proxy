@@ -25,15 +25,38 @@ async function fetchQuoteBatch(symbols, apiKey) {
   const BATCH = 50;
 
   for (let i = 0; i < symbols.length; i += BATCH) {
-    const batch = symbols.slice(i, i + BATCH).join(',');
-    const url = new URL(FMP_ORIGIN + '/stable/quote');
-    url.searchParams.set('symbol', batch);
-    url.searchParams.set('apikey', apiKey);
+    const batchSymbols = symbols.slice(i, i + BATCH);
+    const batch = batchSymbols.join(',');
 
-    const r = await fetch(url.toString(), { signal: AbortSignal.timeout(12000) });
-    if (!r.ok) continue;
-    const data = await r.json().catch(() => null);
-    if (Array.isArray(data)) all.push(...data.map(normalizeQuote).filter(Boolean));
+    let added = 0;
+    try {
+      const url = new URL(FMP_ORIGIN + '/api/v3/quote/' + encodeURIComponent(batch));
+      url.searchParams.set('apikey', apiKey);
+      const r = await fetch(url.toString(), { signal: AbortSignal.timeout(12000) });
+      const data = r.ok ? await r.json().catch(() => null) : null;
+      if (Array.isArray(data) && data.length) {
+        const normalized = data.map(normalizeQuote).filter(Boolean);
+        all.push(...normalized);
+        added = normalized.length;
+      }
+    } catch (e) {}
+
+    if (added > 0) continue;
+
+    const individual = await Promise.all(batchSymbols.map(async sym => {
+      try {
+        const url = new URL(FMP_ORIGIN + '/stable/quote');
+        url.searchParams.set('symbol', sym);
+        url.searchParams.set('apikey', apiKey);
+        const r = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
+        const data = r.ok ? await r.json().catch(() => null) : null;
+        const item = Array.isArray(data) ? data[0] : data;
+        return normalizeQuote(item);
+      } catch (e) {
+        return null;
+      }
+    }));
+    all.push(...individual.filter(Boolean));
   }
 
   return all;
