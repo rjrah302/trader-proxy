@@ -2084,9 +2084,11 @@ function calcSignal(stock) {
     riskReward >= 1.3 && profitPct >= 2 && confidence >= 58 && tradeQuality >= 35 &&
     (entryTiming === 'مقبول' || entryTiming === 'انتظر' || earlyNear) &&
     (earlyMomentum || earlyNear);
+  const ignitionReady = earlyMomentum && (volR >= 1.5 || nearSupport || distToSupport <= 4);
+  const earlyMoveOk = change <= 12 || ignitionReady || (volR >= 2 && !nearResistance);
   const earlyRadar = !activeBuy && !conditionalBuy && !blockEntry && !tooCloseToResistance &&
     newsOkForEntry && riskReward >= 1.15 && profitPct >= 2 && confidence >= 50 &&
-    (earlyNear || earlyMomentum) && (p.change || 0) <= 8;
+    (earlyNear || earlyMomentum) && earlyMoveOk;
   const recStage = activeBuy ? 'confirmed' : conditionalBuy ? 'conditional' : earlyRadar ? 'early' : 'reject';
   const recDecision = activeBuy
     ? {label:'ادخل الآن', color:C.green, note:entryNote}
@@ -2133,7 +2135,7 @@ function calcSignal(stock) {
     })(),
     beta: pro?.beta || stock.beta,
     activeBuy, watchOnly, blockEntry, isCooldown,
-    conditionalBuy, earlyRadar, recStage, recDecision,
+    conditionalBuy, earlyRadar, recStage, recDecision, ignitionReady,
     closes: ind.closes || null,
     highs:  ind.highs  || null,
     lows:   ind.lows   || null,
@@ -2787,11 +2789,11 @@ async function calcHunterScore(stock) {
   // ══ مكافأة خاصة للسوق الهابط — أسهم تقاوم الهبوط
   if (state.marketTrend === 'bearish') {
     // السهم أخضر والسوق أحمر = مقاوم قوي
-    if ((p.change || 0) > 0) score += 15;
+    if ((p.change || 0) > 0) score += 8;
     // السهم يهبط أقل من السوق
     else if ((p.change || 0) > (state.spyChange || -5)) score += 8;
     // Higher Low في السوق الهابط = إشارة قوية جداً
-    if (checks.higherLow) score += 10;
+    if (checks.higherLow) score += 5;
   }
   // ══ مكافأة Gainer
   if (stock.isGainer) { score += 10; checks.isGainer = true; }
@@ -2805,7 +2807,9 @@ async function calcHunterScore(stock) {
   else if(newsImpact.level === 'pos') score += 2;
 
   // ══ مكافأة: سهم هبط intraday ولكن مؤشراته جيدة (فرصة ارتداد سريع)
-  const intradayDip = (p.change || 0) < -3 && macdHist != null && macdHist > -0.5;
+  const intradayDip = (p.change || 0) < -3
+    && macdHist != null && macdHist > 0
+    && (intra?.rvol || 0) >= 1.5;
   if (intradayDip) { score += 12; checks.intradayDip = true; }
   // الوقف: تحت آخر قاع صاعد − 0.2 × ATR
   const atrAbs  = price * atrVal / 100;
@@ -2813,11 +2817,12 @@ async function calcHunterScore(stock) {
   const lossPct  = (price - stopLoss) / price * 100;
 
   // الهدف: VWAP أو مقاومة لحظية
-  const targetPrice = intra?.vwap && intra.vwap > price
+  const rawTargetPrice = intra?.vwap && intra.vwap > price
     ? intra.vwap
     : ind?.resistance && ind.resistance > price * 1.02
       ? ind.resistance
       : price * (1 + atrVal * 2 / 100);
+  const targetPrice = Math.max(rawTargetPrice, price * 1.015);
 
   const profitPct = (targetPrice - price) / price * 100;
   const rr = lossPct > 0 ? profitPct / lossPct : 0;
@@ -3392,6 +3397,7 @@ function startSpecLoop() {
 // ================================================================
 
 let _indicatorsLoading = false;
+let _appBooting = true;
 
 async function loadData(full=false) {
   // ── Firebase sync عند البداية (مرة واحدة)
@@ -4875,6 +4881,18 @@ function renderRecTab() {
   const session = getSessionInfo();
   const sInfo   = getMarketSession();
 
+  if(_appBooting) {
+    return el('div', {style:{padding:'40px 16px', textAlign:'center'}}, [
+      el('div', {style:{fontSize:'40px', marginBottom:'12px'}}, ['⏳']),
+      el('div', {style:{fontSize:'14px', fontWeight:'800', color:C.blue, marginBottom:'6px'}}, [
+        'جاري تجهيز البيانات...'
+      ]),
+      el('div', {style:{fontSize:'11px', color:C.text2, lineHeight:'1.7'}}, [
+        'يتم استرجاع البيانات المحفوظة وتحميل حالة السوق قبل إصدار أي حكم.'
+      ]),
+    ]);
+  }
+
   // حالة: خارج أوقات السوق — ولا توصيات محفوظة
   if(!session.canRec && !state.indicatorsDone && !_indicatorsLoading) {
     const icon  = sInfo==='pre' ? '🌅' : sInfo==='after' ? '🌆' : '🌙';
@@ -4968,8 +4986,8 @@ function renderRecTab() {
         '• ثقة 70%+ • جودة صفقة 50%+', el('br'),
         '• هدف ربح 2%+ • R/R 1.5x+', el('br'),
         '• لا أرباح خلال 5 أيام', el('br'),
-        '• لا مطاردة إذا السعر بعيد عن الدعم أو قريب من المقاومة', el('br'),
-        '• الارتفاع القوي مسموح إذا معه حجم ودعم • فوق MA50',
+        '• لا gap-up أكثر من 8%', el('br'),
+        '• توقيت مقبول • فوق MA50',
       ]),
       el('div', {style:{
         fontSize:'11px', color:C.yellow,
@@ -7517,7 +7535,7 @@ function renderTipsTab() {
       '4. جودة الصفقة ≥ 50%',
       '5. هدف ربح ≥ 2% مع R/R ≥ 1.5x',
       '6. لا أرباح قريبة حسب تقلب السهم',
-      '7. لا مطاردة بلا دعم وحجم، والارتفاع القوي مسموح إذا كان مدعوماً',
+      '7. لا gap-up أكثر من 8%',
       '8. فوق MA50',
       '9. توقيت "ادخل الآن" أو "مقبول" بدون خبر سلبي',
     ]},
@@ -7957,6 +7975,7 @@ window.retryPrices = async () => {
   try {
     render();
     await loadData(false);
+    _appBooting = false;
     if(state.recs?.length > 0) {
       _recsLockedToday = true;
       _lastRecDate     = new Date().toDateString();
@@ -7964,6 +7983,7 @@ window.retryPrices = async () => {
     render();
   } catch(e) {
     console.error('[Init] خطأ في التحميل الأول:', e.message);
+    _appBooting = false;
     render();
   }
 })();
