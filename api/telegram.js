@@ -380,6 +380,15 @@ function formatTelegramDuration(duration) {
   return 'أكثر من أسبوع';
 }
 
+function formatDecisionLabel(decision) {
+  const label = decision?.recDecision?.label || 'راقب';
+  if (label === 'ادخل الآن') return '✅ ادخل الآن';
+  if (label === 'ادخل بشرط') return '🟦 ادخل بشرط';
+  if (label === 'استعد') return '🟡 استعد';
+  if (label === 'مرفوض') return '⛔ لا تدخل الآن';
+  return label;
+}
+
 function buildAnalysisMsg(sym, name, a, levels) {
   const stopLoss = a.support ? +(a.support * 0.985).toFixed(2) : null;
   // ✅ إذا قريب من المقاومة → الهدف 5% فوقها (بعد كسرها)
@@ -398,9 +407,51 @@ function buildAnalysisMsg(sym, name, a, levels) {
     weeklyTrend: a.weekly,
   });
   const durationLabel = formatTelegramDuration(duration);
+  const riskReward = stopLoss && target > a.price && a.price > stopLoss
+    ? +((target - a.price) / (a.price - stopLoss)).toFixed(2)
+    : 0;
+  const profitPctForDecision = profitPct;
+  const tradeQuality =
+    (riskReward >= 2 ? 30 : riskReward >= 1.5 ? 20 : riskReward >= 1 ? 10 : 0) +
+    (profitPctForDecision >= 5 ? 20 : profitPctForDecision >= 3 ? 15 : profitPctForDecision >= 2 ? 8 : 0) +
+    (a.support && a.price <= a.support * 1.03 ? 25 : 0);
+  const confidence = Math.max(10, Math.min(99, 50 + (a.score || 0) * 10));
+  const distToSupport = a.support ? (a.price - a.support) / a.price * 100 : 999;
+  const entryTiming = isNearRes ? 'انتظر' : distToSupport <= 3 ? 'ادخل الآن' : distToSupport <= 6 ? 'مقبول' : distToSupport <= 10 ? 'انتظر' : 'متأخر';
+  const entryNote = isNearRes
+    ? 'السعر قريب من المقاومة — انتظر كسرها'
+    : distToSupport <= 3
+      ? 'السعر قريب من الدعم — نقطة دخول أفضل'
+      : 'انتظر رجوع السعر قرب الدعم';
+  const unifiedDecision = RamiAnalysis.buildRecCardDecision({
+    confidence,
+    tradeQuality,
+    riskReward,
+    profitPct: profitPctForDecision,
+    entryTiming,
+    entryNote,
+    isCooldown: false,
+    tooCloseToResistance: !!isNearRes,
+    trendOk: true,
+    newsOk: true,
+    newsBlocked: false,
+    signal: a.score >= 3 ? 'شراء قوي' : a.score >= 1 ? 'شراء' : 'انتظار',
+    macdHist: a.macdHist,
+    volR: 1,
+    change: a.change,
+    nearSupport: !!(a.support && a.price <= a.support * 1.03),
+    distToSupport,
+    nearResistance: !!isNearRes,
+    priceText: '$' + a.price,
+    idealEntryText: a.support ? '$' + a.support : '$' + a.price,
+  });
 
   let m = `📊 <b>${name || sym} (${sym})</b>\n`;
   m    += `💰 <b>$${a.price}</b> ${a.change >= 0 ? '📈' : '📉'} ${a.change >= 0 ? '+' : ''}${a.change}%\n`;
+  m    += `──────────────\n`;
+  m    += `<b>${formatDecisionLabel(unifiedDecision)}</b>\n`;
+  m    += `${unifiedDecision.finalEntryNote}\n`;
+  m    += `R/R: <b>${riskReward ? riskReward + 'x' : 'غير متاح'}</b> | جودة: <b>${Math.min(100, Math.round(tradeQuality))}%</b>\n`;
   m    += `──────────────\n`;
 
   if (a.macdHist != null) {
@@ -420,6 +471,7 @@ function buildAnalysisMsg(sym, name, a, levels) {
   if (a.resistance) m += `🔴 مقاومة: <b>$${a.resistance}</b>\n`;
   if (isNearRes)    m += `⚠️ السعر قريب من المقاومة — انتظر كسرها\n`;
   if (stopLoss)     m += `🛑 وقف مقترح: <b>$${stopLoss}</b>\n`;
+  if (target)       m += `🎯 هدف مقترح: <b>$${target}</b> (+${profitPct}%)\n`;
   m += `⏱️ مدة الاحتفاظ: <b>${durationLabel}</b>\n`;
   m += `──────────────\n`;
   m += `🤖 <b>التحليل:</b>\n`;
