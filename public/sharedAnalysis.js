@@ -353,6 +353,62 @@
     };
   }
 
+  function buildSpecVerdict({marketClosed=false, isWatch=false, entryTiming='', riskReward=0, score=0, entryNote=''} = {}) {
+    riskReward = +riskReward || 0;
+    score = +score || 0;
+
+    let verdict;
+    if (marketClosed) {
+      verdict = {
+        label:'مراقبة عند الافتتاح',
+        tone:'watch',
+        note:'السوق مغلق؛ لا تنفيذ الآن. أعد تأكيد السعر والحجم بعد الافتتاح.',
+      };
+    } else if (isWatch) {
+      verdict = {
+        label:'انتظار فقط',
+        tone:'watch',
+        note:entryNote || 'لم تكتمل شروط دخول المجازفة.',
+      };
+    } else if (entryTiming === 'ادخل الآن' && riskReward >= 1.45 && score >= 45) {
+      verdict = {
+        label:'دخول مجازفة',
+        tone:'buy',
+        note:'دخول مسموح بشرط الالتزام بالوقف وحجم مخاطرة صغير.',
+      };
+    } else if (entryTiming === 'مقبول' && riskReward >= 1.45) {
+      verdict = {
+        label:'دخول مشروط',
+        tone:'conditional',
+        note:'الأفضل أمر محدد قرب الدعم؛ لا تطارد السعر.',
+      };
+    } else {
+      verdict = {
+        label:'ممنوع الآن',
+        tone:'danger',
+        note:'الدخول متأخر أو المخاطرة غير مناسبة.',
+      };
+    }
+
+    const canPlaceOrder = !marketClosed && (verdict.label === 'دخول مجازفة' || verdict.label === 'دخول مشروط');
+    const displayEntryTiming = marketClosed
+      ? 'انتظر الافتتاح'
+      : isWatch
+      ? 'انتظر نقطة الدخول'
+      : verdict.label === 'ممنوع الآن'
+        ? 'لا تدخل'
+        : entryTiming;
+    const displayEntryNote = marketClosed
+      ? 'لا تدخل خارج وقت السوق؛ الأسعار الليلية قد تتغير مع الافتتاح.'
+      : isWatch
+      ? (entryNote || 'انتظر اكتمال شروط الدخول قبل التنفيذ.')
+      : verdict.label === 'ممنوع الآن'
+        ? verdict.note
+        : entryNote;
+
+    return {...verdict, canPlaceOrder, displayEntryTiming, displayEntryNote};
+  }
+
   function selectRecommendations(candidates=[], {
     minEntryRR=1.5,
     minEntryQuality=50,
@@ -435,5 +491,5 @@
     return recs;
   }
 
-  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics, calcSpecTradeMetrics, buildSpecEntryPlan, selectRecommendations };
+  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics, calcSpecTradeMetrics, buildSpecEntryPlan, buildSpecVerdict, selectRecommendations };
 });
