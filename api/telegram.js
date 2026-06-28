@@ -172,15 +172,24 @@ function latestCardRankLabel(rank) {
   return '🔴 لا تطارد';
 }
 
-function latestShortReason(x, rank) {
+function latestDecisionLabel(x, rank) {
+  const decision = String(x?.decision || x?.signal || '').trim();
+  if (decision) return decision;
+  if (rank === 0) return 'ادخل الآن';
+  if (rank === 1) return 'راقب';
+  return 'لا تطارد';
+}
+
+function latestDecisionReason(x, rank) {
   const note = String(x?.note || '').trim();
-  const text = `${x?.decision || ''} ${x?.signal || ''} ${note}`.toLowerCase();
-  if (/fmp|اشتراك/.test(text)) return 'مصدر خارجي فقط؛ انتظر تكرار أو VWAP وحجم';
-  if (/vwap/.test(text) && /حجم/.test(text)) return 'ينتظر تأكيد VWAP والحجم';
-  if (/pullback|تراجع/.test(text)) return 'مرتفع؛ انتظر تراجع مناسب';
-  if (/الدعم|support/.test(text)) return 'قريب من الدعم؛ راقب الثبات';
-  if (/المقاومة|resistance|اختراق/.test(text)) return 'ينتظر اختراق مقاومة واضح';
-  if (/ليلي|السوق مغلق/.test(text)) return 'تحليل ليلي؛ انتظر الافتتاح';
+  if (note) return note;
+  const text = `${x?.decision || ''} ${x?.signal || ''}`.toLowerCase();
+  if (/fmp|اشتراك/.test(text)) return 'ظهر من مصدر خارجي فقط؛ انتظر تكرار الإشارة أو تأكيد VWAP وحجم.';
+  if (/vwap/.test(text) && /حجم/.test(text)) return 'القرار ينتظر تأكيد VWAP والحجم قبل الدخول.';
+  if (/pullback|تراجع/.test(text)) return 'السهم مرتفع الآن؛ الأفضل انتظار تراجع أو ثبات جديد.';
+  if (/الدعم|support/.test(text)) return 'السهم قريب من الدعم؛ القرار مرتبط بالثبات وعدم كسر الدعم.';
+  if (/المقاومة|resistance|اختراق/.test(text)) return 'القرار ينتظر اختراق مقاومة واضح أو رجوع فوق مستوى مهم.';
+  if (/ليلي|السوق مغلق/.test(text)) return 'تحليل خارج وقت السوق؛ القرار يحتاج تأكيد بعد الافتتاح.';
   if (rank === 0) return 'الشروط الحالية تسمح بالدخول حسب الأداة';
   if (rank === 1) return 'فرصة متابعة؛ انتظر محفز الدخول';
   return 'الحركة غير مؤكدة الآن';
@@ -230,13 +239,21 @@ function formatLatestTabsMessage(kind, data) {
     const symbol = htmlSafe(x.id || x.symbol || '—');
     const name = htmlSafe(latestShortName(x.name));
     const price = fmtMoney(x.price || x.entry);
-    const reason = htmlSafe(latestShortReason(x, rank));
-    m += `${i + 1}) ${latestCardRankLabel(rank)} <b>${symbol}</b>${name ? ` — ${name}` : ''} ${price}\n`;
-    m += `   السبب: ${reason}\n`;
+    const decision = htmlSafe(latestDecisionLabel(x, rank));
+    const reason = htmlSafe(latestDecisionReason(x, rank));
+    const score = Number(x.score);
+    m += `${i + 1}) ${latestCardRankLabel(rank)} <b>${symbol}</b>${name ? ` — ${name}` : ''}\n`;
+    m += `السعر: ${price}`;
+    if (Number.isFinite(score) && score > 0) m += ` | القوة: ${score.toFixed(0)}/100`;
+    m += `\n`;
+    m += `دخول ${fmtMoney(x.entry)} | هدف ${fmtMoney(x.target)} | وقف ${fmtMoney(x.stopLoss)} | R/R ${fmtRR(x.riskReward)}\n`;
+    m += `القرار: <b>${decision}</b>\n`;
+    m += `سبب القرار: ${reason}\n`;
+    m += `──────────────\n`;
   });
 
   if (rawItems.length > shown.length) m += `+ ${rawItems.length - shown.length} بطاقة أخرى محفوظة في الأداة.\n`;
-  m += `──────────────\nللتفصيل اكتب رمز السهم مثل NVDA، أو افتح البطاقة كاملة في الأداة.`;
+  m += `للتفصيل اكتب رمز السهم مثل NVDA، أو افتح البطاقة كاملة في الأداة.`;
   return m;
 }
 
