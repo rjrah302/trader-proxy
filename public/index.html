@@ -62,6 +62,15 @@ function _initFirebase() {
       } catch(e) { console.warn('[FB] loadHistory:', e.message); return []; }
     };
 
+    window._fbSaveLatestTabs = async function(payload) {
+      try {
+        await _DB.collection('users').doc(_USER_ID)
+                 .collection('data').doc('latest_tabs')
+                 .set({...payload, updatedAt: firebase.firestore.FieldValue.serverTimestamp()});
+        console.log('[FB] latest tabs saved ✅');
+      } catch(e) { console.warn('[FB] saveLatestTabs:', e.message); }
+    };
+
     window._fbSync = async function() {
       try {
         // ✅ السحابة للسجل فقط — المحفظة محلية
@@ -2166,6 +2175,7 @@ function calcRecs() {
 
   state.recs = recs;
   state.recsTime = new Date();
+  saveLatestTabsSoon();
 
   // ✅ تسجيل في السجل فقط عند السوق المفتوح — لا تسجيل لأسعار قديمة
   if(isMarketOpen()) {
@@ -2211,7 +2221,7 @@ function calcSpeculative() {
     watch:0,
   };
 
-  const candidates = ALL_STOCKS
+  const rawSpecCandidates = ALL_STOCKS
     .filter(s => state.prices[s.id]?.price > 0)
     .map(s => {
       const p   = state.prices[s.id];
@@ -2426,20 +2436,15 @@ function calcSpeculative() {
         allocPct, entryTiming, entryNote,
         earnDays, topCandle,
       };
-    })
-    .filter(Boolean)
-    .sort((a,b) => {
-      // ترتيب: R/R أولاً × score
-      const valA = Math.min(a.riskReward, 4) * 18 + a.score * 0.35;
-      const valB = Math.min(b.riskReward, 4) * 18 + b.score * 0.35;
-      return valB - valA;
-    })
-    .slice(0, 10);
+    });
+
+  const candidates = window.RamiAnalysis.selectSpeculative(rawSpecCandidates, {maxSpecs:10});
 
   state.speculativeRecs = candidates;
   specDebug.kept = candidates.length;
   state.specDebug = specDebug;
   state.specTime = new Date();
+  saveLatestTabsSoon();
   if(candidates.length && isMarketOpen()) recordSpecToHistory(candidates);
   return candidates;
 }
@@ -3081,6 +3086,7 @@ async function calcHunterNight() {
   });
   state.hunterRecs = results;
   state.hunterTime = new Date();
+  saveLatestTabsSoon();
   console.log('[Hunter] 🌙 ليلية اكتملت:', results.length, 'فرصة');
 }
 
@@ -3188,6 +3194,7 @@ async function calcHunterFull() {
   const radar = results.length < 6 ? buildHunterRadar(existingIds, 6 - results.length) : [];
   state.hunterRecs = [...results, ...radar];
   state.hunterTime = new Date();
+  saveLatestTabsSoon();
   console.log('[Hunter] كاملة:', results.length, 'فرصة + رادار', radar.length);
 }
 
@@ -3217,6 +3224,7 @@ async function calcHunterQuick() {
   const radar = merged.length < 6 ? buildHunterRadar(existingIds, 6 - merged.length) : [];
   state.hunterRecs = [...merged, ...radar];
   state.hunterTime = new Date();
+  saveLatestTabsSoon();
   render();
 }
 
@@ -3734,6 +3742,59 @@ function saveHistory(h) {
   const data = h.slice(-500);
   try { localStorage.setItem('rec_history', JSON.stringify(data)); } catch(e) {}
   if(window._fbReady) window._fbSaveHistory(data).catch(()=>{});
+}
+
+function compactLatestCard(x, type) {
+  if(!x) return null;
+  return {
+    id:x.id, name:x.name, sector:x.sector, type,
+    price:+(x.price || x.recPrice || 0),
+    change:+(x.change || 0),
+    score:+(x.score || x.strength || 0),
+    signal:x.signal || x.action || x.label || '',
+    decision:x.recDecision?.label || x.action || x.entryTiming || x.label || '',
+    actionTone:x.actionTone || x.recDecision?.tone || '',
+    note:x.finalEntryNote || x.entryNote || x.actionNote || '',
+    entry:+(x.entry || x.price || 0),
+    stopLoss:+(x.stopLoss || 0),
+    target:+(x.target || x.targetPrice || 0),
+    profitPct:+(x.profitPct || 0),
+    lossPct:+(x.lossPct || 0),
+    riskReward:+(x.riskReward || x.rr || 0),
+    support:+(x.support || 0),
+    resistance:+(x.resistance || 0),
+    confidence:+(x.confidence || 0),
+    tradeQuality:+(x.tradeQuality || 0),
+    isWatch:!!x.isWatch,
+    isRadar:!!x.isRadar,
+    isNight:!!x.isNight,
+    gainerClass:x.gainerClass || null,
+  };
+}
+
+function saveLatestTabsSoon() {
+  if(!window._fbReady || !window._fbSaveLatestTabs) return;
+  clearTimeout(window._latestTabsSaveTimer);
+  window._latestTabsSaveTimer = setTimeout(() => {
+    const payload = {
+      market: {
+        spyChange: state.spyChange,
+        qqqChange: state.qqqChange,
+        trend: state.marketTrend,
+        open: isMarketOpen(),
+      },
+      times: {
+        recs: state.recsTime ? state.recsTime.toISOString() : null,
+        spec: state.specTime ? state.specTime.toISOString() : null,
+        hunter: state.hunterTime ? state.hunterTime.toISOString() : null,
+      },
+      recs: (state.recs || []).slice(0, 10).map(x => compactLatestCard(x, 'rec')).filter(Boolean),
+      spec: (state.speculativeRecs || []).slice(0, 10).map(x => compactLatestCard(x, 'spec')).filter(Boolean),
+      hunter: (state.hunterRecs || []).slice(0, 20).map(x => compactLatestCard(x, 'hunter')).filter(Boolean),
+      savedAt: new Date().toISOString(),
+    };
+    window._fbSaveLatestTabs(payload).catch(()=>{});
+  }, 500);
 }
 
 // ── تسجيل توصيات اليوم في السجل (يُستدعى بعد calcRecs)
@@ -6108,33 +6169,28 @@ function renderHunterCard(h, idx) {
   });
   const estimatedDays = durationEstimate.days;
   const durationText = durationEstimate.label;
-  const enterVerdict = h.isNight
-    ? {label:'مراقبة بعد الافتتاح', color:C.yellow, note:'تحليل ليلي؛ لا تنفيذ قبل تأكيد VWAP والحجم بعد الفتح.'}
-    : h.actionTone === 'buy'
-    ? {label:'دخول مسموح', color:C.green, note:'نفذ فقط إذا بقي فوق VWAP والحجم داعم.'}
-    : h.actionTone === 'support'
-      ? {label:'دخول قرب الدعم', color:C.blue, note:'لا تدخل إلا قريبًا من الدعم وبوقف صغير.'}
-      : h.gainerClass === 'chase' || h.action === 'لا تطارد'
-        ? {label:'لا تدخل الآن', color:C.pink, note:'السهم مرتفع لكن الدخول متأخر؛ انتظر Pullback.'}
-        : {label:'لا تدخل الآن', color:C.yellow, note:'الدخول بعد اختراق/ثبات وليس بسعر عشوائي.'};
-  const directOrder = h.isNight
-    ? {label:'لا تدخل الآن', color:C.yellow, note:'ليلي فقط؛ انتظر الافتتاح وتأكيد السعر والحجم.'}
-    : h.actionTone === 'buy'
-    ? (h.action === 'ادخل بشرط'
-        ? {label:'ادخل بشرط', color:C.blue, note:h.actionNote}
-        : {label:'ادخل الآن', color:C.green, note:'السعر مناسب. نفذ مع الوقف المكتوب فقط.'})
-    : h.actionTone === 'support'
-      ? {label:'لا تدخل الآن', color:C.yellow, note:'انتظر السعر عند الدعم أو رجوع واضح؛ ليست إشارة تنفيذ فورية.'}
-      : h.gainerClass === 'chase' || h.action === 'لا تطارد'
-        ? {label:'ممنوع الدخول', color:C.pink, note:'انتظر Pullback أو تجاهل السهم.'}
-        : {label:'لا تدخل الآن', color:C.yellow, note:'انتظر محفز الدخول. لا شراء الآن.'};
-  const isFinalEntry = !h.isNight && isMarketOpen() && h.actionTone === 'buy';
-  const triggerText = h.actionTone === 'buy'
-    ? 'الثبات فوق $'+fmt(h.vwap || h.price,2)+' مع RVOL أعلى من 1.5'
-    : h.checks?.breakout15
-      ? 'إغلاق 5 دقائق فوق قمة الاختراق'
-      : 'رجوع فوق VWAP أو Higher Low جديد';
-  const invalidationText = 'كسر $'+fmt(h.stopLoss,2)+' أو فقدان VWAP مع حجم بيع';
+  const hunterDecision = window.RamiAnalysis.buildHunterVerdict({
+    isNight:h.isNight,
+    marketOpen:isMarketOpen(),
+    actionTone:h.actionTone,
+    action:h.action,
+    actionNote:h.actionNote,
+    gainerClass:h.gainerClass,
+    stopLoss:h.stopLoss,
+    vwap:h.vwap,
+    price:h.price,
+    checks:h.checks,
+  });
+  const hunterToneColor = (tone) =>
+    tone === 'buy' ? C.green :
+    tone === 'conditional' || tone === 'support' ? C.blue :
+    tone === 'danger' ? C.pink :
+    C.yellow;
+  const enterVerdict = {...hunterDecision.enterVerdict, color:hunterToneColor(hunterDecision.enterVerdict.tone)};
+  const directOrder = {...hunterDecision.directOrder, color:hunterToneColor(hunterDecision.directOrder.tone)};
+  const isFinalEntry = hunterDecision.isFinalEntry;
+  const triggerText = hunterDecision.triggerText;
+  const invalidationText = hunterDecision.invalidationText;
   const trendBadge = h.marketTrend === 'bearish'
     ? el('span', {style:{fontSize:'9px', color:C.pink, background:'rgba(255,45,122,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['سوق هابط'])
     : h.marketTrend === 'bullish'
