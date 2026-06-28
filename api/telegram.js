@@ -314,6 +314,79 @@ function formatLatestTabsMessage(kind, data) {
   return m;
 }
 
+function waitingReasonFromCard(x, kind, rank) {
+  const reason = latestDecisionReason(x, rank);
+  const text = `${x?.decision || ''} ${x?.signal || ''} ${x?.actionTone || ''} ${x?.note || ''}`.toLowerCase();
+  if (kind === 'hunter') {
+    if (/vwap/.test(text)) return 'الشرط الناقص: رجوع/ثبات فوق VWAP';
+    if (/اختراق|قمة|15/.test(text)) return 'الشرط الناقص: اختراق قمة 15 دقيقة';
+    if (/حجم|rvol/.test(text)) return 'الشرط الناقص: حجم أعلى مع ثبات السعر';
+    if (/pullback|تراجع/.test(text)) return 'الشرط الناقص: Pullback صحي بدل المطاردة';
+  }
+  if (kind === 'spec') {
+    if (/انتظر|مقبول/.test(text)) return `الشرط الناقص: ${reason}`;
+    return 'الشرط الناقص: محفز دخول واضح مع وقف مقبول';
+  }
+  if (/الدعم|support/.test(text)) return 'الشرط الناقص: ثبات عند الدعم وعدم كسره';
+  if (/مقاومة|اختراق/.test(text)) return 'الشرط الناقص: اختراق مقاومة واضح';
+  if (/زخم|macd|حجم/.test(text)) return 'الشرط الناقص: تأكيد الزخم والحجم';
+  return `الشرط الناقص: ${reason}`;
+}
+
+function buildWaitingItems(data) {
+  const groups = [
+    ['recs', 'توصيات'],
+    ['spec', 'مجازفة'],
+    ['hunter', 'صائد'],
+  ];
+  const items = [];
+  groups.forEach(([kind, source]) => {
+    getLatestTabItems(data, kind).forEach(x => {
+      const rank = latestCardRank(x);
+      if (rank === 0 || rank === 2) return;
+      const score = Number(x?.score || x?.confidence || x?.tradeQuality || 0);
+      items.push({ kind, source, x, rank, score, missing: waitingReasonFromCard(x, kind, rank) });
+    });
+  });
+  return items
+    .filter(v => v.x?.id || v.x?.symbol)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 15);
+}
+
+function formatWaitingMessage(data) {
+  const items = buildWaitingItems(data);
+  const market = data?.market || {};
+  const savedAt = data?.savedAt || data?.times?.hunter || data?.times?.recs || data?.times?.spec;
+  let m = `<b>⏳ الانتظار الذكي</b>\n`;
+  m += `آخر تحديث: ${fmtSavedTime(savedAt)}\n`;
+  m += `SPY ${fmtPct(market.spyChange)} | QQQ ${fmtPct(market.qqqChange)} | ${market.open ? 'السوق مفتوح' : 'السوق مغلق'}\n`;
+  m += `──────────────\n`;
+  m += `هذه ليست إشارات دخول. هذه أسهم قريبة من القرار وتحتاج شرطاً ناقصاً.\n`;
+  m += `──────────────\n`;
+
+  if (!items.length) {
+    m += `لا توجد أسهم قريبة من الدخول الآن.\n`;
+    m += `هذا طبيعي؛ الانتظار الذكي يبحث عن الأسهم الناقصة شرطاً أو شرطين فقط.`;
+    return m;
+  }
+
+  items.forEach(({ x, source, missing, score }, i) => {
+    const symbol = htmlSafe(x.id || x.symbol || '—');
+    const name = htmlSafe(latestShortName(x.name));
+    m += `${i + 1}) 🟡 <b>${symbol}</b>${name ? ` — ${name}` : ''} • ${source}\n`;
+    m += `السعر: ${fmtMoney(x.price || x.entry)}`;
+    if (score > 0) m += ` | القرب: ${Math.round(score)}/100`;
+    m += `\n`;
+    m += `${htmlSafe(missing)}\n`;
+    m += `دخول ${fmtMoney(x.entry)} | هدف ${fmtMoney(x.target)} | وقف ${fmtMoney(x.stopLoss)} | R/R ${fmtRR(x.riskReward)}\n`;
+    m += `──────────────\n`;
+  });
+
+  m += `إذا تحقق الشرط، افتح البطاقة الأصلية قبل أي تنفيذ.`;
+  return m;
+}
+
 function findLatestCardBySymbol(data, sym) {
   const target = String(sym || '').toUpperCase();
   const groups = [
@@ -1216,8 +1289,12 @@ async function handleCallback(callbackId, data, cid) {
   // ── القائمة الرئيسية
   if (action === 'menu') {
     // آخر نتائج محفوظة من الأداة
-    if (sym === 'LATEST_RECS' || sym === 'LATEST_SPEC' || sym === 'LATEST_HUNTER') {
+    if (sym === 'LATEST_RECS' || sym === 'LATEST_SPEC' || sym === 'LATEST_HUNTER' || sym === 'LATEST_WAITING') {
       const latest = await fbGetLatestTabs();
+      if (sym === 'LATEST_WAITING') {
+        await tgSend(formatWaitingMessage(latest));
+        return;
+      }
       const kind = sym === 'LATEST_RECS' ? 'recs' : sym === 'LATEST_SPEC' ? 'spec' : 'hunter';
       await tgSend(formatLatestTabsMessage(kind, latest));
       return;
@@ -1271,6 +1348,8 @@ async function handleCallback(callbackId, data, cid) {
 ` +
         `🎯 صائد: آخر بطاقات الصائد
 ` +
+        `⏳ انتظار: أسهم قريبة من الدخول وينقصها شرط
+` +
         `📊 تحليل سهم: اكتب رمزه مثل <code>NVDA</code>
 ` +
         `👁 مراقبتي: اكتب <code>مراقبتي</code>
@@ -1303,7 +1382,10 @@ async function handleMessage(text, cid) {
           { text: '🎯 توصيات', callback_data: 'menu_latest_recs' },
           { text: '🎲 مجازفة', callback_data: 'menu_latest_spec' },
         ],
-        [{ text: '🎯 الصائد', callback_data: 'menu_latest_hunter' }],
+        [
+          { text: '🎯 الصائد', callback_data: 'menu_latest_hunter' },
+          { text: '⏳ انتظار', callback_data: 'menu_latest_waiting' },
+        ],
         [{ text: '📊 تحليل سهم',     callback_data: 'menu_analyze'   }],
         [{ text: '👁 مراقبتي',        callback_data: 'menu_watchlist' }],
         [{ text: '📈 السجل الذكي',    callback_data: 'menu_report'    }],
@@ -1329,6 +1411,12 @@ async function handleMessage(text, cid) {
   if (['صائد', 'الصائد', 'hunter'].includes(low)) {
     const latest = await fbGetLatestTabs();
     await tgSend(formatLatestTabsMessage('hunter', latest));
+    return;
+  }
+
+  if (['انتظار', 'الانتظار', 'waiting', 'wait'].includes(low)) {
+    const latest = await fbGetLatestTabs();
+    await tgSend(formatWaitingMessage(latest));
     return;
   }
 
