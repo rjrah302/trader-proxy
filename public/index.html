@@ -2080,10 +2080,12 @@ function calcSignal(stock) {
            recDecisionCore.recDecision.tone === 'early' ? C.yellow : C.pink,
   };
   const finalEntryNote = recDecisionCore.finalEntryNote;
+  const price30dAgo = ind.closes?.[0] || 0;
+  const gain30d = price30dAgo > 0 ? (price - price30dAgo) / price30dAgo * 100 : 0;
 
   return {
     id: stock.id, name: stock.name, sector: stock.sector, cat: stock.cat,
-    price, change, high:p.high, low:p.low, volume:vol, volR,
+    price, change, high:p.high, low:p.low, volume:vol, avgVolume:avgVol, volR,
     rsi, ma20, ma50, ma200, macd, macdHist:ind.macdHist, macdHistDir:ind.macdHistDir,
     weeklyTrend:ind.weeklyTrend, weeklyMacdHist:ind.weeklyMacdHist,
     bb_upper, bb_lower,
@@ -2091,7 +2093,7 @@ function calcSignal(stock) {
     roomToResistance, minRoomToResistance, tooCloseToResistance,
     resTouches: ind.resTouches??1, supTouches: ind.supTouches??1,
     atrPct, stochRsi, riskReward,
-    signal, strength, confidence, tradeQuality,
+    signal, strength, confidence, tradeQuality, dataQuality, gain30d,
     netScore, buy, sell, reasons,
     stopLoss, target, profitPct,
     entryTiming, entryColor, entryNote: finalEntryNote, idealEntry, distToSupport,
@@ -2134,112 +2136,15 @@ function estimateTradeDuration({kind='rec', profitPct=0, atrPct=0, macdHist=0, m
 // ================================================================
 
 function calcRecs() {
-  // ══ شروط صارمة للتوصية
-  const candidates = ALL_STOCKS
+  const analyzed = ALL_STOCKS
     .map(s => calcSignal(s))
-    .filter(Boolean)
-    // التوصيات الآن مراحل: دخول مؤكد، دخول مشروط، أو رادار مبكر.
-    .filter(s => s.recStage === 'confirmed' || s.recStage === 'conditional' || s.recStage === 'early')
-    // شرط 1: إشارة شراء أو بداية تحول مقبولة
-    .filter(s => s.signal==='شراء قوي' || s.signal==='شراء' || s.conditionalBuy || s.earlyRadar)
-    // شرط 2: ثقة كافية حسب المرحلة
-    .filter(s => s.activeBuy ? s.confidence >= 70 : s.confidence >= 50)
-    // شرط 3: جودة صفقة مقبولة حسب المرحلة
-    .filter(s => s.activeBuy ? s.tradeQuality >= 50 : s.tradeQuality >= 30)
-    // شرط 4: هدف ربح 2%+
-    .filter(s => s.profitPct >= 2)
-    // شرط 5: الدخول المؤكد 1.5x، والرادار المبكر يقبل 1.15x لأنه ليس تنفيذًا مباشرًا
-    .filter(s => s.activeBuy ? s.riskReward >= REC_MIN_ENTRY_RR : s.riskReward >= 1.15)
-    // شرط 6: لا أرباح قريبة — أكثر صرامة للأسهم عالية التقلب
-    .filter(s => {
-      const beta = s.beta || 1;
-      if (beta >= 1.5) return s.earnings > 21; // بيوتك وتقنية — 3 أسابيع
-      if (beta >= 1.2) return s.earnings > 14; // متوسط التقلب — أسبوعان
-      return s.earnings > 5;                   // منخفض التقلب — 5 أيام
-    })
-    // شرط 7: لا مطاردة عمياء — الارتفاع مسموح إذا الحجم/الدعم/المسافة للمقاومة مقبولة
-    .filter(s => {
-      const ch = s.change || 0;
-      if (ch <= 8) return true;
-      const supportedMove = (s.volR || 0) >= 1.8 || s.nearSupport || s.ignitionReady;
-      const tooExtendedNow = s.tooCloseToResistance && !s.nearSupport;
-      if (s.activeBuy) return ch <= 14 || (supportedMove && !tooExtendedNow);
-      return ch <= 18 || ((s.volR || 0) >= 2.2 && !tooExtendedNow);
-    })
-    // شرط 7.5: لا سهم ممتد بلا دعم — لا نمنع الترند القوي إذا الحركة مدعومة
-    .filter(s => {
-      const ind = state.indicators[s.id];
-      const p   = state.prices[s.id];
-      if (!ind?.closes || ind.closes.length < 5 || !p?.price) return true;
-      // نستخدم أقدم سعر في ind.closes (يمثل ~30 يوم) مقارنة بالسعر الحالي
-      const price30dAgo = ind.closes[0]; // أقدم سعر محفوظ
-      const gain30d = price30dAgo > 0 ? (p.price - price30dAgo) / price30dAgo * 100 : 0;
-      const supportedTrend = s.nearSupport || (s.volR || 0) >= 1.8 || s.ignitionReady;
-      const limit = s.activeBuy ? 60 : 90;
-      return gain30d <= limit || (supportedTrend && !s.tooCloseToResistance);
-    })
-    // شرط 8: توقيت الدخول مقبول أو السهم في رادار مبكر قريب
-    .filter(s => s.entryTiming === 'ادخل الآن' || s.entryTiming === 'مقبول' || s.conditionalBuy || s.earlyRadar)
-    // شرط 8.5: لا توصية إذا المسافة للمقاومة ضيقة — لا نطارد السهم عند السقف
-    .filter(s => !s.tooCloseToResistance && (s.roomToResistance == null || s.roomToResistance >= Math.max(4, s.minRoomToResistance || 0)))
-    // شرط 9: السعر فوق MA50 على الأقل
-    .filter(s => s.ma50==null || s.price >= s.ma50*0.97)
-    // شرط 9.5: الاتجاه اللحظي/اليومي ليس ضعيفًا جدًا إلا إذا كان السهم عند الدعم
-    .filter(s => s.nearSupport || s.adx == null || s.adx >= REC_MIN_ENTRY_ADX || (s.macdHist != null && s.macdHist > 0))
-    // شرط 9.6: الخبر السلبي القوي يلغي التوصية
-    .filter(s => !s.newsImpact?.block && s.newsImpact?.level !== 'neg')
-    // شرط 10: ✅ بيانات كافية — 100 يوم على الأقل
-    .filter(s => (state.indicators[s.id]?.dataLen || state.indicators[s.id]?.closes?.length || 0) >= 100)
-    // شرط 11: سيولة كافية — 500 ألف سهم يومياً على الأقل
-    .filter(s => {
-      const p   = state.prices[s.id];
-      const pro = state.profiles[s.id];
-      const avg = p?.avgVolume || pro?.avgVolume || 0;
-      return avg === 0 || avg >= 500000; // لو ما في بيانات حجم → يمر
-    });
-
-  // ترتيب: قوة × 0.4 + ثقة × 0.3 + جودة × 0.2 + توقيت × 0.1
-  // FIX: conviction = 10 بدل 20 — لا يطغى على قوة السهم الحقيقية
-  candidates.sort((a,b) => {
-    const timingBonus = (s) =>
-      s.entryTiming==='ادخل الآن' ? 15 :
-      s.entryTiming==='مقبول'     ? 5  : 0;
-    const convictionBonus = (s) => s.isConviction ? 10 : 0;
-    // ✅ مكافأة شمعة صاعدة قوية
-    const candleBonus = (s) => {
-      if(!s.candlePatterns?.length) return 0;
-      const top = s.candlePatterns[0];
-      return top.signal==='bullish' ? top.strength*2 : top.signal==='bearish' ? -top.strength*2 : 0;
-    };
-    // ✅ مكافأة القوة النسبية
-    const rsBonus = (s) => s.relativeStrength ? Math.max(-10, Math.min(15, s.relativeStrength.score)) : 0;
-    const analystBonus = (s) => s.analystView ? Math.max(-8, Math.min(8, s.analystView.bias * 3)) : 0;
-    const stageBonus = (s) => s.recStage === 'confirmed' ? 25 : s.recStage === 'conditional' ? 10 : 0;
-    const scoreA = a.strength*0.4 + a.confidence*0.3 + a.tradeQuality*0.2
-                 + timingBonus(a) + convictionBonus(a) + candleBonus(a) + rsBonus(a) + analystBonus(a) + stageBonus(a);
-    const scoreB = b.strength*0.4 + b.confidence*0.3 + b.tradeQuality*0.2
-                 + timingBonus(b) + convictionBonus(b) + candleBonus(b) + rsBonus(b) + analystBonus(b) + stageBonus(b);
-    return scoreB - scoreA;
+    .filter(Boolean);
+  const recs = window.RamiAnalysis.selectRecommendations(analyzed, {
+    minEntryRR: REC_MIN_ENTRY_RR,
+    minEntryQuality: REC_MIN_ENTRY_QUALITY,
+    minEntryADX: REC_MIN_ENTRY_ADX,
+    maxRecs: 10,
   });
-
-  // لا نمنع الفرص بسبب حالة السوق؛ السوق يظهر كتحذير والاختيار للمستخدم.
-  const maxRecs = 10;
-
-  const recs = [];
-  const usedSectors = new Set();
-  // الجولة الأولى: توصية واحدة لكل قطاع
-  for(const c of candidates) {
-    if(recs.length>=maxRecs) break;
-    if(!usedSectors.has(c.sector)) {
-      recs.push(c);
-      usedSectors.add(c.sector);
-    }
-  }
-  // الجولة الثانية: أكمل بأقوى المرشحين بدون تكرار
-  for(const c of candidates) {
-    if(recs.length>=maxRecs) break;
-    if(!recs.find(r=>r.id===c.id)) recs.push(c);
-  }
 
   // ══ تحديث Cooldown — سهم كان توصية وهبط -5%
   let cooldownUpdated = false;
