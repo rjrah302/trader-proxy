@@ -167,9 +167,28 @@ function latestCardRank(x) {
 }
 
 function latestCardRankLabel(rank) {
-  if (rank === 0) return '✅ دخول';
-  if (rank === 1) return '👁 مراقبة';
-  return '⛔ لا تطارد';
+  if (rank === 0) return '🟢 ادخل';
+  if (rank === 1) return '🟡 راقب';
+  return '🔴 لا تطارد';
+}
+
+function latestShortReason(x, rank) {
+  const note = String(x?.note || '').trim();
+  const text = `${x?.decision || ''} ${x?.signal || ''} ${note}`.toLowerCase();
+  if (/fmp|اشتراك/.test(text)) return 'مصدر خارجي فقط؛ انتظر تكرار أو VWAP وحجم';
+  if (/vwap/.test(text) && /حجم/.test(text)) return 'ينتظر تأكيد VWAP والحجم';
+  if (/pullback|تراجع/.test(text)) return 'مرتفع؛ انتظر تراجع مناسب';
+  if (/الدعم|support/.test(text)) return 'قريب من الدعم؛ راقب الثبات';
+  if (/المقاومة|resistance|اختراق/.test(text)) return 'ينتظر اختراق مقاومة واضح';
+  if (/ليلي|السوق مغلق/.test(text)) return 'تحليل ليلي؛ انتظر الافتتاح';
+  if (rank === 0) return 'الشروط الحالية تسمح بالدخول حسب الأداة';
+  if (rank === 1) return 'فرصة متابعة؛ انتظر محفز الدخول';
+  return 'الحركة غير مؤكدة الآن';
+}
+
+function latestShortName(name) {
+  const s = String(name || '').trim();
+  return s.length > 24 ? `${s.slice(0, 24)}…` : s;
 }
 
 function formatLatestTabsMessage(kind, data) {
@@ -190,11 +209,7 @@ function formatLatestTabsMessage(kind, data) {
   const actionableCount = decorated.filter(v => v.rank === 0).length;
   const watchCount = decorated.filter(v => v.rank === 1).length;
   const avoidCount = decorated.filter(v => v.rank === 2).length;
-  const items = decorated
-    .filter(v => v.rank < 2)
-    .slice(0, kind === 'hunter' ? 8 : 6);
-  const fallbackAvoid = !items.length ? decorated.filter(v => v.rank === 2).slice(0, 3) : [];
-  const shown = items.length ? items : fallbackAvoid;
+  const shown = decorated.slice(0, kind === 'hunter' ? 20 : 10);
   const market = data?.market || {};
   const savedAt = data?.times?.[kind === 'recs' ? 'recs' : kind] || data?.savedAt;
   const marketLine = `SPY ${fmtPct(market.spyChange)} | QQQ ${fmtPct(market.qqqChange)} | ${market.open ? 'السوق مفتوح' : 'السوق مغلق'}`;
@@ -202,7 +217,7 @@ function formatLatestTabsMessage(kind, data) {
   let m = `<b>${titles[kind]}</b>\n`;
   m += `آخر تحديث: ${fmtSavedTime(savedAt)}\n`;
   m += `${marketLine}\n`;
-  m += `دخول: ${actionableCount} | مراقبة: ${watchCount} | لا تطارد: ${avoidCount}\n`;
+  m += `🟢 دخول ${actionableCount} | 🟡 مراقبة ${watchCount} | 🔴 لا تطارد ${avoidCount}\n`;
   m += `──────────────\n`;
 
   if (!rawItems.length) {
@@ -211,28 +226,17 @@ function formatLatestTabsMessage(kind, data) {
     return m;
   }
 
-  if (!items.length && fallbackAvoid.length) {
-    m += `لا توجد فرص دخول أو مراقبة قوية الآن. هذه أكثر أسهم ظهرت لكن قرارها <b>لا تطارد</b>:\n`;
-    m += `──────────────\n`;
-  }
-
   shown.forEach(({ x, rank }, i) => {
     const symbol = htmlSafe(x.id || x.symbol || '—');
-    const name = htmlSafe(x.name || '');
-    const decision = htmlSafe(x.decision || x.signal || 'مراقبة');
-    const note = htmlSafe(x.note || '');
-    m += `${i + 1}) ${latestCardRankLabel(rank)} <b>${symbol}</b>${name ? ` — ${name}` : ''}\n`;
-    m += `القرار: <b>${decision}</b>\n`;
-    m += `السعر ${fmtMoney(x.price || x.entry)} | دخول ${fmtMoney(x.entry)} | هدف ${fmtMoney(x.target)} | وقف ${fmtMoney(x.stopLoss)} | R/R ${fmtRR(x.riskReward)}\n`;
-    if (Number.isFinite(Number(x.score)) && Number(x.score) > 0) m += `القوة: ${Number(x.score).toFixed(0)}/100\n`;
-    if (note) m += `ملاحظة: ${note}\n`;
-    m += `──────────────\n`;
+    const name = htmlSafe(latestShortName(x.name));
+    const price = fmtMoney(x.price || x.entry);
+    const reason = htmlSafe(latestShortReason(x, rank));
+    m += `${i + 1}) ${latestCardRankLabel(rank)} <b>${symbol}</b>${name ? ` — ${name}` : ''} ${price}\n`;
+    m += `   السبب: ${reason}\n`;
   });
 
-  if (avoidCount > fallbackAvoid.length && !items.length) {
-    m += `تم إخفاء ${avoidCount - fallbackAvoid.length} بطاقة لا تطارد لتقليل الضجيج.\n`;
-  }
-  m += `للتفصيل اكتب رمز السهم مثل NVDA، أو افتح البطاقة كاملة في الأداة.`;
+  if (rawItems.length > shown.length) m += `+ ${rawItems.length - shown.length} بطاقة أخرى محفوظة في الأداة.\n`;
+  m += `──────────────\nللتفصيل اكتب رمز السهم مثل NVDA، أو افتح البطاقة كاملة في الأداة.`;
   return m;
 }
 
