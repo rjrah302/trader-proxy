@@ -27,13 +27,57 @@ const TG_API     = `https://api.telegram.org/bot${TG_TOKEN}`;
 // ================================================================
 // ═══════════════════ TELEGRAM HELPERS ═══════════════════════════
 // ================================================================
+function splitTelegramText(text, maxLen = 3600) {
+  const s = String(text || '');
+  if (s.length <= maxLen) return [s];
+  const chunks = [];
+  let cur = '';
+  const blocks = s.split(/(──────────────\n)/);
+  for (let i = 0; i < blocks.length; i += 2) {
+    const block = (blocks[i] || '') + (blocks[i + 1] || '');
+    if (!block) continue;
+    if ((cur + block).length <= maxLen) {
+      cur += block;
+      continue;
+    }
+    if (cur) chunks.push(cur.trim());
+    if (block.length <= maxLen) {
+      cur = block;
+      continue;
+    }
+    let lineChunk = '';
+    for (const line of block.split('\n')) {
+      const next = lineChunk ? `${lineChunk}\n${line}` : line;
+      if (next.length <= maxLen) {
+        lineChunk = next;
+      } else {
+        if (lineChunk) chunks.push(lineChunk.trim());
+        lineChunk = line.slice(0, maxLen);
+      }
+    }
+    cur = lineChunk ? `${lineChunk}\n` : '';
+  }
+  if (cur) chunks.push(cur.trim());
+  return chunks.filter(Boolean);
+}
+
 async function tgSend(text, chatId = TG_CHAT_ID) {
   try {
-    await fetch(`${TG_API}/sendMessage`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-    });
+    const chunks = splitTelegramText(text);
+    for (let i = 0; i < chunks.length; i++) {
+      const payloadText = chunks.length > 1
+        ? `${chunks[i]}\n\n(${i + 1}/${chunks.length})`
+        : chunks[i];
+      const res = await fetch(`${TG_API}/sendMessage`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ chat_id: chatId, text: payloadText, parse_mode: 'HTML' }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error('tgSend status:', res.status, body.slice(0, 300));
+      }
+    }
   } catch (e) { console.error('tgSend:', e.message); }
 }
 
