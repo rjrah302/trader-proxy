@@ -246,6 +246,15 @@ function isMarketOpen() {
   return getMarketSession() === 'open';
 }
 
+function isRealMarketOpen() {
+  if(!window.DEBUG_MARKET) return isMarketOpen();
+  const prevDebug = window.DEBUG_MARKET;
+  window.DEBUG_MARKET = false;
+  const open = getMarketSession() === 'open';
+  window.DEBUG_MARKET = prevDebug;
+  return open;
+}
+
 // ── معلومات حالة السوق للعرض
 function getSessionInfo() {
   const session = getMarketSession();
@@ -3800,9 +3809,9 @@ function makeSmartJournalEntry(x, type, market, now) {
 
 function updateSmartJournalFromLatest(payload) {
   if(!payload) return;
-  if(!payload.market?.open) {
+  if(!payload.market?.realOpen) {
     evaluateSmartJournal(loadSmartJournal());
-    return; // لا تضف بطاقات جديدة خارج السوق في تقييم الأداء الحقيقي
+    return; // لا تضف بطاقات جديدة خارج السوق الحقيقي أو وضع الاختبار
   }
   const now = new Date();
   const journal = loadSmartJournal();
@@ -3900,6 +3909,8 @@ function saveLatestTabsSoon() {
         qqqChange: state.qqqChange,
         trend: state.marketTrend,
         open: isMarketOpen(),
+        realOpen: isRealMarketOpen(),
+        debug: !!window.DEBUG_MARKET,
       },
       times: {
         recs: state.recsTime ? state.recsTime.toISOString() : null,
