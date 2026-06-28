@@ -409,6 +409,62 @@
     return {...verdict, canPlaceOrder, displayEntryTiming, displayEntryNote};
   }
 
+  function selectSpeculative(candidates=[], {maxSpecs=10} = {}) {
+    return (Array.isArray(candidates) ? candidates : [])
+      .filter(Boolean)
+      .sort((a,b) => {
+        const valA = Math.min(a.riskReward || 0, 4) * 18 + (a.score || 0) * 0.35;
+        const valB = Math.min(b.riskReward || 0, 4) * 18 + (b.score || 0) * 0.35;
+        return valB - valA;
+      })
+      .slice(0, maxSpecs);
+  }
+
+  function buildHunterVerdict({
+    isNight=false,
+    marketOpen=true,
+    actionTone='neutral',
+    action='',
+    actionNote='',
+    gainerClass=null,
+    stopLoss=null,
+    vwap=null,
+    price=0,
+    checks={},
+  } = {}) {
+    const enterVerdict = isNight
+      ? {label:'مراقبة بعد الافتتاح', tone:'watch', note:'تحليل ليلي؛ لا تنفيذ قبل تأكيد VWAP والحجم بعد الفتح.'}
+      : actionTone === 'buy'
+      ? {label:'دخول مسموح', tone:'buy', note:'نفذ فقط إذا بقي فوق VWAP والحجم داعم.'}
+      : actionTone === 'support'
+        ? {label:'دخول قرب الدعم', tone:'support', note:'لا تدخل إلا قريبًا من الدعم وبوقف صغير.'}
+        : gainerClass === 'chase' || action === 'لا تطارد'
+          ? {label:'لا تدخل الآن', tone:'danger', note:'السهم مرتفع لكن الدخول متأخر؛ انتظر Pullback.'}
+          : {label:'لا تدخل الآن', tone:'watch', note:'الدخول بعد اختراق/ثبات وليس بسعر عشوائي.'};
+
+    const directOrder = isNight
+      ? {label:'لا تدخل الآن', tone:'watch', note:'ليلي فقط؛ انتظر الافتتاح وتأكيد السعر والحجم.'}
+      : actionTone === 'buy'
+      ? (action === 'ادخل بشرط'
+          ? {label:'ادخل بشرط', tone:'conditional', note:actionNote}
+          : {label:'ادخل الآن', tone:'buy', note:'السعر مناسب. نفذ مع الوقف المكتوب فقط.'})
+      : actionTone === 'support'
+        ? {label:'لا تدخل الآن', tone:'watch', note:'انتظر السعر عند الدعم أو رجوع واضح؛ ليست إشارة تنفيذ فورية.'}
+        : gainerClass === 'chase' || action === 'لا تطارد'
+          ? {label:'ممنوع الدخول', tone:'danger', note:'انتظر Pullback أو تجاهل السهم.'}
+          : {label:'لا تدخل الآن', tone:'watch', note:'انتظر محفز الدخول. لا شراء الآن.'};
+
+    const isFinalEntry = !isNight && !!marketOpen && actionTone === 'buy';
+    const triggerText = actionTone === 'buy'
+      ? 'الثبات فوق $' + Number(vwap || price || 0).toFixed(2) + ' مع RVOL أعلى من 1.5'
+      : checks?.breakout15
+        ? 'إغلاق 5 دقائق فوق قمة الاختراق'
+        : 'رجوع فوق VWAP أو Higher Low جديد';
+    const invalidationText = 'كسر $' + Number(stopLoss || 0).toFixed(2) + ' أو فقدان VWAP مع حجم بيع';
+
+    return {enterVerdict, directOrder, isFinalEntry, triggerText, invalidationText};
+  }
+
   function selectRecommendations(candidates=[], {
     minEntryRR=1.5,
     minEntryQuality=50,
@@ -491,5 +547,5 @@
     return recs;
   }
 
-  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics, calcSpecTradeMetrics, buildSpecEntryPlan, buildSpecVerdict, selectRecommendations };
+  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics, calcSpecTradeMetrics, buildSpecEntryPlan, buildSpecVerdict, selectSpeculative, buildHunterVerdict, selectRecommendations };
 });
