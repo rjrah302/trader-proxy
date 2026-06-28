@@ -5501,31 +5501,23 @@ function renderSpecCard(s, idx) {
   const orderType = atSup ? 'أمر سوق' : hasSup ? 'أمر محدد' : 'أمر سوق';
   const orderColor= atSup ? C.green   : hasSup  ? C.purple  : C.yellow;
   const buyPrice  = hasSup && !atSup  ? s.support*1.002 : s.price;
-  const specVerdict = marketClosed
-    ? {label:'مراقبة عند الافتتاح', color:C.yellow, note:'السوق مغلق؛ لا تنفيذ الآن. أعد تأكيد السعر والحجم بعد الافتتاح.'}
-    : s.isWatch
-      ? {label:'انتظار فقط', color:C.yellow, note:s.entryNote || 'لم تكتمل شروط دخول المجازفة.'}
-      : s.entryTiming === 'ادخل الآن' && s.riskReward >= 1.45 && s.score >= 45
-        ? {label:'دخول مجازفة', color:C.green, note:'دخول مسموح بشرط الالتزام بالوقف وحجم مخاطرة صغير.'}
-        : s.entryTiming === 'مقبول' && s.riskReward >= 1.45
-          ? {label:'دخول مشروط', color:C.blue, note:'الأفضل أمر محدد قرب الدعم؛ لا تطارد السعر.'}
-          : {label:'ممنوع الآن', color:C.pink, note:'الدخول متأخر أو المخاطرة غير مناسبة.'};
+  const specVerdict = window.RamiAnalysis.buildSpecVerdict({
+    marketClosed,
+    isWatch: s.isWatch,
+    entryTiming: s.entryTiming,
+    riskReward: s.riskReward,
+    score: s.score,
+    entryNote: s.entryNote,
+  });
+  specVerdict.color =
+    specVerdict.tone === 'buy' ? C.green :
+    specVerdict.tone === 'conditional' ? C.blue :
+    specVerdict.tone === 'danger' ? C.pink :
+    C.yellow;
   const specCancel = 'إلغاء الفكرة إذا كسر '+fmtPrice(s.stopLoss)+' أو فقد الزخم قبل الدخول.';
-  const displayEntryTiming = marketClosed
-    ? 'انتظر الافتتاح'
-    : s.isWatch
-    ? 'انتظر نقطة الدخول'
-    : specVerdict.label === 'ممنوع الآن'
-      ? 'لا تدخل'
-      : s.entryTiming;
-  const displayEntryNote = marketClosed
-    ? 'لا تدخل خارج وقت السوق؛ الأسعار الليلية قد تتغير مع الافتتاح.'
-    : s.isWatch
-    ? (s.entryNote || 'انتظر اكتمال شروط الدخول قبل التنفيذ.')
-    : specVerdict.label === 'ممنوع الآن'
-      ? specVerdict.note
-      : s.entryNote;
-  const canPlaceSpecOrder = !marketClosed && (specVerdict.label === 'دخول مجازفة' || specVerdict.label === 'دخول مشروط');
+  const displayEntryTiming = specVerdict.displayEntryTiming;
+  const displayEntryNote = specVerdict.displayEntryNote;
+  const canPlaceSpecOrder = specVerdict.canPlaceOrder;
   const specPlanTitle = canPlaceSpecOrder ? '📋 أمر الشراء' : '📋 خطة المراقبة';
   const displayOrderType = canPlaceSpecOrder ? orderType : 'انتظار';
   const displayOrderColor = canPlaceSpecOrder ? orderColor : specVerdict.color;
