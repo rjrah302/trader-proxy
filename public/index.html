@@ -4889,6 +4889,7 @@ function renderToolReportTab() {
 function renderBottomNav() {
   const tabs = [
     {id:'rec',     icon:'ti-target',     label:'توصيات'},
+    {id:'waiting', icon:'ti-hourglass',  label:'انتظار'},
     {id:'spec',    icon:'ti-dice',       label:'مجازفة'},
     {id:'hunter',  icon:'ti-crosshair',  label:'صائد'},
     {id:'market',  icon:'ti-chart-bar',  label:'السوق'},
@@ -4987,7 +4988,9 @@ function renderBottomNav() {
 function renderTabs() {
   const tabs = [
     {id:'rec',     icon:'🎯', label:'توصياتي'},
+    {id:'waiting', icon:'⏳', label:'انتظار'},
     {id:'spec',    icon:'🎲', label:'مجازفة'},
+    {id:'hunter',  icon:'🎯', label:'صائد'},
     {id:'market',  icon:'📊', label:'السوق'},
     {id:'report',  icon:'📊', label:'التقرير'},
     {id:'history', icon:'📈', label:'السجل'},
@@ -5032,10 +5035,164 @@ function renderTabs() {
   ));
 }
 
+function waitingReasonFromHunter(h) {
+  const missing = [];
+  if(!h.checks?.aboveVwap) missing.push('رجوع فوق VWAP');
+  if(!h.checks?.breakout15) missing.push('اختراق قمة 15 دقيقة');
+  if(!h.checks?.higherLow) missing.push('Higher Low');
+  if((h.rvol || 0) < 1.4) missing.push('حجم أعلى');
+  if(h.checks?.tooCloseToResistance) missing.push('ابتعاد عن المقاومة');
+  return missing.slice(0, 2).join(' + ') || h.actionNote || 'ينقصه تأكيد التنفيذ';
+}
+
+function buildWaitingCandidates() {
+  const items = [];
+  (state.recs || []).forEach(r => {
+    const label = r.recDecision?.label || (r.activeBuy ? 'ادخل الآن' : r.conditionalBuy ? 'ادخل بشرط' : r.earlyRadar ? 'استعد' : 'راقب فقط');
+    if(r.activeBuy || r.blockEntry || r.tooCloseToResistance) return;
+    if(!(r.conditionalBuy || r.earlyRadar || r.nearSupport || /استعد|شرط|راقب/.test(label))) return;
+    const missing = r.conditionalBuy
+      ? (r.recDecision?.note || r.entryNote || 'ينقص تنفيذ شرط الدخول')
+      : r.earlyRadar
+        ? 'قريب من الإشارة؛ انتظر تأكيد الزخم والحجم'
+        : r.nearSupport
+          ? 'قريب من الدعم؛ يحتاج ثبات وعدم كسر'
+          : (r.entryNote || 'ينقص تأكيد الدخول');
+    items.push({
+      id:r.id, name:r.name, source:'توصيات', type:'rec',
+      price:r.price, target:r.target, stopLoss:r.stopLoss, rr:r.riskReward,
+      score: Math.round((r.confidence || 50) * 0.45 + (r.tradeQuality || 50) * 0.35 + (r.strength || 50) * 0.2),
+      missing, note:label, color:C.blue, selected:r.id,
+    });
+  });
+
+  (state.speculativeRecs || []).forEach(s => {
+    if(s.entryTiming === 'ادخل الآن') return;
+    if(s.score < 45) return;
+    const missing = s.entryTiming === 'مقبول'
+      ? (s.entryNote || 'قريبة؛ تحتاج انضباط الوقف والدخول')
+      : s.entryTiming === 'انتظر'
+        ? 'ينقصها محفز دخول أو قرب أفضل من الدعم'
+        : s.entryNote || 'ينقصها تأكيد قبل المجازفة';
+    items.push({
+      id:s.id, name:s.name, source:'مجازفة', type:'spec',
+      price:s.price, target:s.target, stopLoss:s.stopLoss, rr:s.riskReward,
+      score:s.score || 0, missing, note:s.entryTiming || 'انتظار',
+      color:C.purple, selected:s.id+'_spec',
+    });
+  });
+
+  (state.hunterRecs || []).forEach(h => {
+    if(h.actionTone === 'buy' || h.gainerClass === 'chase' || h.action === 'لا تطارد') return;
+    if((h.score || 0) < 55) return;
+    items.push({
+      id:h.id, name:h.name, source:'صائد', type:'hunter',
+      price:h.price, target:h.targetPrice, stopLoss:h.stopLoss, rr:h.rr,
+      score:h.score || 0, missing:waitingReasonFromHunter(h),
+      note:h.action || 'رادار', color:C.orange, selected:h.id+'_hunter',
+    });
+  });
+
+  return items
+    .filter(x => x.id && x.price)
+    .sort((a,b) => (b.score || 0) - (a.score || 0))
+    .slice(0, 15);
+}
+
+function renderWaitingTab() {
+  const items = buildWaitingCandidates();
+  const marketClosed = !isMarketOpen();
+  return el('div', {style:{padding:'12px 16px'}}, [
+    el('div', {style:{marginBottom:'12px'}}, [
+      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}, [
+        el('div', {style:{fontSize:'14px', fontWeight:'900', color:C.yellow}}, ['⏳ الانتظار الذكي — '+items.length+' سهم']),
+        el('div', {style:{fontSize:'10px', fontWeight:'800', color:marketClosed?C.pink:C.green}}, [
+          marketClosed ? 'السوق مغلق' : 'السوق مفتوح'
+        ]),
+      ]),
+      el('div', {style:{
+        fontSize:'10px', color:C.text2, lineHeight:'1.6',
+        background:'rgba(255,209,102,.06)', border:'1px solid rgba(255,209,102,.18)',
+        borderRadius:'9px', padding:'8px 10px',
+      }}, [
+        'هذه ليست إشارات دخول. تعرض الأسهم الأقرب للتحول إلى دخول وتوضح الشرط الناقص حتى تراقبها قبل أن تطير.',
+      ]),
+    ]),
+
+    items.length === 0
+      ? el('div', {style:{textAlign:'center', padding:'44px 10px', color:C.text2}}, [
+          el('div', {style:{fontSize:'38px', marginBottom:'10px'}}, ['🔎']),
+          el('div', {style:{fontSize:'13px', fontWeight:'800', color:C.text}}, ['لا توجد أسهم قريبة من الدخول الآن']),
+          el('div', {style:{fontSize:'10px', marginTop:'6px', lineHeight:'1.6'}}, [
+            'هذا طبيعي. الانتظار الذكي لا يبحث عن كثرة، بل عن سهم ناقصه شرط أو شرطين فقط.'
+          ]),
+        ])
+      : el('div', {}, items.map((x, i) => renderWaitingCard(x, i))),
+  ]);
+}
+
+function miniInfo(label, value, color) {
+  return el('div', {style:{
+    background:'#060b14', borderRadius:'8px', padding:'6px 5px',
+    textAlign:'center', minWidth:0,
+  }}, [
+    el('div', {style:{fontSize:'8px', color:C.text3, marginBottom:'2px'}}, [label]),
+    el('div', {style:{
+      fontSize:'10px', fontWeight:'900', color,
+      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+    }}, [value || '—']),
+  ]);
+}
+
+function renderWaitingCard(x, idx) {
+  const scoreColor = x.score >= 75 ? C.green : x.score >= 65 ? C.yellow : C.orange;
+  return el('div', {style:{
+    background:'#0a1020', border:`1px solid ${x.color}30`,
+    borderRadius:'12px', padding:'11px 12px', marginBottom:'9px',
+    animationDelay:idx*0.04+'s',
+  }, class:'fade-up'}, [
+    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:'8px', marginBottom:'7px'}}, [
+      el('div', {}, [
+        el('div', {style:{fontSize:'15px', fontWeight:'900', color:C.text}}, [x.name || x.id]),
+        el('div', {style:{fontSize:'10px', color:C.text2}}, [x.id+' • '+x.source]),
+      ]),
+      el('div', {style:{
+        fontSize:'10px', fontWeight:'900', color:x.color,
+        background:x.color+'14', border:`1px solid ${x.color}34`,
+        borderRadius:'8px', padding:'4px 8px', whiteSpace:'nowrap',
+      }}, [x.note || 'انتظار']),
+    ]),
+    el('div', {style:{
+      background:'rgba(255,255,255,.035)', border:'1px solid rgba(255,255,255,.07)',
+      borderRadius:'9px', padding:'8px 9px', marginBottom:'8px',
+    }}, [
+      el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'2px'}}, ['الشرط الناقص']),
+      el('div', {style:{fontSize:'11px', fontWeight:'800', color:C.yellow, lineHeight:'1.5'}}, [x.missing]),
+    ]),
+    el('div', {style:{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'5px', marginBottom:'8px'}}, [
+      miniInfo('سعر', fmtPrice(x.price), C.text),
+      miniInfo('هدف', fmtPrice(x.target), C.green),
+      miniInfo('وقف', fmtPrice(x.stopLoss), C.pink),
+      miniInfo('قرب', Math.round(x.score || 0)+'/100', scoreColor),
+    ]),
+    el('button', {style:{
+      width:'100%', padding:'8px 10px', borderRadius:'9px',
+      background:x.color+'12', color:x.color, border:`1px solid ${x.color}30`,
+      fontSize:'11px', fontWeight:'900',
+    }, onClick:()=> {
+      state.tab = x.type === 'rec' ? 'rec' : x.type === 'spec' ? 'spec' : 'hunter';
+      state.selected = x.selected;
+      state._showMore = false;
+      render();
+    }}, ['افتح البطاقة الأصلية']),
+  ]);
+}
+
 // ── Content Router
 function renderContent() {
   const views = {
     rec:     renderRecTab,
+    waiting: renderWaitingTab,
     spec:    renderSpecTab,
     hunter:  renderHunterTab,
     market:  renderMarketTab,
