@@ -2376,71 +2376,39 @@ function calcSpeculative() {
       score = Math.max(0, score);
       if(score < 22) { specDebug.rejected.score++; return null; }
 
-      // ══ حساب وقف الخسارة والهدف — الأهم في المجازفة
-      // وقف الخسارة: أسفل الدعم مباشرة أو 2×ATR
-      const atrStop  = atrPct * 1.5; // مضبوط للمجازفة — خسارة محدودة
-      const rawStop  = ind.support && ind.support < price
-        ? Math.min(ind.support * 0.985, price*(1-atrStop/100))  // أسفل الدعم بـ 1.5%
-        : price*(1-atrStop/100);
-      const stopLoss = Math.max(rawStop, price*0.65); // حد أقصى -35%
-      const lossPct  = (price-stopLoss)/price*100;
-
-      // الهدف: مشتق من بنية السوق الحقيقية لا من ضرب الوقف
-      // 1. المقاومة المؤكدة (أولوية قصوى)
-      const resValidSpec = ind.resistance && ind.resistance > price*1.05;
-      // 2. امتداد ATR × 2.5 ضمن أفق 3-5 أيام (واقعي للمجازفة)
-      const atrExtTarget = price * (1 + (ind.atrPct||3) * 2.5 / 100);
-      // 3. الحد الأدنى المقبول: 1.6:1 للمراقبة، 2.2:1 للدخول القوي
-      const minRRTarget  = price * (1 + lossPct*1.6/100);
-
-      // نختار الهدف: المقاومة إذا كانت أعلى من الحد الأدنى، وإلا ATR extension
-      let target;
-      if(resValidSpec && ind.resistance > minRRTarget) {
-        target = ind.resistance; // هدف حقيقي من المقاومة
-      } else if(atrExtTarget > minRRTarget) {
-        target = atrExtTarget;   // هدف من ATR واقعي
-      } else {
+      // ══ حساب وقف الخسارة والهدف — من المحرك المشترك حتى تتطابق البطاقة والتنبيهات
+      const specMetrics = window.RamiAnalysis.calcSpecTradeMetrics({
+        price,
+        support: ind.support,
+        resistance: ind.resistance,
+        atrPct,
+      });
+      if(!specMetrics.targetOk) {
         specDebug.rejected.target++;
-        return null; // لا يوجد هدف حقيقي — نرفض السهم
+        return null;
       }
-
-      // إذا المقاومة بين السعر والهدف — لا نتجاوزها بدون كسر مؤكد
-      if(!resValidSpec && ind.resistance && ind.resistance > price && ind.resistance < target) {
-        target = ind.resistance * 0.97; // نقف قبل المقاومة بهامش أمان
-      }
-
-      const profitPct  = (target-price)/price*100;
-      const riskReward = lossPct>0 ? profitPct/lossPct : 0;
+      const {stopLoss, target, profitPct, lossPct, riskReward} = specMetrics;
 
       // رفض فقط إذا R/R ضعيف جداً، أما 1.0-1.7 فتظهر كمراقبة لا كدخول
       if(riskReward < 0.9) { specDebug.rejected.rr++; return null; }
 
-      // ══ توقيت الدخول
-      const distToSup = ind.support>0 ? (price-ind.support)/price*100 : 999;
-      let entryTiming, entryNote;
-      if(ind.nearSupport) {
-        entryTiming = 'ادخل الآن';
-        entryNote   = 'السعر عند الدعم $'+fmt(ind.support,2)+' — أفضل نقطة دخول';
-      } else if(distToSup<=8) {
-        entryTiming = 'مقبول';
-        entryNote   = 'قريب من الدعم — يمكن الدخول أو انتظار $'+fmt(ind.support,2);
-      } else if(distToSup<=18) {
-        entryTiming = 'انتظر';
-        entryNote   = 'انتظر تراجعاً نحو $'+fmt(ind.support,2)+' للدخول بأمان';
-      } else {
-        entryTiming = 'متأخر';
-        entryNote   = 'بعيد عن الدعم — الدخول محفوف بالمخاطر';
-      }
-
-      const isWatch = tooCloseToResistance || score < 45 || riskReward < 1.45 || entryTiming === 'انتظر' || entryTiming === 'متأخر';
-      const label = isWatch ? '👀 مراقبة مجازفة' :
-        score>=80 ? '🚀 انفجار محتمل' :
-        score>=65 ? '🔥 زخم قوي'      :
-        score>=50 ? '⚡ فرصة نشطة'    :
-                    '🎲 مجازفة';
-
-      // تخصيص رأس المال: 5-10% حسب الجودة
-      const allocPct = isWatch ? 0 : score>=70 ? 0.10 : score>=55 ? 0.07 : 0.05;
+      // ══ توقيت الدخول — من المحرك المشترك
+      const specPlan = window.RamiAnalysis.buildSpecEntryPlan({
+        price,
+        support: ind.support,
+        nearSupport: ind.nearSupport,
+        tooCloseToResistance,
+        score,
+        riskReward,
+      });
+      const {
+        distToSupport: distToSup,
+        entryTiming,
+        entryNote,
+        isWatch,
+        label,
+        allocPct,
+      } = specPlan;
       if(isWatch) specDebug.watch++;
 
       return {
