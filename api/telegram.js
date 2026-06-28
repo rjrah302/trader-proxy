@@ -154,6 +154,15 @@ async function fbGetSmartJournal() {
   } catch (e) { return []; }
 }
 
+async function fbSaveSmartJournal(records) {
+  try {
+    await getDB()
+      .collection('users').doc('default')
+      .collection('data').doc('smart_journal')
+      .set({ records: (records || []).slice(-800), updatedAt: new Date() }, { merge: true });
+  } catch (e) { console.error('fbSaveSmartJournal:', e.message); }
+}
+
 // ── آخر نتائج محفوظة من الأداة نفسها: توصيات / مجازفة / صائد
 async function fbGetLatestTabs() {
   try {
@@ -807,10 +816,83 @@ function buildPortfolioUpdateMsg(sym, a, trade) {
 // ================================================================
 // ═══════════════════ REPORT GENERATOR ═══════════════════════════
 // ================================================================
+async function getSmartJournalQuote(sym) {
+  if (!FMP_KEY || !sym) return null;
+  try {
+    const r = await fetch(
+      `https://financialmodelingprep.com/stable/quote?symbol=${encodeURIComponent(sym)}&apikey=${FMP_KEY}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    const d = await r.json();
+    const q = Array.isArray(d) ? d[0] : d;
+    return q?.price ? +q.price : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function evaluateSmartJournalForReport(records) {
+  let changed = false;
+  records.forEach(r => {
+    if (['target', 'stop', 'expired'].includes(r.status)) {
+      r.result = r.status;
+      r.status = 'closed';
+      r.closeReason = r.result === 'target' ? 'وصل الهدف' : r.result === 'stop' ? 'ضرب الوقف' : 'انتهت المدة';
+      if (!r.closeAt && r.closedAt) r.closeAt = r.closedAt;
+      if (!r.closedAt && r.closeAt) r.closedAt = r.closeAt;
+      changed = true;
+    }
+  });
+
+  const open = records.filter(r => r.status === 'open' && r.id);
+  if (!open.length) return { records, changed };
+
+  const symbols = [...new Set(open.map(r => r.id))];
+  const quotes = {};
+  for (let i = 0; i < symbols.length; i += 8) {
+    await Promise.all(symbols.slice(i, i + 8).map(async sym => {
+      const price = await getSmartJournalQuote(sym);
+      if (price) quotes[sym] = price;
+    }));
+  }
+
+  const now = Date.now();
+  records.forEach(r => {
+    if (r.status !== 'open') return;
+    const cur = quotes[r.id];
+    if (!cur || !r.entry) return;
+
+    const target = +r.target || 0;
+    const stop = +r.stopLoss || 0;
+    const expectedDays = Math.max(1, +(r.expectedDays || 5));
+    const start = new Date(r.signalAt || r.createdAt || now).getTime();
+    const ageDays = (now - start) / 86400000;
+    const hitTarget = target > 0 && cur >= target;
+    const hitStop = stop > 0 && cur <= stop;
+    const expired = ageDays >= expectedDays;
+
+    r.lastPrice = cur;
+    r.livePnlPct = +((cur - r.entry) / r.entry * 100).toFixed(2);
+
+    if (hitTarget || hitStop || expired) {
+      r.status = 'closed';
+      r.result = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
+      r.closeReason = hitTarget ? 'وصل الهدف' : hitStop ? 'ضرب الوقف' : 'انتهت المدة';
+      r.closePrice = cur;
+      r.closeAt = new Date(now).toISOString();
+      r.closedAt = r.closeAt;
+      r.pnlPct = r.livePnlPct;
+      changed = true;
+    }
+  });
+
+  return { records, changed };
+}
+
 function calcSmartJournalStats(records) {
   const closed = records.filter(r => r.status === 'closed');
   const open = records.filter(r => r.status === 'open');
-  const wins = closed.filter(r => r.result === 'target' || (r.result === 'expired' && (r.pnlPct || 0) > 0));
+  const wins = closed.filter(r => r.result === 'target' || (r.result === 'expired' && (r.pnlPct || 0) >= 0));
   const losses = closed.filter(r => r.result === 'stop' || (r.result === 'expired' && (r.pnlPct || 0) < 0));
   const expired = closed.filter(r => r.result === 'expired');
   const winRate = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
@@ -819,11 +901,15 @@ function calcSmartJournalStats(records) {
 }
 
 async function generateSmartReport() {
-  const records = await fbGetSmartJournal();
+  let records = await fbGetSmartJournal();
   if (!records.length) {
     await tgSend('📈 لا يوجد سجل ذكي بعد\nسيبدأ السجل تلقائياً عند ظهور أول بطاقة دخول من الأداة.');
     return;
   }
+
+  const evaluated = await evaluateSmartJournalForReport(records);
+  records = evaluated.records;
+  if (evaluated.changed) await fbSaveSmartJournal(records);
 
   const all = calcSmartJournalStats(records);
   const rec = calcSmartJournalStats(records.filter(r => r.type === 'rec'));
