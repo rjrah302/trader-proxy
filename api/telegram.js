@@ -158,6 +158,20 @@ function getLatestTabItems(data, kind) {
   return [];
 }
 
+function latestCardRank(x) {
+  const text = `${x?.decision || ''} ${x?.signal || ''} ${x?.actionTone || ''} ${x?.note || ''}`.toLowerCase();
+  if (/ادخل|دخول فعلي|شراء قوي|دخول مسموح|buy/.test(text) && !/لا تدخل|لا تطارد|مراقبة فقط|راقب/.test(text)) return 0;
+  if (/شراء مشروط|عند الدعم|راقب|مراقبة|انتظار|support|watch/.test(text)) return 1;
+  if (/لا تطارد|لا تدخل|ممنوع|تجنب|chase/.test(text)) return 2;
+  return 1;
+}
+
+function latestCardRankLabel(rank) {
+  if (rank === 0) return '✅ دخول';
+  if (rank === 1) return '👁 مراقبة';
+  return '⛔ لا تطارد';
+}
+
 function formatLatestTabsMessage(kind, data) {
   const titles = {
     recs: '🎯 توصيات الأداة',
@@ -169,8 +183,18 @@ function formatLatestTabsMessage(kind, data) {
     spec: 'لا توجد فرص مجازفة محفوظة الآن.',
     hunter: 'لا توجد فرص صائد محفوظة الآن.',
   };
-  const limit = kind === 'hunter' ? 10 : 8;
-  const items = getLatestTabItems(data, kind).slice(0, limit);
+  const rawItems = getLatestTabItems(data, kind);
+  const decorated = rawItems
+    .map((x, i) => ({ x, i, rank: latestCardRank(x) }))
+    .sort((a, b) => a.rank - b.rank || Number(b.x?.score || 0) - Number(a.x?.score || 0));
+  const actionableCount = decorated.filter(v => v.rank === 0).length;
+  const watchCount = decorated.filter(v => v.rank === 1).length;
+  const avoidCount = decorated.filter(v => v.rank === 2).length;
+  const items = decorated
+    .filter(v => v.rank < 2)
+    .slice(0, kind === 'hunter' ? 8 : 6);
+  const fallbackAvoid = !items.length ? decorated.filter(v => v.rank === 2).slice(0, 3) : [];
+  const shown = items.length ? items : fallbackAvoid;
   const market = data?.market || {};
   const savedAt = data?.times?.[kind === 'recs' ? 'recs' : kind] || data?.savedAt;
   const marketLine = `SPY ${fmtPct(market.spyChange)} | QQQ ${fmtPct(market.qqqChange)} | ${market.open ? 'السوق مفتوح' : 'السوق مغلق'}`;
@@ -178,20 +202,26 @@ function formatLatestTabsMessage(kind, data) {
   let m = `<b>${titles[kind]}</b>\n`;
   m += `آخر تحديث: ${fmtSavedTime(savedAt)}\n`;
   m += `${marketLine}\n`;
+  m += `دخول: ${actionableCount} | مراقبة: ${watchCount} | لا تطارد: ${avoidCount}\n`;
   m += `──────────────\n`;
 
-  if (!items.length) {
+  if (!rawItems.length) {
     m += `${empty[kind]}\n`;
     m += `افتح الأداة وانتظر اكتمال التحميل إذا كنت تريد تحديث القائمة.`;
     return m;
   }
 
-  items.forEach((x, i) => {
+  if (!items.length && fallbackAvoid.length) {
+    m += `لا توجد فرص دخول أو مراقبة قوية الآن. هذه أكثر أسهم ظهرت لكن قرارها <b>لا تطارد</b>:\n`;
+    m += `──────────────\n`;
+  }
+
+  shown.forEach(({ x, rank }, i) => {
     const symbol = htmlSafe(x.id || x.symbol || '—');
     const name = htmlSafe(x.name || '');
     const decision = htmlSafe(x.decision || x.signal || 'مراقبة');
     const note = htmlSafe(x.note || '');
-    m += `${i + 1}) <b>${symbol}</b>${name ? ` — ${name}` : ''}\n`;
+    m += `${i + 1}) ${latestCardRankLabel(rank)} <b>${symbol}</b>${name ? ` — ${name}` : ''}\n`;
     m += `القرار: <b>${decision}</b>\n`;
     m += `السعر ${fmtMoney(x.price || x.entry)} | دخول ${fmtMoney(x.entry)} | هدف ${fmtMoney(x.target)} | وقف ${fmtMoney(x.stopLoss)} | R/R ${fmtRR(x.riskReward)}\n`;
     if (Number.isFinite(Number(x.score)) && Number(x.score) > 0) m += `القوة: ${Number(x.score).toFixed(0)}/100\n`;
@@ -199,7 +229,10 @@ function formatLatestTabsMessage(kind, data) {
     m += `──────────────\n`;
   });
 
-  m += `هذه نسخة مختصرة من نفس بطاقات الأداة. القرار النهائي بعد قراءة البطاقة الكاملة.`;
+  if (avoidCount > fallbackAvoid.length && !items.length) {
+    m += `تم إخفاء ${avoidCount - fallbackAvoid.length} بطاقة لا تطارد لتقليل الضجيج.\n`;
+  }
+  m += `للتفصيل اكتب رمز السهم مثل NVDA، أو افتح البطاقة كاملة في الأداة.`;
   return m;
 }
 
