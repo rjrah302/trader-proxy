@@ -253,6 +253,106 @@
     };
   }
 
+  function calcSpecTradeMetrics({price=0, support=null, resistance=null, atrPct=null} = {}) {
+    price = +price || 0;
+    support = support != null ? +support : null;
+    resistance = resistance != null ? +resistance : null;
+    atrPct = Math.max(0.5, +(atrPct || 3));
+
+    if (price <= 0) {
+      return {
+        stopLoss:0, target:0, profitPct:0, lossPct:0, riskReward:0,
+        resValidSpec:false, targetOk:false, targetRejectReason:'لا توجد بيانات سعر كافية',
+      };
+    }
+
+    const atrStop = atrPct * 1.5;
+    const rawStop = support && support < price
+      ? Math.min(support * 0.985, price * (1 - atrStop / 100))
+      : price * (1 - atrStop / 100);
+    const stopLoss = Math.max(rawStop, price * 0.65);
+    const lossPct = (price - stopLoss) / price * 100;
+
+    const resValidSpec = resistance && resistance > price * 1.05;
+    const atrExtTarget = price * (1 + atrPct * 2.5 / 100);
+    const minRRTarget = price * (1 + lossPct * 1.6 / 100);
+
+    let target = null;
+    if (resValidSpec && resistance > minRRTarget) {
+      target = resistance;
+    } else if (atrExtTarget > minRRTarget) {
+      target = atrExtTarget;
+    }
+
+    if (!target) {
+      return {
+        stopLoss:+stopLoss.toFixed(2), target:0, profitPct:0,
+        lossPct:+lossPct.toFixed(2), riskReward:0,
+        resValidSpec:!!resValidSpec, targetOk:false,
+        targetRejectReason:'لا يوجد هدف حقيقي مناسب للمخاطرة',
+      };
+    }
+
+    if (!resValidSpec && resistance && resistance > price && resistance < target) {
+      target = resistance * 0.97;
+    }
+
+    const profitPct = (target - price) / price * 100;
+    const riskReward = lossPct > 0 ? profitPct / lossPct : 0;
+
+    return {
+      stopLoss:+stopLoss.toFixed(2),
+      target:+target.toFixed(2),
+      profitPct:+profitPct.toFixed(2),
+      lossPct:+lossPct.toFixed(2),
+      riskReward:+riskReward.toFixed(2),
+      resValidSpec:!!resValidSpec,
+      targetOk:true,
+      targetRejectReason:'',
+    };
+  }
+
+  function buildSpecEntryPlan({price=0, support=null, nearSupport=false, tooCloseToResistance=false, score=0, riskReward=0} = {}) {
+    price = +price || 0;
+    support = support != null ? +support : null;
+    score = +score || 0;
+    riskReward = +riskReward || 0;
+
+    const distToSupport = support > 0 && price > 0 ? (price - support) / price * 100 : 999;
+    let entryTiming, entryNote;
+
+    if (nearSupport) {
+      entryTiming = 'ادخل الآن';
+      entryNote = support ? 'السعر عند الدعم $' + support.toFixed(2) + ' — أفضل نقطة دخول' : 'السعر عند الدعم — أفضل نقطة دخول';
+    } else if (distToSupport <= 8) {
+      entryTiming = 'مقبول';
+      entryNote = support ? 'قريب من الدعم — يمكن الدخول أو انتظار $' + support.toFixed(2) : 'قريب من الدعم — يمكن الدخول أو الانتظار';
+    } else if (distToSupport <= 18) {
+      entryTiming = 'انتظر';
+      entryNote = support ? 'انتظر تراجعاً نحو $' + support.toFixed(2) + ' للدخول بأمان' : 'انتظر تراجعاً للدخول بأمان';
+    } else {
+      entryTiming = 'متأخر';
+      entryNote = 'بعيد عن الدعم — الدخول محفوف بالمخاطر';
+    }
+
+    const isWatch = !!tooCloseToResistance || score < 45 || riskReward < 1.45 || entryTiming === 'انتظر' || entryTiming === 'متأخر';
+    const label = isWatch ? '👀 مراقبة مجازفة' :
+      score >= 80 ? '🚀 انفجار محتمل' :
+      score >= 65 ? '🔥 زخم قوي' :
+      score >= 50 ? '⚡ فرصة نشطة' :
+      '🎲 مجازفة';
+    const allocPct = isWatch ? 0 : score >= 70 ? 0.10 : score >= 55 ? 0.07 : 0.05;
+
+    return {
+      distToSupport:+distToSupport.toFixed(2),
+      entryTiming,
+      entryNote,
+      isWatch,
+      label,
+      allocPct,
+    };
+  }
+
   function selectRecommendations(candidates=[], {
     minEntryRR=1.5,
     minEntryQuality=50,
@@ -335,5 +435,5 @@
     return recs;
   }
 
-  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics, selectRecommendations };
+  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics, calcSpecTradeMetrics, buildSpecEntryPlan, selectRecommendations };
 });
