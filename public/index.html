@@ -28,38 +28,21 @@ function _initFirebase() {
     const _DB      = firebase.firestore();
     const _USER_ID = 'default';
 
-    window._fbSavePortfolio = async function(portfolio) {
+    window._fbSaveSmartJournal = async function(records) {
       try {
         await _DB.collection('users').doc(_USER_ID)
-                 .collection('data').doc('portfolio')
-                 .set({ trades: portfolio, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-        console.log('[FB] portfolio saved ✅', portfolio.length);
-      } catch(e) { console.warn('[FB] savePortfolio:', e.message); }
+                 .collection('data').doc('smart_journal')
+                 .set({ records: records.slice(-800), updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        console.log('[FB] smart journal saved ✅', records.length);
+      } catch(e) { console.warn('[FB] saveSmartJournal:', e.message); }
     };
 
-    window._fbLoadPortfolio = async function() {
+    window._fbLoadSmartJournal = async function() {
       try {
         const snap = await _DB.collection('users').doc(_USER_ID)
-                              .collection('data').doc('portfolio').get();
-        return snap.exists ? (snap.data().trades || []) : [];
-      } catch(e) { console.warn('[FB] loadPortfolio:', e.message); return []; }
-    };
-
-    window._fbSaveHistory = async function(history) {
-      try {
-        await _DB.collection('users').doc(_USER_ID)
-                 .collection('data').doc('rec_history')
-                 .set({ records: history.slice(-500), updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-        console.log('[FB] history saved ✅', history.length);
-      } catch(e) { console.warn('[FB] saveHistory:', e.message); }
-    };
-
-    window._fbLoadHistory = async function() {
-      try {
-        const snap = await _DB.collection('users').doc(_USER_ID)
-                              .collection('data').doc('rec_history').get();
+                              .collection('data').doc('smart_journal').get();
         return snap.exists ? (snap.data().records || []) : [];
-      } catch(e) { console.warn('[FB] loadHistory:', e.message); return []; }
+      } catch(e) { console.warn('[FB] loadSmartJournal:', e.message); return []; }
     };
 
     window._fbSaveLatestTabs = async function(payload) {
@@ -73,10 +56,10 @@ function _initFirebase() {
 
     window._fbSync = async function() {
       try {
-        // ✅ السحابة للسجل فقط — المحفظة محلية
-        const history = await window._fbLoadHistory();
-        if(history.length) localStorage.setItem('rec_history', JSON.stringify(history));
-        console.log('[FB] sync ✅ history='+history.length);
+        // ✅ السحابة للسجل الذكي فقط — لا محفظة يدوية ولا سجل قديم
+        const smart = await window._fbLoadSmartJournal();
+        if(smart.length) localStorage.setItem('smart_journal', JSON.stringify(smart));
+        console.log('[FB] sync ✅ smart='+smart.length);
       } catch(e) { console.warn('[FB] sync error:', e.message); }
     };
 
@@ -3735,13 +3718,135 @@ function renderRelativeStrength(stockChange) {
 //                  resultDate, resultPrice, result:'win'|'loss'|'pending', pnlPct}]
 
 function loadHistory() {
-  try { return JSON.parse(localStorage.getItem('rec_history')||'[]'); } catch(e) { return []; }
+  return loadSmartJournal();
 }
 
 function saveHistory(h) {
-  const data = h.slice(-500);
-  try { localStorage.setItem('rec_history', JSON.stringify(data)); } catch(e) {}
-  if(window._fbReady) window._fbSaveHistory(data).catch(()=>{});
+  saveSmartJournal(Array.isArray(h) ? h : []);
+}
+
+function loadSmartJournal() {
+  try { return JSON.parse(localStorage.getItem('smart_journal')||'[]'); } catch(e) { return []; }
+}
+
+function saveSmartJournal(records) {
+  const data = records.slice(-800);
+  try { localStorage.setItem('smart_journal', JSON.stringify(data)); } catch(e) {}
+  if(window._fbReady && window._fbSaveSmartJournal) window._fbSaveSmartJournal(data).catch(()=>{});
+}
+
+function isJournalEntryCard(x) {
+  const text = ((x?.decision||'')+' '+(x?.signal||'')+' '+(x?.actionTone||'')+' '+(x?.note||'')).toLowerCase();
+  if(!x || !x.id || !x.entry || !x.target || !x.stopLoss) return false;
+  if(x.isRadar || x.isNight || x.isWatch || x.gainerClass === 'chase') return false;
+  if(/لا تطارد|لا تدخل|ممنوع|تجنب|راقب فقط|مراقبة فقط/.test(text)) return false;
+  return /ادخل|دخول|شراء قوي|شراء مشروط|buy|conditional/.test(text);
+}
+
+function estimateJournalDays(x, type) {
+  try {
+    const dur = estimateTradeDuration({
+      kind: type === 'hunter' ? 'hunter' : type === 'spec' ? 'spec' : 'rec',
+      profitPct: +(x.profitPct || 0),
+      atrPct: +(x.atrPct || 2.5),
+      actionTone: x.actionTone || '',
+      isNight: !!x.isNight,
+    });
+    return Math.max(1, +(dur.days || 3));
+  } catch(e) {
+    return type === 'spec' ? 5 : type === 'hunter' ? 3 : 5;
+  }
+}
+
+function makeSmartJournalEntry(x, type, market, now) {
+  const expectedDays = estimateJournalDays(x, type);
+  const entry = +(x.entry || x.price || 0);
+  const target = +(x.target || 0);
+  const stopLoss = +(x.stopLoss || 0);
+  const keyDate = now.toISOString().slice(0,10);
+  return {
+    journalId: [type, x.id, keyDate, entry.toFixed(2), target.toFixed(2), stopLoss.toFixed(2)].join(':'),
+    id: x.id,
+    name: x.name || '',
+    sector: x.sector || '',
+    type,
+    decision: x.decision || x.signal || '',
+    reason: x.note || '',
+    signalAt: now.toISOString(),
+    entry,
+    target,
+    stopLoss,
+    riskReward: +(x.riskReward || 0),
+    profitPct: +(x.profitPct || 0),
+    lossPct: +(x.lossPct || 0),
+    expectedDays,
+    expiresAt: new Date(now.getTime() + expectedDays*864e5).toISOString(),
+    score: +(x.score || 0),
+    confidence: +(x.confidence || 0),
+    tradeQuality: +(x.tradeQuality || 0),
+    spyChange: market?.spyChange ?? null,
+    qqqChange: market?.qqqChange ?? null,
+    marketTrend: market?.trend || null,
+    status: 'open',
+    result: 'pending',
+    closeReason: null,
+    closeAt: null,
+    closePrice: null,
+    pnlPct: 0,
+    maxPrice: entry,
+    minPrice: entry,
+  };
+}
+
+function updateSmartJournalFromLatest(payload) {
+  if(!payload) return;
+  const now = new Date();
+  const journal = loadSmartJournal();
+  const byId = new Set(journal.map(x => x.journalId));
+  const groups = [
+    ['rec', payload.recs || []],
+    ['spec', payload.spec || []],
+    ['hunter', payload.hunter || []],
+  ];
+
+  groups.forEach(([type, list]) => {
+    (list || []).forEach(card => {
+      if(!isJournalEntryCard(card)) return;
+      const rec = makeSmartJournalEntry(card, type, payload.market || {}, now);
+      if(byId.has(rec.journalId)) return;
+      byId.add(rec.journalId);
+      journal.push(rec);
+    });
+  });
+
+  evaluateSmartJournal(journal, false);
+  saveSmartJournal(journal);
+}
+
+function evaluateSmartJournal(records, persist=true) {
+  const now = new Date();
+  let changed = false;
+  records.forEach(r => {
+    if(r.status !== 'open') return;
+    const cur = +(state.prices?.[r.id]?.price || 0);
+    if(!cur || !r.entry) return;
+    r.maxPrice = Math.max(+(r.maxPrice || r.entry), cur);
+    r.minPrice = Math.min(+(r.minPrice || r.entry), cur);
+    r.pnlPct = +(((cur - r.entry)/r.entry)*100).toFixed(2);
+    const hitTarget = r.target && cur >= r.target;
+    const hitStop = r.stopLoss && cur <= r.stopLoss;
+    const expired = r.expiresAt && now >= new Date(r.expiresAt);
+    if(hitTarget || hitStop || expired) {
+      r.status = 'closed';
+      r.closeAt = now.toISOString();
+      r.closePrice = cur;
+      r.result = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
+      r.closeReason = hitTarget ? 'وصل الهدف' : hitStop ? 'ضرب الوقف' : 'انتهت المدة';
+      changed = true;
+    }
+  });
+  if(changed && persist) saveSmartJournal(records);
+  return records;
 }
 
 function compactLatestCard(x, type) {
@@ -3793,12 +3898,14 @@ function saveLatestTabsSoon() {
       hunter: (state.hunterRecs || []).slice(0, 20).map(x => compactLatestCard(x, 'hunter')).filter(Boolean),
       savedAt: new Date().toISOString(),
     };
+    updateSmartJournalFromLatest(payload);
     window._fbSaveLatestTabs(payload).catch(()=>{});
   }, 500);
 }
 
 // ── تسجيل توصيات اليوم في السجل (يُستدعى بعد calcRecs)
 function recordRecsToHistory(recs, forceSession) {
+  return; // السجل القديم أُلغي — smart_journal هو المصدر الوحيد للتقييم
   if(!recs||!recs.length) return;
   // ✅ لا تسجيل خارج وقت السوق — أسعار الـ cache لا تُمثّل إشارة حقيقية
   if(!isMarketOpen()) return;
@@ -3844,6 +3951,7 @@ function recordRecsToHistory(recs, forceSession) {
 
 // ── تسجيل المجازفة في السجل
 function recordSpecToHistory(specs) {
+  return; // السجل القديم أُلغي — smart_journal هو المصدر الوحيد للتقييم
   if(!specs||!specs.length) return;
   if(!isMarketOpen()) return;
   const history = loadHistory();
@@ -3931,8 +4039,146 @@ function calcHistoryStats(history) {
            pending:pending.length, winRate, avgWin, avgLoss, expectancy };
 }
 
+function calcSmartJournalStats(records) {
+  const closed = records.filter(r => r.status === 'closed');
+  const open = records.filter(r => r.status === 'open');
+  const wins = closed.filter(r => r.result === 'target' || (r.result === 'expired' && (r.pnlPct||0) > 0));
+  const losses = closed.filter(r => r.result === 'stop' || (r.result === 'expired' && (r.pnlPct||0) < 0));
+  const expired = closed.filter(r => r.result === 'expired');
+  const winRate = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
+  const avgPnl = closed.length ? +(closed.reduce((s,r)=>s+(r.pnlPct||0),0)/closed.length).toFixed(2) : 0;
+  return {total:records.length, open:open.length, closed:closed.length, wins:wins.length, losses:losses.length, expired:expired.length, winRate, avgPnl};
+}
+
+function renderSmartJournalTab() {
+  const records = evaluateSmartJournal(loadSmartJournal());
+  const filter = state.journalType || 'all';
+  const list = filter === 'all' ? records : records.filter(r => r.type === filter);
+  const stats = calcSmartJournalStats(list);
+  const recent = [...list].reverse();
+  const typeLabel = t => t === 'rec' ? 'توصية' : t === 'spec' ? 'مجازفة' : t === 'hunter' ? 'صائد' : 'الكل';
+  const statusLabel = r => r.status === 'open' ? 'مفتوحة' : (r.closeReason || 'مغلقة');
+  const statusColor = r => r.status === 'open' ? C.blue : r.result === 'target' ? C.green : r.result === 'stop' ? C.pink : C.yellow;
+  const pctText = v => v==null ? '—' : ((+v>=0?'+':'')+(+v).toFixed(2)+'%');
+  const moneyText = v => {
+    const n = +v;
+    return n > 0 ? '$'+n.toFixed(2) : '—';
+  };
+  const statCard = (title, value, sub, color=C.blue) => el('div', {style:{background:'#0a1020', border:`1px solid ${color}33`, borderRadius:'12px', padding:'12px'}}, [
+    el('div', {style:{fontSize:'10px', color:C.text3, marginBottom:'4px'}}, [title]),
+    el('div', {style:{fontSize:'17px', fontWeight:'900', color}}, [value]),
+    el('div', {style:{fontSize:'9px', color:C.text2, marginTop:'2px'}}, [sub]),
+  ]);
+  const miniStat = (label, value, color=C.text) => el('div', {style:{background:'#060b14', border:'1px solid var(--border)', borderRadius:'8px', padding:'6px', textAlign:'center'}}, [
+    el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'2px'}}, [label]),
+    el('div', {style:{fontSize:'11px', fontWeight:'900', color}}, [value]),
+  ]);
+  const fmtDateShort = iso => {
+    try { return new Date(iso).toLocaleDateString('ar',{month:'short',day:'numeric'}); } catch(e) { return '—'; }
+  };
+
+  function exportSmartCSV() {
+    const rows = [
+      ['النوع','السهم','الاسم','القرار','سبب القرار','تاريخ الظهور','دخول','هدف','وقف','R/R','مدة متوقعة','الحالة','الإغلاق','سعر الإغلاق','P/L%'].join(','),
+      ...records.map(r => [
+        typeLabel(r.type), r.id, (r.name||'').replace(/,/g,' '), (r.decision||'').replace(/,/g,' '), (r.reason||'').replace(/,/g,' '),
+        r.signalAt||'', r.entry||'', r.target||'', r.stopLoss||'', r.riskReward||'', r.expectedDays||'',
+        statusLabel(r), r.closeAt||'', r.closePrice||'', r.pnlPct ?? '',
+      ].join(','))
+    ].join('\n');
+    const blob = new Blob(['\uFEFF'+rows], {type:'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'smart_journal_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return el('div', {style:{padding:'12px 16px'}}, [
+    el('div', {style:{display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:'8px', marginBottom:'12px'}}, [
+      statCard('إجمالي السجل', String(stats.total), stats.open+' مفتوحة', C.blue),
+      statCard('المغلقة', String(stats.closed), stats.wins+' هدف / '+stats.losses+' وقف', C.green),
+      statCard('نسبة النجاح', stats.winRate+'%', stats.expired+' انتهت مدة', stats.winRate>=60?C.green:stats.winRate>=40?C.yellow:C.pink),
+      statCard('متوسط النتيجة', pctText(stats.avgPnl), 'للصفقات المغلقة', stats.avgPnl>=0?C.green:C.pink),
+    ]),
+    el('div', {style:{display:'flex', gap:'6px', overflowX:'auto', marginBottom:'12px'}}, [
+      ...[
+        ['all','الكل'],
+        ['rec','توصيات'],
+        ['spec','مجازفة'],
+        ['hunter','صائد'],
+      ].map(([id,label]) => el('button', {
+        style:{padding:'8px 12px', borderRadius:'9px', border:`1px solid ${filter===id?C.purple+'88':'var(--border)'}`, background:filter===id?'rgba(201,133,255,.12)':'#0a1020', color:filter===id?C.purple:C.text2, fontSize:'11px', fontWeight:'900', whiteSpace:'nowrap'},
+        onClick:()=>{ state.journalType=id; render(); }
+      }, [label])),
+      records.length > 0 && el('button', {
+        style:{padding:'8px 12px', borderRadius:'9px', border:`1px solid ${C.green}55`, background:'rgba(0,255,136,.08)', color:C.green, fontSize:'11px', fontWeight:'900', whiteSpace:'nowrap'},
+        onClick: exportSmartCSV
+      }, ['تصدير CSV']),
+    ]),
+    !records.length && el('div', {style:{textAlign:'center', padding:'36px 16px', color:C.text2}}, [
+      el('div', {style:{fontSize:'42px', marginBottom:'8px'}}, ['📈']),
+      el('div', {style:{fontSize:'15px', fontWeight:'900', color:C.text}}, ['السجل الذكي جاهز']),
+      el('div', {style:{fontSize:'11px', lineHeight:'1.8', marginTop:'8px'}}, ['سيتم تسجيل أي بطاقة دخول تلقائياً، ثم تقييمها بالهدف أو الوقف أو انتهاء المدة.']),
+    ]),
+    records.length > 0 && el('div', {style:{display:'flex', flexDirection:'column', gap:'8px'}}, [
+      ...recent.map(r => el('div', {style:{background:'#0a1020', border:`1px solid ${statusColor(r)}33`, borderRadius:'12px', padding:'10px'}}, [
+        el('div', {style:{display:'flex', justifyContent:'space-between', gap:'8px', alignItems:'flex-start', marginBottom:'6px'}}, [
+          el('div', {}, [
+            el('div', {style:{fontSize:'14px', fontWeight:'900', color:C.text}}, [r.id+' — '+(r.name||'')]),
+            el('div', {style:{fontSize:'10px', color:C.text3}}, [typeLabel(r.type)+' • '+fmtDateShort(r.signalAt)+' • '+(r.expectedDays||'—')+' أيام']),
+          ]),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:statusColor(r), whiteSpace:'nowrap'}}, [statusLabel(r)]),
+        ]),
+        el('div', {style:{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'6px', marginBottom:'6px'}}, [
+          miniStat('دخول', moneyText(r.entry), C.text),
+          miniStat('هدف', moneyText(r.target), C.green),
+          miniStat('وقف', moneyText(r.stopLoss), C.pink),
+          miniStat('P/L', pctText(r.pnlPct), (r.pnlPct||0)>=0?C.green:C.pink),
+        ]),
+        el('div', {style:{fontSize:'11px', color:C.text2, lineHeight:'1.6'}}, [
+          'القرار: '+(r.decision||'—')+' • السبب: '+(r.reason||'—')
+        ]),
+      ])),
+    ]),
+  ]);
+}
+
+function renderSmartReportTab() {
+  const records = evaluateSmartJournal(loadSmartJournal());
+  const all = calcSmartJournalStats(records);
+  const rec = calcSmartJournalStats(records.filter(r=>r.type==='rec'));
+  const spec = calcSmartJournalStats(records.filter(r=>r.type==='spec'));
+  const hunter = calcSmartJournalStats(records.filter(r=>r.type==='hunter'));
+  const row = (label, st, color) => el('div', {style:{background:'#0a1020', border:`1px solid ${color}33`, borderRadius:'12px', padding:'12px', marginBottom:'8px'}}, [
+    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}, [
+      el('div', {style:{fontSize:'13px', fontWeight:'900', color}}, [label]),
+      el('div', {style:{fontSize:'11px', color:C.text2}}, [st.total+' بطاقة']),
+    ]),
+    el('div', {style:{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'6px'}}, [
+      el('div', {style:{fontSize:'10px', color:C.text2}}, ['مفتوحة: '+st.open]),
+      el('div', {style:{fontSize:'10px', color:C.green}}, ['هدف: '+st.wins]),
+      el('div', {style:{fontSize:'10px', color:C.pink}}, ['وقف: '+st.losses]),
+      el('div', {style:{fontSize:'10px', color:C.yellow}}, ['نجاح: '+st.winRate+'%']),
+    ]),
+  ]);
+  return el('div', {style:{padding:'12px 16px'}}, [
+    el('div', {style:{background:'#0a1020', border:'1px solid var(--border)', borderRadius:'14px', padding:'14px', marginBottom:'12px'}}, [
+      el('div', {style:{fontSize:'15px', fontWeight:'900', color:C.text, marginBottom:'4px'}}, ['تقرير السجل الذكي']),
+      el('div', {style:{fontSize:'11px', color:C.text2, lineHeight:'1.7'}}, ['التقرير يقيس بطاقات الدخول التي سجلتها الأداة تلقائياً، ويغلقها عند الهدف أو الوقف أو انتهاء المدة.']),
+    ]),
+    row('الكل', all, C.blue),
+    row('التوصيات', rec, C.green),
+    row('المجازفة', spec, C.purple),
+    row('الصائد', hunter, C.orange),
+    !records.length && el('div', {style:{fontSize:'12px', color:C.text2, textAlign:'center', padding:'24px'}}, ['لا توجد بيانات بعد. سيبدأ التقرير بعد ظهور أول بطاقة دخول.']),
+  ]);
+}
+
 // ── واجهة عرض التاريخ
 function renderHistoryTab() {
+  return renderSmartJournalTab();
   const allHistory = updateHistoryResults();
   const history = allHistory.filter(h => (h.type || 'rec') === state.histType);
   const stats   = calcHistoryStats(history);
@@ -4107,8 +4353,8 @@ function renderHistoryTab() {
         },
         onClick: () => {
           if(confirm('حذف كل السجل؟')) {
-            localStorage.removeItem('rec_history');
-            if(window._fbReady) window._fbSaveHistory([]).catch(()=>{});
+            localStorage.removeItem('smart_journal');
+            if(window._fbReady && window._fbSaveSmartJournal) window._fbSaveSmartJournal([]).catch(()=>{});
             state.histFilter='all'; render();
           }
         },
@@ -4546,6 +4792,7 @@ function renderMacdBar() {
 }
 
 function renderToolReportTab() {
+  return renderSmartReportTab();
   const history = updateHistoryResults();
   const now = Date.now();
   const week = history.filter(h => now - new Date(h.recDate).getTime() <= 7*864e5);
@@ -4632,14 +4879,13 @@ function renderBottomNav() {
     {id:'spec',    icon:'ti-dice',       label:'مجازفة'},
     {id:'hunter',  icon:'ti-crosshair',  label:'صائد'},
     {id:'market',  icon:'ti-chart-bar',  label:'السوق'},
-    {id:'port',    icon:'ti-briefcase',  label:'محفظة'},
     {id:'report',  icon:'ti-report',     label:'تقرير'},
     {id:'history', icon:'ti-history',    label:'سجل'},
     {id:'calc',    icon:'ti-calculator', label:'حاسبة'},
   ];
 
   const histPending = (() => {
-    try { return JSON.parse(localStorage.getItem('rec_history')||'[]').filter(x=>x.result==='pending').length; }
+    try { return JSON.parse(localStorage.getItem('smart_journal')||'[]').filter(x=>x.status==='open').length; }
     catch(e) { return 0; }
   })();
 
@@ -4730,7 +4976,6 @@ function renderTabs() {
     {id:'rec',     icon:'🎯', label:'توصياتي'},
     {id:'spec',    icon:'🎲', label:'مجازفة'},
     {id:'market',  icon:'📊', label:'السوق'},
-    {id:'port',    icon:'💼', label:'محفظتي'},
     {id:'report',  icon:'📊', label:'التقرير'},
     {id:'history', icon:'📈', label:'السجل'},
     {id:'calc',    icon:'🧮', label:'حاسبة'},
@@ -4738,8 +4983,8 @@ function renderTabs() {
 
   const histPending = (() => {
     try {
-      const h = JSON.parse(localStorage.getItem('rec_history')||'[]');
-      return h.filter(x=>x.result==='pending').length;
+      const h = JSON.parse(localStorage.getItem('smart_journal')||'[]');
+      return h.filter(x=>x.status==='open').length;
     } catch(e) { return 0; }
   })();
 
@@ -4781,7 +5026,6 @@ function renderContent() {
     spec:    renderSpecTab,
     hunter:  renderHunterTab,
     market:  renderMarketTab,
-    port:    renderPortTab,
     report:  renderToolReportTab,
     history: renderHistoryTab,
     calc:    renderCalcTab,
@@ -7003,6 +7247,7 @@ function renderTraderCard(s, ind, volR, chg, priceObj) {
 // ================================================================
 
 function renderPortTab() {
+  return renderSmartJournalTab();
   // تحميل المحفظة من localStorage
   let portfolio = [];
   try { portfolio = JSON.parse(localStorage.getItem('portfolio')||'[]'); } catch(e) {}
@@ -7412,8 +7657,7 @@ function renderTipsTab() {
         '🎯 توصياتي — 127 سهم × 10 مؤشرات + شموع + قوة نسبية + أخبار',
         '🎲 مجازفة — أسهم متقلبة بقرار واضح: دخول / انتظار / ممنوع',
         '📊 السوق — نظرة كاملة مع فرز بالتغيير/الحجم/السعر',
-        '💼 محفظتي — سجّل صفقاتك مع وقف وهدف وR/R',
-        '📈 السجل — تقييم تلقائي لكل توصية (ربح/خسارة)',
+        '📈 السجل الذكي — يسجل بطاقات الدخول تلقائياً ويقفلها بهدف/وقف/مدة',
         '🧮 الحاسبة — احسب الكمية ومستويات الدخول',
       ],
     },
@@ -7563,7 +7807,7 @@ function renderTipsTab() {
     // ── القسم 14: إدارة المال
     {icon:'💰', title:'إدارة المال — القواعد الذهبية', color:C.orange, lines:[
       'لا تخاطر بأكثر من 2% من رأسمالك في صفقة توصية',
-      'المجازفة: 5-10% فقط من المحفظة الإجمالية',
+      'المجازفة: خصص لها جزءاً صغيراً من رأس المال ولا تخلطها مع التوصيات',
       'وقف الخسارة إلزامي — بدونه تخاطر بكل شيء',
       'الهدف الأول: حافظ على رأسمالك — الهدف الثاني: اربح',
     ]},
@@ -7887,199 +8131,7 @@ window.retryPrices = async () => {
   }
 })();
 
-// ═══════════════════════════════════════════════════════
-// 🦅 RamiFalconX — Telegram Bot Integration
-// ═══════════════════════════════════════════════════════
-
-const TG_TOKEN   = '8975284766:AAFFQWCyE7X8rqG3iU6h-PNy_n95iEmRX-U';
-const TG_CHAT_ID = '6195578236';
-const TG_API     = 'https://api.telegram.org/bot' + TG_TOKEN;
-
-// ── إرسال رسالة
-async function tgSend(text) {
-  try {
-    await fetch(TG_API+'/sendMessage', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ chat_id:TG_CHAT_ID, text, parse_mode:'HTML' }),
-    });
-  } catch(e){ console.warn('TG:',e.message); }
-}
-
-// ── إرسال توصيات عند الافتتاح والمنتصف
-function tgSendRecs(recs, session) {
-  if(!recs || recs.length===0) return;
-  const time = session==='منتصف' ? '7:00م' : '4:30م';
-  let msg = `🔔 <b>Rami Falcon X — ${session==='منتصف'?'تحديث المنتصف':'افتتاح السوق'} ${time}</b>\n`;
-  msg += `📊 SPY ${(state.spyChange||0)>=0?'+':''}${fmt(state.spyChange||0,2)}%\n\n`;
-  msg += `<b>توصيات اليوم:</b>\n`;
-  recs.slice(0,5).forEach((r,i)=>{
-    msg += `${i+1}. <b>${r.id}</b> ثقة ${r.confidence}% | هدف +${fmt(r.profitPct,1)}%\n`;
-  });
-  msg += `\nافتح الأداة للتفاصيل 👆`;
-  tgSend(msg);
-}
-
-// ── تنبيه وصول الهدف أو الوقف
-function tgCheckTrades() {
-  try {
-    const portfolio = JSON.parse(localStorage.getItem('portfolio')||'[]');
-    portfolio.filter(t=>!t.closed).forEach(t=>{
-      const p = state.prices[t.symbol];
-      if(!p) return;
-      const cur = p.price, target = parseFloat(t.target||0), stop = parseFloat(t.stop||0);
-      if(target>0 && cur>=target && !t._tgTarget) {
-        t._tgTarget=true;
-        tgSend(`🎯 <b>${t.symbol} وصل الهدف!</b>\n$${t.entry} → $${cur.toFixed(2)}\nربح: +${((cur-t.entry)/t.entry*100).toFixed(2)}% 🎉\nاكتب للبوت: <code>خرجت ${t.symbol}</code>`);
-      }
-      if(stop>0 && cur<=stop*1.02 && cur>stop && !t._tgStop) {
-        t._tgStop=true;
-        tgSend(`⚠️ <b>${t.symbol} اقترب من الوقف!</b>\n$${cur.toFixed(2)} | وقف: $${stop}\nراقب وكن مستعداً`);
-      }
-      if(stop>0 && cur<=stop && !t._tgBreak) {
-        t._tgBreak=true;
-        tgSend(`🚨 <b>${t.symbol} كسر الوقف!</b>\n$${cur.toFixed(2)} | خسارة: ${((cur-t.entry)/t.entry*100).toFixed(2)}%\nاخرج فوراً!`);
-      }
-    });
-  } catch(e){}
-}
-
-// ── حالة المحادثة
-const tgState = {};
-
-// ── polling معطل — البوت يعمل على Vercel webhook
-// لا نستخدم getUpdates من المتصفح لتجنب 409 Conflict
-async function tgPoll() {
-  // معطل — البوت على Vercel يتعامل مع الرسائل
-}
-
-// ── معالج الرسائل الذكي
-async function tgHandle(msg, cid) {
-  const s = tgState[cid] || {};
-  const low = msg.toLowerCase();
-
-  // ── أمر الخروج من سهم
-  if(low.startsWith('خرجت') || low.startsWith('بعت')) {
-    const sym = msg.split(/\s+/)[1]?.toUpperCase();
-    if(sym) {
-      try {
-        const port = JSON.parse(localStorage.getItem('portfolio')||'[]');
-        const t = port.find(x=>x.symbol===sym && !x.closed);
-        if(t) {
-          const cur = state.prices[sym]?.price || parseFloat(msg.split(/\s+/)[2]||t.target);
-          t.closed = true; t.closePrice = cur; t.closeDate = new Date().toISOString();
-          const pnl = ((cur-t.entry)/t.entry*100).toFixed(2);
-          localStorage.setItem('portfolio', JSON.stringify(port));
-          await tgSend(`✅ <b>${sym} مغلقة</b>\nدخول: $${t.entry} → خروج: $${cur}\n${pnl>0?'ربح +':'خسارة '}${pnl}%\nالسجل حُدّث 📊`);
-        } else {
-          await tgSend(`⚠️ ${sym} غير موجود في محفظتك`);
-        }
-      } catch(e){ await tgSend('⚠️ خطأ في التسجيل'); }
-      tgState[cid] = {};
-      return;
-    }
-  }
-
-  // ── محفظتي
-  if(msg==='محفظتي' || msg==='portfolio') {
-    try {
-      const port = JSON.parse(localStorage.getItem('portfolio')||'[]').filter(t=>!t.closed);
-      if(port.length===0) { await tgSend('📂 محفظتك فارغة'); return; }
-      let m = '💼 <b>محفظتك الآن:</b>\n──────────────\n';
-      let totalPnl = 0;
-      port.forEach(t=>{
-        const cur = state.prices[t.symbol]?.price || t.entry;
-        const pnl = ((cur-t.entry)/t.entry*100).toFixed(2);
-        const icon = pnl>0?'✅':'❌';
-        totalPnl += parseFloat(pnl);
-        m += `${icon} <b>${t.symbol}</b> دخول $${t.entry} → الآن $${cur?.toFixed(2)} (${pnl>0?'+':''}${pnl}%)\n`;
-      });
-      m += `──────────────\nإجمالي: ${totalPnl>0?'+':''}${(totalPnl/port.length).toFixed(2)}% متوسط`;
-      await tgSend(m);
-    } catch(e){ await tgSend('⚠️ خطأ'); }
-    return;
-  }
-
-  // ── تقرير اليوم
-  if(msg==='تقرير' || msg==='اليوم') {
-    const recs = state.recs || [];
-    let m = '📊 <b>توصيات اليوم:</b>\n';
-    if(recs.length===0) m += 'لا توصيات بعد — السوق مغلق\n';
-    recs.forEach((r,i)=>{ m += `${i+1}. <b>${r.id}</b> هدف +${fmt(r.profitPct,1)}% | ثقة ${r.confidence}%\n`; });
-    m += `\nSPY ${(state.spyChange||0)>=0?'+':''}${fmt(state.spyChange||0,2)}%`;
-    await tgSend(m);
-    return;
-  }
-
-  // ── استعلام عن سهم
-  const sym = msg.toUpperCase().replace(/[^A-Z]/g,'');
-  const stockExists = ALL_STOCKS?.find(x=>x.id===sym);
-  if(sym.length>=2 && sym.length<=5 && stockExists && !s.step) {
-    const ind = state.indicators[sym];
-    const p   = state.prices[sym];
-    if(!p) { await tgSend(`⏳ ${sym} — لم تُحمَّل بياناته بعد`); return; }
-    const hist = ind?.macdHist;
-    const rsi  = ind?.rsi;
-    const weekly = ind?.weeklyTrend;
-    let analysis = `📊 <b>${stockExists.name} (${sym})</b>\n`;
-    analysis += `السعر: <b>$${p.price?.toFixed(2)}</b> ${p.change>=0?'📈':'📉'} ${p.change>=0?'+':''}${p.change?.toFixed(2)}%\n`;
-    analysis += `──────────────\n`;
-    if(hist!=null) analysis += `MACD Hist: ${hist>0?'✅':'❌'} ${hist>0?'+':''}${hist?.toFixed(2)} ${ind?.macdHistDir==='expanding'?'↑ يتوسع':'↓ يضيق'}\n`;
-    if(rsi!=null)  analysis += `RSI: ${rsi<35?'✅':rsi>70?'❌':'⚠️'} ${rsi?.toFixed(1)}\n`;
-    if(weekly)     analysis += `أسبوعي: ${weekly==='bullish'?'✅ صاعد':'❌ هابط'}\n`;
-    analysis += `──────────────\n`;
-    analysis += `هل اشتريت ${sym}؟\n1️⃣ نعم — سجّل صفقة\n2️⃣ لا — معلومات فقط`;
-    tgState[cid] = { step:'ask_bought', sym, price:p.price };
-    await tgSend(analysis);
-    return;
-  }
-
-  // ── خطوات تسجيل الصفقة
-  if(s.step==='ask_bought') {
-    if(msg==='1' || msg==='نعم') {
-      tgState[cid] = { ...s, step:'ask_price' };
-      await tgSend(`بكم اشتريت ${s.sym}؟\n(اضغط إرسال للسعر الحالي $${s.price?.toFixed(2)})`);
-    } else {
-      tgState[cid] = {};
-      await tgSend(`✅ تمام — ${s.sym} للمراقبة فقط`);
-    }
-    return;
-  }
-
-  if(s.step==='ask_price') {
-    const entry = parseFloat(msg) || s.price;
-    tgState[cid] = { ...s, step:'ask_qty', entry };
-    await tgSend(`كم سهم اشتريت من ${s.sym}؟`);
-    return;
-  }
-
-  if(s.step==='ask_qty') {
-    const qty = parseInt(msg) || 1;
-    const ind  = state.indicators[s.sym];
-    const atrPct = ind?.atrPct || 3;
-    const stop = (s.entry * (1 - atrPct*2/100)).toFixed(2);
-    const target = (s.entry * (1 + atrPct*3.5/100)).toFixed(2);
-    const profitPct = ((target-s.entry)/s.entry*100).toFixed(1);
-    const days = estimateTradeDuration({kind:'spec', profitPct, atrPct}).days;
-
-    // حفظ في المحفظة
-    try {
-      const port = JSON.parse(localStorage.getItem('portfolio')||'[]');
-      port.push({ symbol:s.sym, entry:s.entry, qty, stop:parseFloat(stop), target:parseFloat(target), date:new Date().toISOString(), closed:false });
-      localStorage.setItem('portfolio', JSON.stringify(port));
-    } catch(e){}
-
-    const msg2 = `✅ <b>تم تسجيل ${s.sym}</b>\n──────────────\nدخول: $${s.entry?.toFixed(2)}\nكمية: ${qty} سهم\nرأس المال: $${(s.entry*qty).toFixed(0)}\n──────────────\n🛑 وقف: $${stop} (-${atrPct*2}%)\n🎯 هدف: $${target} (+${profitPct}%)\n⏱️ مدة متوقعة: ${days<=1?'🔥 يومي':days<=3?'⚡ '+days+' أيام':'📅 '+days+' أيام'}\n──────────────\nسأراقبه وأنبهك 👀`;
-    tgState[cid] = {};
-    await tgSend(msg2);
-    return;
-  }
-
-  // ── مساعدة
-  await tgSend(`🦅 <b>RamiFalconX</b>\n──────────────\nاكتب رمز السهم: <code>NVDA</code>\nمحفظتك: <code>محفظتي</code>\nتقرير اليوم: <code>تقرير</code>\nخروج من سهم: <code>خرجت ALAB</code>`);
-}
-
-// ── Polling معطل — البوت على Vercel يتعامل مع الرسائل
-// setInterval(() => tgPoll(), 3000);
+// Telegram يعمل الآن من ملفات /api فقط. لا يوجد توكن أو محفظة يدوية داخل المتصفح.
 </script>
 </body>
 </html>
