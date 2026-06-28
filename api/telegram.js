@@ -140,12 +140,16 @@ async function fbSet(doc, data) {
   } catch (e) { console.error('fbSet:', e.message); }
 }
 
-// ── قراءة سجل التوصيات من users/default (الأداة الرئيسية)
+// ── توافق قديم: أي طلب للسجل القديم يرجع السجل الذكي فقط
 async function fbGetHistory() {
+  return fbGetSmartJournal();
+}
+
+async function fbGetSmartJournal() {
   try {
     const s = await getDB()
       .collection('users').doc('default')
-      .collection('data').doc('rec_history').get();
+      .collection('data').doc('smart_journal').get();
     return s.exists ? (s.data().records || []) : [];
   } catch (e) { return []; }
 }
@@ -333,7 +337,7 @@ function formatLatestCardDetail(found, data) {
   m += `آخر تحديث: ${fmtSavedTime(savedAt)}\n`;
   m += `SPY ${fmtPct(market.spyChange)} | QQQ ${fmtPct(market.qqqChange)} | ${market.open ? 'السوق مفتوح' : 'السوق مغلق'}\n`;
   m += `──────────────\n`;
-  m += `${latestCardRankLabel(rank)} <b>${decision}</b>\n`;
+  m += `${latestCardRankLabel(rank)}\n`;
   m += `السعر: <b>${fmtMoney(x.price || x.entry)}</b>`;
   if (Number.isFinite(score) && score > 0) m += ` | القوة: ${score.toFixed(0)}/100`;
   if (Number.isFinite(confidence) && confidence > 0) m += ` | الثقة: ${confidence.toFixed(0)}%`;
@@ -732,9 +736,8 @@ function buildAnalysisMsg(sym, name, a, levels) {
   m += `──────────────\n`;
   m += `${a.vIcon} ${a.verdict}\n`;
   m += `──────────────\n`;
-  m += `هل اشتريت ${sym}؟\n`;
-  m += `1️⃣ نعم — سجّل الصفقة\n`;
-  m += `2️⃣ لا — أضفه للمراقبة`;
+  m += `السجل الذكي يسجل بطاقات الدخول من الأداة تلقائياً.\n`;
+  m += `للمتابعة اليدوية أضف السهم للمراقبة.`;
   return m;
 }
 
@@ -804,7 +807,53 @@ function buildPortfolioUpdateMsg(sym, a, trade) {
 // ================================================================
 // ═══════════════════ REPORT GENERATOR ═══════════════════════════
 // ================================================================
+function calcSmartJournalStats(records) {
+  const closed = records.filter(r => r.status === 'closed');
+  const open = records.filter(r => r.status === 'open');
+  const wins = closed.filter(r => r.result === 'target' || (r.result === 'expired' && (r.pnlPct || 0) > 0));
+  const losses = closed.filter(r => r.result === 'stop' || (r.result === 'expired' && (r.pnlPct || 0) < 0));
+  const expired = closed.filter(r => r.result === 'expired');
+  const winRate = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
+  const avgPnl = closed.length ? +(closed.reduce((s, r) => s + (r.pnlPct || 0), 0) / closed.length).toFixed(2) : 0;
+  return { total: records.length, open: open.length, closed: closed.length, wins: wins.length, losses: losses.length, expired: expired.length, winRate, avgPnl };
+}
+
+async function generateSmartReport() {
+  const records = await fbGetSmartJournal();
+  if (!records.length) {
+    await tgSend('📈 لا يوجد سجل ذكي بعد\nسيبدأ السجل تلقائياً عند ظهور أول بطاقة دخول من الأداة.');
+    return;
+  }
+
+  const all = calcSmartJournalStats(records);
+  const rec = calcSmartJournalStats(records.filter(r => r.type === 'rec'));
+  const spec = calcSmartJournalStats(records.filter(r => r.type === 'spec'));
+  const hunter = calcSmartJournalStats(records.filter(r => r.type === 'hunter'));
+  const open = records.filter(r => r.status === 'open').slice(-8).reverse();
+
+  const line = (name, st) =>
+    `${name}: ${st.total} بطاقة | مفتوحة ${st.open} | هدف ${st.wins} | وقف ${st.losses} | نجاح ${st.winRate}% | متوسط ${st.avgPnl >= 0 ? '+' : ''}${st.avgPnl}%`;
+
+  let m = `📈 <b>تقرير السجل الذكي</b>\n`;
+  m += `──────────────\n`;
+  m += `${line('الكل', all)}\n`;
+  m += `${line('التوصيات', rec)}\n`;
+  m += `${line('المجازفة', spec)}\n`;
+  m += `${line('الصائد', hunter)}\n`;
+  if (open.length) {
+    m += `──────────────\n`;
+    m += `<b>مفتوحة حالياً:</b>\n`;
+    open.forEach(r => {
+      m += `• ${r.id} — ${r.type} | دخول $${(+r.entry || 0).toFixed(2)} | هدف $${(+r.target || 0).toFixed(2)} | وقف $${(+r.stopLoss || 0).toFixed(2)}\n`;
+    });
+  }
+  m += `──────────────\n`;
+  m += `السجل يقفل تلقائياً عند الهدف أو الوقف أو انتهاء المدة.`;
+  await tgSend(m);
+}
+
 async function generateReport() {
+  return generateSmartReport();
   try {
     let history = await fbGetHistory();
     if (!history.length) {
@@ -923,24 +972,21 @@ async function generateReport() {
 async function runMonitor() {
   try {
     // جلب البيانات
-    const [watchData, portData, prevStateData] = await Promise.all([
+    const [watchData, prevStateData] = await Promise.all([
       fbGet('watchlist'),
-      fbGet('portfolio'),
       fbGet('monitor_state'),
     ]);
 
     const watchList  = watchData.symbols  || [];
-    const portfolio  = (portData.trades   || []).filter(t => !t.closed);
     const prevState  = prevStateData.stocks || {};
 
     // جمع كل الرموز
     const allSymbols = [...new Set([
       ...watchList,
-      ...portfolio.map(t => t.symbol),
     ])];
 
     if (allSymbols.length === 0) {
-      return { watch: 0, portfolio: 0, symbols: 0, messages: 0, sent: 0, note: 'لا توجد أسهم في المراقبة أو المحفظة' };
+      return { watch: 0, symbols: 0, messages: 0, sent: 0, note: 'لا توجد أسهم في المراقبة' };
     }
 
     // جلب البيانات من FMP
@@ -973,66 +1019,6 @@ async function runMonitor() {
       }
     }
 
-    // ── معالجة المحفظة
-    for (const trade of portfolio) {
-      const sym = trade.symbol;
-      const d   = stocksData[sym];
-      if (!d?.quote) continue;
-
-      const prev = prevState[sym] || null;
-      const a    = analyzeStock(sym, d.quote, d.closes, prev, d.highs, d.lows);
-      if (!a) continue;
-
-      newState[sym] = {
-        price:    a.price,
-        rsi:      a.rsi,
-        macdHist: a.macdHist,
-        macdDir:  a.macdDir,
-        weekly:   a.weekly,
-        score:    a.score,
-        updatedAt: new Date().toISOString(),
-      };
-
-      const pnl = +((a.price - trade.entry) / trade.entry * 100).toFixed(2);
-
-      // تنبيه وصول الهدف
-      if (trade.target && a.price >= trade.target) {
-        messages.push(
-          `🎯 <b>${sym} وصل الهدف!</b>\n` +
-          `$${trade.entry} → $${a.price}\n` +
-          `ربح: +${pnl}% 🎉\n` +
-          `اكتب: <code>خرجت ${sym}</code>`
-        );
-        continue;
-      }
-
-      // تنبيه اقتراب الوقف
-      if (trade.stop && a.price <= trade.stop * 1.02 && a.price > trade.stop) {
-        messages.push(
-          `⚠️ <b>${sym} اقترب من الوقف!</b>\n` +
-          `السعر: $${a.price} | وقف: $${trade.stop}\n` +
-          `P&L: ${pnl}%\nكن مستعداً للخروج`
-        );
-        continue;
-      }
-
-      // تنبيه كسر الوقف
-      if (trade.stop && a.price <= trade.stop) {
-        messages.push(
-          `🚨 <b>${sym} كسر الوقف!</b>\n` +
-          `$${a.price} < $${trade.stop}\n` +
-          `خسارة: ${pnl}%\n` +
-          `اخرج فوراً! اكتب: <code>خرجت ${sym}</code>`
-        );
-        continue;
-      }
-
-      // تحديث دوري إذا فيه تغييرات مهمة
-      if (a.changes && a.changes.length > 0) {
-        messages.push(buildPortfolioUpdateMsg(sym, a, trade));
-      }
-    }
-
     // حفظ الحالة الجديدة
     await fbSet('monitor_state', { stocks: newState, lastRun: new Date().toISOString() });
 
@@ -1044,7 +1030,6 @@ async function runMonitor() {
 
     return {
       watch: watchList.length,
-      portfolio: portfolio.length,
       symbols: allSymbols.length,
       messages: messages.length,
       sent: messages.length,
@@ -1079,8 +1064,7 @@ async function handleCallback(callbackId, data, cid) {
 
   // اشتريت
   if (action === 'bought') {
-    sess[cid] = { ...s, step: 'ask_price' };
-    await tgSend(`بكم اشتريت <b>${sym}</b>؟\n(اكتب 0 للسعر الحالي $${s.price?.toFixed(2)})`);
+    await tgSend('تم إلغاء تسجيل المحفظة اليدوي. السجل الذكي يسجل بطاقات الدخول من الأداة تلقائياً.');
     return;
   }
 
@@ -1160,29 +1144,6 @@ async function handleCallback(callbackId, data, cid) {
       return;
     }
 
-    // محفظتي
-    if (sym === 'PORTFOLIO') {
-      const data   = await fbGet('portfolio');
-      const port   = (data.trades || []).filter(t => !t.closed);
-      if (!port.length) { await tgSend('📂 محفظتك فارغة'); return; }
-      const stocks = await getMultipleStocks(port.map(t => t.symbol));
-      let m = '💼 <b>محفظتك الآن:</b>\n──────────────\n';
-      let totalPnl = 0;
-      for (const t of port) {
-        const cur = stocks[t.symbol]?.quote?.price || t.entry;
-        const pnl = +((cur - t.entry) / t.entry * 100).toFixed(2);
-        totalPnl += pnl;
-        const toTarget = t.target ? +((t.target - cur) / cur * 100).toFixed(1) : null;
-        m += `${pnl >= 0 ? '✅' : '❌'} <b>${t.symbol}</b> $${t.entry} → $${cur?.toFixed(2)} (${pnl >= 0 ? '+' : ''}${pnl}%)`;
-        if (toTarget != null) m += ` | للهدف: ${toTarget > 0 ? '+' : ''}${toTarget}%`;
-        m += '\n';
-      }
-      m += `──────────────
-متوسط P&L: ${totalPnl >= 0 ? '+' : ''}${+(totalPnl / port.length).toFixed(2)}%`;
-      await tgSend(m);
-      return;
-    }
-
     // مراقبتي
     if (sym === 'WATCHLIST') {
       const data   = await fbGet('watchlist');
@@ -1226,13 +1187,9 @@ async function handleCallback(callbackId, data, cid) {
 ` +
         `📊 تحليل سهم: اكتب رمزه مثل <code>NVDA</code>
 ` +
-        `💼 محفظتي: اكتب <code>محفظتي</code>
-` +
         `👁 مراقبتي: اكتب <code>مراقبتي</code>
 ` +
-        `📈 تقرير: اكتب <code>تقرير</code>
-` +
-        `🚪 إغلاق صفقة: <code>خرجت AAPL</code>
+        `📈 السجل الذكي: اكتب <code>تقرير</code>
 ` +
         `🗑 حذف من المراقبة: <code>حذف AAPL</code>
 ` +
@@ -1262,9 +1219,8 @@ async function handleMessage(text, cid) {
         ],
         [{ text: '🎯 الصائد', callback_data: 'menu_latest_hunter' }],
         [{ text: '📊 تحليل سهم',     callback_data: 'menu_analyze'   }],
-        [{ text: '💼 محفظتي',         callback_data: 'menu_portfolio' }],
         [{ text: '👁 مراقبتي',        callback_data: 'menu_watchlist' }],
-        [{ text: '📈 تقرير الأداة',   callback_data: 'menu_report'    }],
+        [{ text: '📈 السجل الذكي',    callback_data: 'menu_report'    }],
         [{ text: '❓ مساعدة',          callback_data: 'menu_help'      }],
       ]
     );
@@ -1292,29 +1248,7 @@ async function handleMessage(text, cid) {
 
   // ── محفظتي
   if (text === 'محفظتي' || text === 'portfolio') {
-    const data = await fbGet('portfolio');
-    const port = (data.trades || []).filter(t => !t.closed);
-    if (port.length === 0) { await tgSend('📂 محفظتك فارغة'); return; }
-
-    // جلب الأسعار الحالية
-    const syms   = port.map(t => t.symbol);
-    const stocks = await getMultipleStocks(syms);
-
-    let m = '💼 <b>محفظتك الآن:</b>\n──────────────\n';
-    let totalPnl = 0;
-    for (const t of port) {
-      const cur  = stocks[t.symbol]?.quote?.price || t.entry;
-      const pnl  = +((cur - t.entry) / t.entry * 100).toFixed(2);
-      const icon = pnl >= 0 ? '✅' : '❌';
-      totalPnl  += pnl;
-      const toTarget = t.target ? +((t.target - cur) / cur * 100).toFixed(1) : null;
-      m += `${icon} <b>${t.symbol}</b> $${t.entry} → $${cur?.toFixed(2)} (${pnl >= 0 ? '+' : ''}${pnl}%)`;
-      if (toTarget != null) m += ` | للهدف: ${toTarget > 0 ? '+' : ''}${toTarget}%`;
-      m += '\n';
-    }
-    m += `──────────────\n`;
-    m += `متوسط P&L: ${totalPnl >= 0 ? '+' : ''}${+(totalPnl / port.length).toFixed(2)}%`;
-    await tgSend(m);
+    await tgSend('تم إلغاء المحفظة اليدوية. استخدم <code>تقرير</code> لرؤية السجل الذكي.');
     return;
   }
 
@@ -1345,99 +1279,13 @@ async function handleMessage(text, cid) {
 
   // ── تقرير الأداء
   if (text === 'تقرير' || text === 'أداء' || text === 'performance') {
-    const history = await fbGetHistory();
-    if (!history.length) {
-      await tgSend('📊 لا يوجد سجل توصيات بعد\nافتح الأداة وانتظر يوم تداول كامل');
-      return;
-    }
-
-    const closed   = history.filter(h => h.result !== 'pending');
-    const wins     = closed.filter(h => h.result === 'win');
-    const losses   = closed.filter(h => h.result === 'loss');
-    const pending  = history.filter(h => h.result === 'pending');
-    const winRate  = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
-    const avgWin   = wins.length   ? +(wins.reduce((s, h) => s + (h.pnlPct || 0), 0) / wins.length).toFixed(2)   : 0;
-    const avgLoss  = losses.length ? +(losses.reduce((s, h) => s + (h.pnlPct || 0), 0) / losses.length).toFixed(2) : 0;
-    const exp      = closed.length ? +((winRate / 100 * avgWin) + ((1 - winRate / 100) * avgLoss)).toFixed(2) : 0;
-
-    // أفضل وأسوأ توصية
-    const best  = wins.sort((a, b)   => (b.pnlPct || 0) - (a.pnlPct || 0))[0];
-    const worst = losses.sort((a, b) => (a.pnlPct || 0) - (b.pnlPct || 0))[0];
-
-    // مقارنة الجلستين
-    const openRecs = closed.filter(h => h.session === 'افتتاح');
-    const midRecs  = closed.filter(h => h.session === 'منتصف');
-    const openWR   = openRecs.length ? Math.round(openRecs.filter(h => h.result === 'win').length / openRecs.length * 100) : 0;
-    const midWR    = midRecs.length  ? Math.round(midRecs.filter(h => h.result === 'win').length  / midRecs.length  * 100) : 0;
-
-    let m = `📊 <b>تقرير أداء تريدر برو X</b>\n`;
-    m    += `──────────────\n`;
-    m    += `✅ ناجحة: ${wins.length} | ❌ خاسرة: ${losses.length} | ⏳ معلقة: ${pending.length}\n`;
-    m    += `──────────────\n`;
-    m    += `🎯 نسبة النجاح: <b>${winRate}%</b>\n`;
-    m    += `💰 متوسط الربح: <b>+${avgWin}%</b>\n`;
-    m    += `📉 متوسط الخسارة: <b>${avgLoss}%</b>\n`;
-    m    += `🧮 التوقع الرياضي: <b>${exp >= 0 ? '+' : ''}${exp}%</b>\n`;
-    m    += `──────────────\n`;
-    m    += `🌅 الافتتاح: ${openWR}% نجاح (${openRecs.length} صفقة)\n`;
-    m    += `🌇 المنتصف: ${midWR}% نجاح (${midRecs.length} صفقة)\n`;
-    m    += `──────────────\n`;
-    if (best)  m += `🏆 أفضل: ${best.id} +${best.pnlPct}%\n`;
-    if (worst) m += `💀 أسوأ: ${worst.id} ${worst.pnlPct}%\n`;
-    m    += `──────────────\n`;
-    const verdict = exp >= 1.5 ? '✅ الأداة مربحة — استمر' :
-                    exp >= 0   ? '⚠️ الأداة متعادلة — راجع المعادلات' :
-                                 '❌ الأداة خاسرة — توقف وراجع';
-    m += verdict;
-    await tgSend(m);
+    await generateSmartReport();
     return;
   }
 
   // ── إغلاق صفقة
   if (low.startsWith('خرجت') || low.startsWith('بعت')) {
-    const parts = text.split(/\s+/);
-    const sym   = parts[1]?.toUpperCase();
-    if (sym) {
-      const data  = await fbGet('portfolio');
-      const port  = data.trades || [];
-      const trade = port.find(x => x.symbol === sym && !x.closed);
-      if (trade) {
-        const d    = await getStock(sym);
-        const cur  = parseFloat(parts[2]) || d?.quote?.price || trade.target;
-        const pnl  = +((cur - trade.entry) / trade.entry * 100).toFixed(2);
-        trade.closed     = true;
-        trade.closePrice = cur;
-        trade.closeDate  = new Date().toISOString();
-        trade.pnlPct     = pnl;
-        await fbSet('portfolio', { trades: port });
-
-        // ── تحديث السجل في Firebase
-        const history = await fbGetHistory();
-        const rec     = history.findLast(h => h.id === sym && h.result === 'pending');
-        if (rec) {
-          rec.result      = pnl >= 0 ? 'win' : 'loss';
-          rec.resultDate  = new Date().toISOString();
-          rec.resultPrice = cur;
-          rec.pnlPct      = pnl;
-          // حفظ في users/default
-          try {
-            await getDB().collection('users').doc('default')
-              .collection('data').doc('rec_history')
-              .set({ records: history, updatedAt: new Date() }, { merge: true });
-          } catch (e) {}
-        }
-
-        await tgSend(
-          `✅ <b>${sym} مغلقة</b>\n` +
-          `دخول: $${trade.entry} → خروج: $${cur?.toFixed(2)}\n` +
-          `${pnl >= 0 ? '💰 ربح: +' : '📉 خسارة: '}${pnl}%\n` +
-          `──────────────\n` +
-          `السجل حُدّث ✅\nاكتب <code>تقرير</code> لترى الأداء الكلي`
-        );
-      } else {
-        await tgSend(`⚠️ ${sym} غير موجود في محفظتك`);
-      }
-    }
+    await tgSend('الإغلاق اليدوي أُلغي. السجل الذكي يقفل البطاقة تلقائياً عند الهدف أو الوقف أو انتهاء المدة.');
     sess[cid] = {};
     return;
   }
@@ -1470,7 +1318,6 @@ async function handleMessage(text, cid) {
       }
       sess[cid] = { step: 'ask_bought', sym: sym2, price: d.quote.price, analysis: a };
       const buttons = [
-        [{ text: '✅ اشتريت',          callback_data: `bought_${sym2}` }],
         [{ text: '👁 أضف للمراقبة',   callback_data: `watch_${sym2}` }],
         [
           { text: '📅 أسعار الأسبوع', callback_data: `prices7_${sym2}` },
@@ -1488,8 +1335,8 @@ async function handleMessage(text, cid) {
   // ── خطوات تسجيل الصفقة
   if (s.step === 'ask_bought') {
     if (text === '1' || text === 'نعم') {
-      sess[cid] = { ...s, step: 'ask_price' };
-      await tgSend(`بكم اشتريت <b>${s.sym}</b>؟\n(اكتب 0 للسعر الحالي $${s.price?.toFixed(2)})`);
+      sess[cid] = {};
+      await tgSend('تم إلغاء تسجيل المحفظة اليدوي. السجل الذكي يسجل بطاقات الدخول تلقائياً من الأداة.');
     } else {
       // أضف للمراقبة
       const data = await fbGet('watchlist');
@@ -1515,13 +1362,15 @@ async function handleMessage(text, cid) {
   }
 
   if (s.step === 'ask_price') {
-    const entry = parseFloat(text) === 0 ? s.price : (parseFloat(text) || s.price);
-    sess[cid]   = { ...s, step: 'ask_qty', entry };
-    await tgSend(`كم سهم اشتريت من <b>${s.sym}</b>؟`);
+    sess[cid] = {};
+    await tgSend('تم إلغاء تسجيل المحفظة اليدوي. السجل الذكي يعمل تلقائياً من بطاقات الأداة.');
     return;
   }
 
   if (s.step === 'ask_qty') {
+    sess[cid] = {};
+    await tgSend('تم إلغاء تسجيل المحفظة اليدوي. استخدم <code>تقرير</code> لعرض السجل الذكي.');
+    return;
     const qty    = parseInt(text) || 1;
     const atr    = s.analysis?.atrPct || 3;
     const support = s.analysis?.support || null;
@@ -1675,7 +1524,6 @@ async function handleMessage(text, cid) {
 
     // أزرار Inline تحت التحليل
     const buttons = [
-      [{ text: '✅ اشتريت', callback_data: `bought_${sym}` }],
       [{ text: '👁 أضف للمراقبة', callback_data: `watch_${sym}` }],
       [
         { text: '📅 أسعار الأسبوع', callback_data: `prices7_${sym}` },
@@ -1692,10 +1540,8 @@ async function handleMessage(text, cid) {
   await tgSend(
     `🦅 <b>RamiMarketX</b>\n──────────────\n` +
     `اكتب رمز السهم: <code>NVDA</code>\n` +
-    `محفظتك: <code>محفظتي</code>\n` +
     `مراقبتي: <code>مراقبتي</code>\n` +
-    `تقرير الأداء: <code>تقرير</code>\n` +
-    `إغلاق: <code>خرجت AAPL</code>\n` +
+    `السجل الذكي: <code>تقرير</code>\n` +
     `حذف من المراقبة: <code>حذف AAPL</code>`
   );
 }
