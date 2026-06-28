@@ -69,10 +69,20 @@ async function getQuote(sym) {
 }
 
 async function evaluateSmartJournal(records) {
-  const open = records.filter(r => r.status === 'open');
-  if (!open.length) return { records, changed: false };
-
   let changed = false;
+  records.forEach(r => {
+    if (['target', 'stop', 'expired'].includes(r.status)) {
+      r.result = r.status;
+      r.status = 'closed';
+      r.closeReason = r.result === 'target' ? 'وصل الهدف' : r.result === 'stop' ? 'ضرب الوقف' : 'انتهت المدة';
+      if (!r.closeAt && r.closedAt) r.closeAt = r.closedAt;
+      if (!r.closedAt && r.closeAt) r.closedAt = r.closeAt;
+      changed = true;
+    }
+  });
+  const open = records.filter(r => r.status === 'open');
+  if (!open.length) return { records, changed };
+
   const symbols = [...new Set(open.map(r => r.id).filter(Boolean))];
   const quotes = {};
   for (let i = 0; i < symbols.length; i += 8) {
@@ -101,10 +111,12 @@ async function evaluateSmartJournal(records) {
     r.livePnlPct = +((cur - r.entry) / r.entry * 100).toFixed(2);
 
     if (hitTarget || hitStop || expired) {
-      r.status = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
-      r.result = hitTarget ? 'win' : hitStop ? 'loss' : (r.livePnlPct >= 0 ? 'win' : 'loss');
+      r.status = 'closed';
+      r.result = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
+      r.closeReason = hitTarget ? 'وصل الهدف' : hitStop ? 'ضرب الوقف' : 'انتهت المدة';
       r.closePrice = cur;
-      r.closedAt = new Date(now).toISOString();
+      r.closeAt = new Date(now).toISOString();
+      r.closedAt = r.closeAt;
       r.pnlPct = r.livePnlPct;
       changed = true;
     }
@@ -115,9 +127,9 @@ async function evaluateSmartJournal(records) {
 
 function stats(records) {
   const open = records.filter(r => r.status === 'open');
-  const closed = records.filter(r => r.status && r.status !== 'open');
-  const wins = closed.filter(r => r.result === 'win');
-  const losses = closed.filter(r => r.result === 'loss');
+  const closed = records.filter(r => r.status === 'closed');
+  const wins = closed.filter(r => r.result === 'target' || (r.result === 'expired' && (+r.pnlPct || 0) >= 0));
+  const losses = closed.filter(r => r.result === 'stop' || (r.result === 'expired' && (+r.pnlPct || 0) < 0));
   const winRate = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
   const avgPnl = closed.length
     ? +(closed.reduce((s, r) => s + (+r.pnlPct || 0), 0) / closed.length).toFixed(2)
