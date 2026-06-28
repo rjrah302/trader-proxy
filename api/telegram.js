@@ -106,6 +106,103 @@ async function fbGetHistory() {
   } catch (e) { return []; }
 }
 
+// ── آخر نتائج محفوظة من الأداة نفسها: توصيات / مجازفة / صائد
+async function fbGetLatestTabs() {
+  try {
+    const s = await getDB()
+      .collection('users').doc('default')
+      .collection('data').doc('latest_tabs').get();
+    return s.exists ? s.data() : {};
+  } catch (e) { return {}; }
+}
+
+function htmlSafe(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function fmtMoney(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? `$${n.toFixed(2)}` : '—';
+}
+
+function fmtPct(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? `${n >= 0 ? '+' : ''}${n.toFixed(2)}%` : '—';
+}
+
+function fmtRR(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? `${n.toFixed(1)}x` : '—';
+}
+
+function fmtSavedTime(v) {
+  if (!v) return 'غير متاح';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return 'غير متاح';
+  return new Intl.DateTimeFormat('ar-SA', {
+    timeZone: 'Asia/Riyadh',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  }).format(d);
+}
+
+function getLatestTabItems(data, kind) {
+  if (kind === 'recs') return Array.isArray(data?.recs) ? data.recs : [];
+  if (kind === 'spec') return Array.isArray(data?.spec) ? data.spec : [];
+  if (kind === 'hunter') return Array.isArray(data?.hunter) ? data.hunter : [];
+  return [];
+}
+
+function formatLatestTabsMessage(kind, data) {
+  const titles = {
+    recs: '🎯 توصيات الأداة',
+    spec: '🎲 المجازفة',
+    hunter: '🎯 الصائد',
+  };
+  const empty = {
+    recs: 'لا توجد توصيات محفوظة الآن.',
+    spec: 'لا توجد فرص مجازفة محفوظة الآن.',
+    hunter: 'لا توجد فرص صائد محفوظة الآن.',
+  };
+  const limit = kind === 'hunter' ? 10 : 8;
+  const items = getLatestTabItems(data, kind).slice(0, limit);
+  const market = data?.market || {};
+  const savedAt = data?.times?.[kind === 'recs' ? 'recs' : kind] || data?.savedAt;
+  const marketLine = `SPY ${fmtPct(market.spyChange)} | QQQ ${fmtPct(market.qqqChange)} | ${market.open ? 'السوق مفتوح' : 'السوق مغلق'}`;
+
+  let m = `<b>${titles[kind]}</b>\n`;
+  m += `آخر تحديث: ${fmtSavedTime(savedAt)}\n`;
+  m += `${marketLine}\n`;
+  m += `──────────────\n`;
+
+  if (!items.length) {
+    m += `${empty[kind]}\n`;
+    m += `افتح الأداة وانتظر اكتمال التحميل إذا كنت تريد تحديث القائمة.`;
+    return m;
+  }
+
+  items.forEach((x, i) => {
+    const symbol = htmlSafe(x.id || x.symbol || '—');
+    const name = htmlSafe(x.name || '');
+    const decision = htmlSafe(x.decision || x.signal || 'مراقبة');
+    const note = htmlSafe(x.note || '');
+    m += `${i + 1}) <b>${symbol}</b>${name ? ` — ${name}` : ''}\n`;
+    m += `القرار: <b>${decision}</b>\n`;
+    m += `السعر ${fmtMoney(x.price || x.entry)} | دخول ${fmtMoney(x.entry)} | هدف ${fmtMoney(x.target)} | وقف ${fmtMoney(x.stopLoss)} | R/R ${fmtRR(x.riskReward)}\n`;
+    if (Number.isFinite(Number(x.score)) && Number(x.score) > 0) m += `القوة: ${Number(x.score).toFixed(0)}/100\n`;
+    if (note) m += `ملاحظة: ${note}\n`;
+    m += `──────────────\n`;
+  });
+
+  m += `هذه نسخة مختصرة من نفس بطاقات الأداة. القرار النهائي بعد قراءة البطاقة الكاملة.`;
+  return m;
+}
+
 // ================================================================
 // ═══════════════════ FMP HELPERS ════════════════════════════════
 // ================================================================
@@ -334,6 +431,12 @@ function analyzeStock(sym, quote, closes, prevAnalysis = null, highs = null, low
     // السعر عند الدعم
     if (levels.support && price <= levels.support * 1.015 && prevAnalysis.price > levels.support * 1.015)
       changes.push('🛡 السعر لامس الدعم $' + levels.support + ' — نقطة دخول محتملة');
+    // حركة سعر قوية منذ آخر فحص
+    if (prevAnalysis.price > 0) {
+      const priceMove = +((price - prevAnalysis.price) / prevAnalysis.price * 100).toFixed(2);
+      if (priceMove >= 3) changes.push('🚀 السعر تحرك +' + priceMove + '% منذ آخر فحص — راقب تأكيد الحجم والزخم');
+      if (priceMove <= -3) changes.push('⚠️ السعر تراجع ' + priceMove + '% منذ آخر فحص — راقب الدعم والوقف');
+    }
     // تحول الاتجاه الأسبوعي
     if (prevAnalysis.weekly === 'bearish' && weekly === 'bullish')
       changes.push('🌟 الاتجاه الأسبوعي تحوّل صاعداً!');
@@ -684,7 +787,9 @@ async function runMonitor() {
       ...portfolio.map(t => t.symbol),
     ])];
 
-    if (allSymbols.length === 0) return;
+    if (allSymbols.length === 0) {
+      return { watch: 0, portfolio: 0, symbols: 0, messages: 0, sent: 0, note: 'لا توجد أسهم في المراقبة أو المحفظة' };
+    }
 
     // جلب البيانات من FMP
     const stocksData = await getMultipleStocks(allSymbols);
@@ -706,6 +811,7 @@ async function runMonitor() {
         macdHist: a.macdHist,
         macdDir:  a.macdDir,
         weekly:   a.weekly,
+        score:    a.score,
         updatedAt: new Date().toISOString(),
       };
 
@@ -731,6 +837,7 @@ async function runMonitor() {
         macdHist: a.macdHist,
         macdDir:  a.macdDir,
         weekly:   a.weekly,
+        score:    a.score,
         updatedAt: new Date().toISOString(),
       };
 
@@ -783,8 +890,18 @@ async function runMonitor() {
       await new Promise(r => setTimeout(r, 500)); // تأخير بسيط بين الرسائل
     }
 
+    return {
+      watch: watchList.length,
+      portfolio: portfolio.length,
+      symbols: allSymbols.length,
+      messages: messages.length,
+      sent: messages.length,
+      time: new Date().toISOString(),
+    };
+
   } catch (e) {
     console.error('runMonitor:', e.message);
+    return { error: e.message, time: new Date().toISOString() };
   }
 }
 
@@ -876,6 +993,14 @@ async function handleCallback(callbackId, data, cid) {
 
   // ── القائمة الرئيسية
   if (action === 'menu') {
+    // آخر نتائج محفوظة من الأداة
+    if (sym === 'LATEST_RECS' || sym === 'LATEST_SPEC' || sym === 'LATEST_HUNTER') {
+      const latest = await fbGetLatestTabs();
+      const kind = sym === 'LATEST_RECS' ? 'recs' : sym === 'LATEST_SPEC' ? 'spec' : 'hunter';
+      await tgSend(formatLatestTabsMessage(kind, latest));
+      return;
+    }
+
     // تحليل سهم
     if (sym === 'ANALYZE') {
       sess[cid] = { step: 'waiting_sym' };
@@ -941,6 +1066,12 @@ async function handleCallback(callbackId, data, cid) {
         `❓ <b>المساعدة</b>
 ──────────────
 ` +
+        `🎯 توصيات: آخر بطاقات التوصيات من الأداة
+` +
+        `🎲 مجازفة: آخر بطاقات المجازفة
+` +
+        `🎯 صائد: آخر بطاقات الصائد
+` +
         `📊 تحليل سهم: اكتب رمزه مثل <code>NVDA</code>
 ` +
         `💼 محفظتي: اكتب <code>محفظتي</code>
@@ -973,6 +1104,11 @@ async function handleMessage(text, cid) {
     await tgSendButtons(
       `🦅 <b>RamiMarketX — مرحباً رامي!</b>\nاختر من القائمة:`,
       [
+        [
+          { text: '🎯 توصيات', callback_data: 'menu_latest_recs' },
+          { text: '🎲 مجازفة', callback_data: 'menu_latest_spec' },
+        ],
+        [{ text: '🎯 الصائد', callback_data: 'menu_latest_hunter' }],
         [{ text: '📊 تحليل سهم',     callback_data: 'menu_analyze'   }],
         [{ text: '💼 محفظتي',         callback_data: 'menu_portfolio' }],
         [{ text: '👁 مراقبتي',        callback_data: 'menu_watchlist' }],
@@ -980,6 +1116,25 @@ async function handleMessage(text, cid) {
         [{ text: '❓ مساعدة',          callback_data: 'menu_help'      }],
       ]
     );
+    return;
+  }
+
+  // ── عرض آخر تبويبات الأداة المحفوظة
+  if (['توصيات', 'التوصيات', 'recs', 'recommendations'].includes(low)) {
+    const latest = await fbGetLatestTabs();
+    await tgSend(formatLatestTabsMessage('recs', latest));
+    return;
+  }
+
+  if (['مجازفة', 'المجازفه', 'المجازفة', 'spec'].includes(low)) {
+    const latest = await fbGetLatestTabs();
+    await tgSend(formatLatestTabsMessage('spec', latest));
+    return;
+  }
+
+  if (['صائد', 'الصائد', 'hunter'].includes(low)) {
+    const latest = await fbGetLatestTabs();
+    await tgSend(formatLatestTabsMessage('hunter', latest));
     return;
   }
 
@@ -1217,9 +1372,40 @@ async function handleMessage(text, cid) {
   if (s.step === 'ask_qty') {
     const qty    = parseInt(text) || 1;
     const atr    = s.analysis?.atrPct || 3;
-    const stop   = +(s.entry * (1 - atr * 2 / 100)).toFixed(2);
-    const target = +(s.entry * (1 + atr * 3.5 / 100)).toFixed(2);
-    const pct    = +((target - s.entry) / s.entry * 100).toFixed(1);
+    const support = s.analysis?.support || null;
+    const resistance = s.analysis?.resistance || null;
+    const nearSupport = !!(support && s.entry <= support * 1.03);
+    const tooCloseToResistance = !!(resistance && s.entry >= resistance * 0.98);
+    const specScore = Math.max(0, Math.min(100, 45 + (s.analysis?.score || 0) * 12));
+    const specMetrics = RamiAnalysis.calcSpecTradeMetrics({
+      price: s.entry,
+      support,
+      resistance,
+      atrPct: atr,
+    });
+    const fallbackStop = +(s.entry * (1 - atr * 2 / 100)).toFixed(2);
+    const fallbackTarget = +(s.entry * (1 + atr * 3.5 / 100)).toFixed(2);
+    const stop   = specMetrics.targetOk ? specMetrics.stopLoss : fallbackStop;
+    const target = specMetrics.targetOk ? specMetrics.target : fallbackTarget;
+    const pct    = specMetrics.targetOk ? specMetrics.profitPct : +((target - s.entry) / s.entry * 100).toFixed(1);
+    const lossPct = specMetrics.targetOk ? specMetrics.lossPct : +((s.entry - stop) / s.entry * 100).toFixed(1);
+    const riskReward = specMetrics.targetOk ? specMetrics.riskReward : +(pct / Math.max(lossPct, 0.1)).toFixed(2);
+    const specPlan = RamiAnalysis.buildSpecEntryPlan({
+      price: s.entry,
+      support,
+      nearSupport,
+      tooCloseToResistance,
+      score: specScore,
+      riskReward,
+    });
+    const specVerdict = RamiAnalysis.buildSpecVerdict({
+      marketClosed: false,
+      isWatch: specPlan.isWatch,
+      entryTiming: specPlan.entryTiming,
+      riskReward,
+      score: specScore,
+      entryNote: specPlan.entryNote,
+    });
     const duration = estimateTradeDuration({
       kind: 'spec',
       profitPct: pct,
@@ -1234,6 +1420,7 @@ async function handleMessage(text, cid) {
     const port = data.trades || [];
     port.push({
       symbol: s.sym, entry: s.entry, qty, stop, target,
+      riskReward, decision: specVerdict.label,
       date: new Date().toISOString(), closed: false,
     });
     await fbSet('portfolio', { trades: port });
@@ -1248,8 +1435,12 @@ async function handleMessage(text, cid) {
       `✅ <b>تم تسجيل ${s.sym}</b>\n──────────────\n` +
       `دخول: <b>$${s.entry?.toFixed(2)}</b> × ${qty} سهم\n` +
       `رأس المال: <b>$${(s.entry * qty).toFixed(0)}</b>\n──────────────\n` +
-      `🛑 وقف: <b>$${stop}</b> (-${(atr * 2).toFixed(1)}%)\n` +
+      `قرار النظام: <b>${specVerdict.label}</b>\n` +
+      `${specVerdict.displayEntryNote}\n` +
+      (specMetrics.targetOk ? '' : `⚠️ الهدف احتياطي لأن المقاومة/الهدف لم يكتمل في البيانات.\n`) +
+      `🛑 وقف: <b>$${stop}</b> (-${lossPct}%)\n` +
       `🎯 هدف: <b>$${target}</b> (+${pct}%)\n` +
+      `R/R: <b>${riskReward}x</b>\n` +
       `⏱️ مدة: ${durationLabel}\n` +
       `──────────────\n` +
       `👀 سأراقبه وأنبهك تلقائياً`
@@ -1358,8 +1549,8 @@ module.exports = async function handler(req, res) {
 
   // ── Cron: مراقبة كل 10 دقائق
   if (req.method === 'GET' && req.query.action === 'monitor') {
-    await runMonitor();
-    res.status(200).json({ ok: true, action: 'monitor', time: new Date().toISOString() });
+    const result = await runMonitor();
+    res.status(200).json({ ok: !result?.error, action: 'monitor', result, time: new Date().toISOString() });
     return;
   }
 
