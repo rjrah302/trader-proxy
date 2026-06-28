@@ -152,7 +152,7 @@
       : conditionalBuy || earlyRadar
         ? decision.note
         : entryBlockReasons.length
-          ? 'لا تدخل الآن — ' + entryBlockReasons.join('، ')
+          ? 'لا تدخل الآن - ' + entryBlockReasons.join('، ')
           : entryNote;
 
     return {
@@ -220,19 +220,19 @@
     let entryTiming, entryNote;
     if (tooCloseToResistance || nearResistance) {
       entryTiming = 'انتظر';
-      entryNote = 'السعر قريب من المقاومة — انتظر كسرها أو تراجع';
+      entryNote = 'السعر قريب من المقاومة - انتظر كسرها أو تراجع';
     } else if (nearSupport) {
       entryTiming = 'ادخل الآن';
-      entryNote = 'السعر عند الدعم — أفضل نقطة دخول';
+      entryNote = 'السعر عند الدعم - أفضل نقطة دخول';
     } else if (distToSupport <= 5) {
       entryTiming = 'مقبول';
       entryNote = support ? 'انتظر تراجعاً بسيطاً نحو $' + support.toFixed(2) + ' أفضل' : 'قريب من منطقة دخول مقبولة';
     } else if (distToSupport <= 10) {
       entryTiming = 'انتظر';
-      entryNote = support ? 'السعر بعيد عن الدعم — انتظر تراجعاً لـ $' + support.toFixed(2) : 'انتظر نقطة دخول أوضح';
+      entryNote = support ? 'السعر بعيد عن الدعم - انتظر تراجعاً لـ $' + support.toFixed(2) : 'انتظر نقطة دخول أوضح';
     } else {
       entryTiming = 'متأخر';
-      entryNote = support ? 'الدخول الآن محفوف بالمخاطر — الدعم عند $' + support.toFixed(2) : 'الدخول الآن متأخر';
+      entryNote = support ? 'الدخول الآن محفوف بالمخاطر - الدعم عند $' + support.toFixed(2) : 'الدخول الآن متأخر';
     }
     const idealEntry = nearSupport ? price : (support ? support * 1.01 : price);
 
@@ -253,5 +253,87 @@
     };
   }
 
-  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics };
+  function selectRecommendations(candidates=[], {
+    minEntryRR=1.5,
+    minEntryQuality=50,
+    minEntryADX=18,
+    maxRecs=10,
+  } = {}) {
+    const list = (Array.isArray(candidates) ? candidates : [])
+      .filter(Boolean)
+      .filter(s => s.recStage === 'confirmed' || s.recStage === 'conditional' || s.recStage === 'early')
+      .filter(s => s.signal === 'شراء قوي' || s.signal === 'شراء' || s.conditionalBuy || s.earlyRadar)
+      .filter(s => s.activeBuy ? s.confidence >= 70 : s.confidence >= 50)
+      .filter(s => s.activeBuy ? s.tradeQuality >= minEntryQuality : s.tradeQuality >= 30)
+      .filter(s => s.profitPct >= 2)
+      .filter(s => s.activeBuy ? s.riskReward >= minEntryRR : s.riskReward >= 1.15)
+      .filter(s => {
+        const beta = s.beta || 1;
+        const earnings = s.earnings ?? 999;
+        if (beta >= 1.5) return earnings > 21;
+        if (beta >= 1.2) return earnings > 14;
+        return earnings > 5;
+      })
+      .filter(s => {
+        const ch = s.change || 0;
+        if (ch <= 8) return true;
+        const supportedMove = (s.volR || 0) >= 1.8 || s.nearSupport || s.ignitionReady;
+        const tooExtendedNow = s.tooCloseToResistance && !s.nearSupport;
+        if (s.activeBuy) return ch <= 14 || (supportedMove && !tooExtendedNow);
+        return ch <= 18 || ((s.volR || 0) >= 2.2 && !tooExtendedNow);
+      })
+      .filter(s => {
+        const gain30d = s.gain30d || 0;
+        const supportedTrend = s.nearSupport || (s.volR || 0) >= 1.8 || s.ignitionReady;
+        const limit = s.activeBuy ? 60 : 90;
+        return gain30d <= limit || (supportedTrend && !s.tooCloseToResistance);
+      })
+      .filter(s => s.entryTiming === 'ادخل الآن' || s.entryTiming === 'مقبول' || s.conditionalBuy || s.earlyRadar)
+      .filter(s => !s.tooCloseToResistance && (s.roomToResistance == null || s.roomToResistance >= Math.max(4, s.minRoomToResistance || 0)))
+      .filter(s => s.ma50 == null || s.price >= s.ma50 * 0.97)
+      .filter(s => s.nearSupport || s.adx == null || s.adx >= minEntryADX || (s.macdHist != null && s.macdHist > 0))
+      .filter(s => !s.newsImpact?.block && s.newsImpact?.level !== 'neg')
+      .filter(s => (s.dataQuality || 0) >= 100)
+      .filter(s => {
+        const avg = s.avgVolume || 0;
+        return avg === 0 || avg >= 500000;
+      });
+
+    list.sort((a,b) => {
+      const timingBonus = (s) =>
+        s.entryTiming === 'ادخل الآن' ? 15 :
+        s.entryTiming === 'مقبول' ? 5 : 0;
+      const convictionBonus = (s) => s.isConviction ? 10 : 0;
+      const candleBonus = (s) => {
+        if(!s.candlePatterns?.length) return 0;
+        const top = s.candlePatterns[0];
+        return top.signal === 'bullish' ? top.strength * 2 : top.signal === 'bearish' ? -top.strength * 2 : 0;
+      };
+      const rsBonus = (s) => s.relativeStrength ? Math.max(-10, Math.min(15, s.relativeStrength.score)) : 0;
+      const analystBonus = (s) => s.analystView ? Math.max(-8, Math.min(8, s.analystView.bias * 3)) : 0;
+      const stageBonus = (s) => s.recStage === 'confirmed' ? 25 : s.recStage === 'conditional' ? 10 : 0;
+      const scoreA = a.strength*0.4 + a.confidence*0.3 + a.tradeQuality*0.2
+                   + timingBonus(a) + convictionBonus(a) + candleBonus(a) + rsBonus(a) + analystBonus(a) + stageBonus(a);
+      const scoreB = b.strength*0.4 + b.confidence*0.3 + b.tradeQuality*0.2
+                   + timingBonus(b) + convictionBonus(b) + candleBonus(b) + rsBonus(b) + analystBonus(b) + stageBonus(b);
+      return scoreB - scoreA;
+    });
+
+    const recs = [];
+    const usedSectors = new Set();
+    for (const c of list) {
+      if (recs.length >= maxRecs) break;
+      if (!usedSectors.has(c.sector)) {
+        recs.push(c);
+        usedSectors.add(c.sector);
+      }
+    }
+    for (const c of list) {
+      if (recs.length >= maxRecs) break;
+      if (!recs.find(r => r.id === c.id)) recs.push(c);
+    }
+    return recs;
+  }
+
+  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics, selectRecommendations };
 });
