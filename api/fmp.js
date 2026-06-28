@@ -15,8 +15,21 @@ function cacheSeconds(path) {
 function isOptionalEndpoint(path) {
   return path.includes('/earning-calendar')
     || path.includes('/earning_calendar')
+    || path.includes('/profile')
+    || path.includes('/news/')
     || path.includes('/rating/')
-    || path.includes('/ratings');
+    || path.includes('/ratings')
+    || path.includes('/price-target');
+}
+
+function isSoftFailStatus(status) {
+  return status === 403
+    || status === 404
+    || status === 429
+    || status === 500
+    || status === 502
+    || status === 503
+    || status === 504;
 }
 
 module.exports = async function handler(req, res) {
@@ -48,7 +61,7 @@ module.exports = async function handler(req, res) {
 
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', `s-maxage=${maxAge}, stale-while-revalidate=${Math.max(maxAge * 3, 60)}`);
-    if ((upstream.status === 403 || upstream.status === 404) && isOptionalEndpoint(url.pathname)) {
+    if (isSoftFailStatus(upstream.status) && isOptionalEndpoint(url.pathname)) {
       return res.status(200).json([]);
     }
     return res.status(upstream.status).send(text);
