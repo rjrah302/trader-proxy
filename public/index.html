@@ -3800,6 +3800,10 @@ function makeSmartJournalEntry(x, type, market, now) {
 
 function updateSmartJournalFromLatest(payload) {
   if(!payload) return;
+  if(!payload.market?.open) {
+    evaluateSmartJournal(loadSmartJournal());
+    return; // لا تضف بطاقات جديدة خارج السوق في تقييم الأداء الحقيقي
+  }
   const now = new Date();
   const journal = loadSmartJournal();
   const byId = new Set(journal.map(x => x.journalId));
@@ -3827,6 +3831,14 @@ function evaluateSmartJournal(records, persist=true) {
   const now = new Date();
   let changed = false;
   records.forEach(r => {
+    if(['target','stop','expired'].includes(r.status)) {
+      r.result = r.status;
+      r.status = 'closed';
+      r.closeReason = r.result === 'target' ? 'وصل الهدف' : r.result === 'stop' ? 'ضرب الوقف' : 'انتهت المدة';
+      if(!r.closeAt && r.closedAt) r.closeAt = r.closedAt;
+      if(!r.closedAt && r.closeAt) r.closedAt = r.closeAt;
+      changed = true;
+    }
     if(r.status !== 'open') return;
     const cur = +(state.prices?.[r.id]?.price || 0);
     if(!cur || !r.entry) return;
@@ -3839,6 +3851,7 @@ function evaluateSmartJournal(records, persist=true) {
     if(hitTarget || hitStop || expired) {
       r.status = 'closed';
       r.closeAt = now.toISOString();
+      r.closedAt = r.closeAt;
       r.closePrice = cur;
       r.result = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
       r.closeReason = hitTarget ? 'وصل الهدف' : hitStop ? 'ضرب الوقف' : 'انتهت المدة';
