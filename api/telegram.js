@@ -301,6 +301,60 @@ function formatLatestTabsMessage(kind, data) {
   return m;
 }
 
+function findLatestCardBySymbol(data, sym) {
+  const target = String(sym || '').toUpperCase();
+  const groups = [
+    ['recs', '🎯 توصيات'],
+    ['spec', '🎲 مجازفة'],
+    ['hunter', '🎯 صائد'],
+  ];
+  for (const [kind, label] of groups) {
+    const item = getLatestTabItems(data, kind)
+      .find(x => String(x?.id || x?.symbol || '').toUpperCase() === target);
+    if (item) return { item, kind, label };
+  }
+  return null;
+}
+
+function formatLatestCardDetail(found, data) {
+  const x = found.item;
+  const rank = latestCardRank(x);
+  const symbol = htmlSafe(x.id || x.symbol || '—');
+  const name = htmlSafe(x.name || '');
+  const decision = htmlSafe(latestDecisionLabel(x, rank));
+  const reason = htmlSafe(latestDecisionReason(x, rank));
+  const market = data?.market || {};
+  const savedAt = data?.times?.[found.kind === 'recs' ? 'recs' : found.kind] || data?.savedAt;
+  const score = Number(x.score);
+  const confidence = Number(x.confidence);
+  const quality = Number(x.tradeQuality);
+
+  let m = `${found.label} — <b>${symbol}</b>${name ? `\n${name}` : ''}\n`;
+  m += `آخر تحديث: ${fmtSavedTime(savedAt)}\n`;
+  m += `SPY ${fmtPct(market.spyChange)} | QQQ ${fmtPct(market.qqqChange)} | ${market.open ? 'السوق مفتوح' : 'السوق مغلق'}\n`;
+  m += `──────────────\n`;
+  m += `${latestCardRankLabel(rank)} <b>${decision}</b>\n`;
+  m += `السعر: <b>${fmtMoney(x.price || x.entry)}</b>`;
+  if (Number.isFinite(score) && score > 0) m += ` | القوة: ${score.toFixed(0)}/100`;
+  if (Number.isFinite(confidence) && confidence > 0) m += ` | الثقة: ${confidence.toFixed(0)}%`;
+  if (Number.isFinite(quality) && quality > 0) m += ` | الجودة: ${quality.toFixed(0)}%`;
+  m += `\n`;
+  m += `──────────────\n`;
+  m += `دخول: <b>${fmtMoney(x.entry)}</b>\n`;
+  m += `هدف: <b>${fmtMoney(x.target)}</b> ${Number(x.profitPct) ? `(${fmtPct(x.profitPct)})` : ''}\n`;
+  m += `وقف: <b>${fmtMoney(x.stopLoss)}</b> ${Number(x.lossPct) ? `(-${Math.abs(Number(x.lossPct)).toFixed(1)}%)` : ''}\n`;
+  m += `R/R: <b>${fmtRR(x.riskReward)}</b>\n`;
+  m += `──────────────\n`;
+  if (Number(x.support) > 0 || Number(x.resistance) > 0) {
+    m += `دعم: ${fmtMoney(x.support)} | مقاومة: ${fmtMoney(x.resistance)}\n`;
+    m += `──────────────\n`;
+  }
+  m += `سبب القرار:\n${reason}\n`;
+  m += `──────────────\n`;
+  m += `هذه قراءة من نفس بطاقة الأداة المحفوظة، وليست تحليل مستقل من التلجرام.`;
+  return m;
+}
+
 // ================================================================
 // ═══════════════════ FMP HELPERS ════════════════════════════════
 // ================================================================
@@ -1598,6 +1652,13 @@ async function handleMessage(text, cid) {
   // ── تحليل سهم بالطلب
   const sym = text.toUpperCase().replace(/[^A-Z0-9.\-]/g, '');
   if (sym.length >= 1 && sym.length <= 10) {
+    const latest = await fbGetLatestTabs();
+    const found = findLatestCardBySymbol(latest, sym);
+    if (found) {
+      await tgSend(formatLatestCardDetail(found, latest));
+      return;
+    }
+
     await tgSend(`⏳ جاري تحليل <b>${sym}</b>...`);
     const d = await getStock(sym);
     if (!d?.quote) { await tgSend(`⚠️ ${sym} — لم أجد بيانات. تحقق من الرمز`); return; }
