@@ -212,14 +212,15 @@ function getLatestTabItems(data, kind) {
   if (kind === 'recs') return Array.isArray(data?.recs) ? data.recs : [];
   if (kind === 'spec') return Array.isArray(data?.spec) ? data.spec : [];
   if (kind === 'hunter') return Array.isArray(data?.hunter) ? data.hunter : [];
+  if (kind === 'premarket') return Array.isArray(data?.premarket) ? data.premarket : [];
   return [];
 }
 
 function latestCardRank(x) {
   const text = `${x?.decision || ''} ${x?.signal || ''} ${x?.actionTone || ''} ${x?.note || ''}`.toLowerCase();
-  if (/ادخل|دخول فعلي|شراء قوي|دخول مسموح|buy/.test(text) && !/لا تدخل|لا تطارد|مراقبة فقط|راقب/.test(text)) return 0;
+  if (/خطر مطاردة|لا تطارد|لا تدخل|ممنوع|تجنب|chase/.test(text)) return 2;
+  if (/دخول صغير|ادخل|دخول فعلي|شراء قوي|دخول مسموح|buy/.test(text) && !/لا تدخل|لا تطارد|مراقبة فقط|راقب|خطر مطاردة/.test(text)) return 0;
   if (/شراء مشروط|عند الدعم|راقب|مراقبة|انتظار|support|watch/.test(text)) return 1;
-  if (/لا تطارد|لا تدخل|ممنوع|تجنب|chase/.test(text)) return 2;
   return 1;
 }
 
@@ -262,11 +263,13 @@ function formatLatestTabsMessage(kind, data) {
     recs: '🎯 توصيات الأداة',
     spec: '🎲 المجازفة',
     hunter: '🎯 الصائد',
+    premarket: '🌅 رادار قبل الافتتاح',
   };
   const empty = {
     recs: 'لا توجد توصيات محفوظة الآن.',
     spec: 'لا توجد فرص مجازفة محفوظة الآن.',
     hunter: 'لا توجد فرص صائد محفوظة الآن.',
+    premarket: 'لا توجد أسهم اشتعال مبكر محفوظة الآن.',
   };
   const rawItems = getLatestTabItems(data, kind);
   const decorated = rawItems
@@ -275,7 +278,7 @@ function formatLatestTabsMessage(kind, data) {
   const actionableCount = decorated.filter(v => v.rank === 0).length;
   const watchCount = decorated.filter(v => v.rank === 1).length;
   const avoidCount = decorated.filter(v => v.rank === 2).length;
-  const shown = decorated.slice(0, kind === 'hunter' ? 20 : 10);
+  const shown = decorated.slice(0, (kind === 'hunter' || kind === 'premarket') ? 20 : 10);
   const market = data?.market || {};
   const savedAt = data?.times?.[kind === 'recs' ? 'recs' : kind] || data?.savedAt;
   const marketLine = `SPY ${fmtPct(market.spyChange)} | QQQ ${fmtPct(market.qqqChange)} | ${market.open ? 'السوق مفتوح' : 'السوق مغلق'}`;
@@ -302,8 +305,12 @@ function formatLatestTabsMessage(kind, data) {
     m += `${i + 1}) ${latestCardRankLabel(rank)} <b>${symbol}</b>${name ? ` — ${name}` : ''}\n`;
     m += `السعر: ${price}`;
     if (Number.isFinite(score) && score > 0) m += ` | القوة: ${score.toFixed(0)}/100`;
+    if (kind === 'premarket' && Number(x.change)) m += ` | حركة ${fmtPct(x.change)}`;
     m += `\n`;
     m += `دخول ${fmtMoney(x.entry)} | هدف ${fmtMoney(x.target)} | وقف ${fmtMoney(x.stopLoss)} | R/R ${fmtRR(x.riskReward)}\n`;
+    if (kind === 'premarket' && Number(x.volume)) {
+      m += `حجم ${Number(x.volume).toLocaleString('en-US')} | ${x.outsideUniverse ? 'خارج قائمة 150' : 'ضمن القائمة'}\n`;
+    }
     m += `القرار: <b>${decision}</b>\n`;
     m += `سبب القرار: ${reason}\n`;
     m += `──────────────\n`;
@@ -338,6 +345,7 @@ function buildWaitingItems(data) {
     ['recs', 'توصيات'],
     ['spec', 'مجازفة'],
     ['hunter', 'صائد'],
+    ['premarket', 'قبل الافتتاح'],
   ];
   const items = [];
   groups.forEach(([kind, source]) => {
@@ -393,6 +401,7 @@ function findLatestCardBySymbol(data, sym) {
     ['recs', '🎯 توصيات'],
     ['spec', '🎲 مجازفة'],
     ['hunter', '🎯 صائد'],
+    ['premarket', '🌅 قبل الافتتاح'],
   ];
   for (const [kind, label] of groups) {
     const item = getLatestTabItems(data, kind)
@@ -1289,13 +1298,17 @@ async function handleCallback(callbackId, data, cid) {
   // ── القائمة الرئيسية
   if (action === 'menu') {
     // آخر نتائج محفوظة من الأداة
-    if (sym === 'LATEST_RECS' || sym === 'LATEST_SPEC' || sym === 'LATEST_HUNTER' || sym === 'LATEST_WAITING') {
+    if (sym === 'LATEST_RECS' || sym === 'LATEST_SPEC' || sym === 'LATEST_HUNTER' || sym === 'LATEST_PREMARKET' || sym === 'LATEST_WAITING') {
       const latest = await fbGetLatestTabs();
       if (sym === 'LATEST_WAITING') {
         await tgSend(formatWaitingMessage(latest));
         return;
       }
-      const kind = sym === 'LATEST_RECS' ? 'recs' : sym === 'LATEST_SPEC' ? 'spec' : 'hunter';
+      const kind =
+        sym === 'LATEST_RECS' ? 'recs' :
+        sym === 'LATEST_SPEC' ? 'spec' :
+        sym === 'LATEST_PREMARKET' ? 'premarket' :
+        'hunter';
       await tgSend(formatLatestTabsMessage(kind, latest));
       return;
     }
@@ -1348,6 +1361,8 @@ async function handleCallback(callbackId, data, cid) {
 ` +
         `🎯 صائد: آخر بطاقات الصائد
 ` +
+        `🌅 قبل الافتتاح: رادار الاشتعال المبكر
+` +
         `⏳ انتظار: أسهم قريبة من الدخول وينقصها شرط
 ` +
         `📊 تحليل سهم: اكتب رمزه مثل <code>NVDA</code>
@@ -1384,8 +1399,9 @@ async function handleMessage(text, cid) {
         ],
         [
           { text: '🎯 الصائد', callback_data: 'menu_latest_hunter' },
-          { text: '⏳ انتظار', callback_data: 'menu_latest_waiting' },
+          { text: '🌅 قبل الافتتاح', callback_data: 'menu_latest_premarket' },
         ],
+        [{ text: '⏳ انتظار', callback_data: 'menu_latest_waiting' }],
         [{ text: '📊 تحليل سهم',     callback_data: 'menu_analyze'   }],
         [{ text: '👁 مراقبتي',        callback_data: 'menu_watchlist' }],
         [{ text: '📈 السجل الذكي',    callback_data: 'menu_report'    }],
@@ -1411,6 +1427,12 @@ async function handleMessage(text, cid) {
   if (['صائد', 'الصائد', 'hunter'].includes(low)) {
     const latest = await fbGetLatestTabs();
     await tgSend(formatLatestTabsMessage('hunter', latest));
+    return;
+  }
+
+  if (['قبل', 'قبل الافتتاح', 'premarket', 'pre'].includes(low)) {
+    const latest = await fbGetLatestTabs();
+    await tgSend(formatLatestTabsMessage('premarket', latest));
     return;
   }
 
