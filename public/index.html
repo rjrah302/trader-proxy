@@ -546,8 +546,10 @@ const state = {
   recs:           null,
   speculativeRecs:null,
   hunterRecs:     [],
+  premarketRecs:  [],
   specTime:        null,
   hunterTime:      null,
+  premarketTime:   null,
   priceTargets:   {},
   analystRatings: {},    // صائد الارتداد
   recsTime:       null,
@@ -653,6 +655,14 @@ function fmtPrice(n) {
   return '$'+Number(n).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
+function abbr(n) {
+  const v = +n || 0;
+  if (v >= 1e9) return (v / 1e9).toFixed(1)+'B';
+  if (v >= 1e6) return (v / 1e6).toFixed(1)+'M';
+  if (v >= 1e3) return (v / 1e3).toFixed(0)+'K';
+  return String(Math.round(v));
+}
+
 function fmtClock(t) {
   if(!t) return '—';
   try { return new Date(t).toLocaleTimeString('ar', {hour:'2-digit', minute:'2-digit'}); }
@@ -666,6 +676,7 @@ function nextUpdateText(t, mins) {
 }
 
 const HUNTER_REFRESH_MIN = 5;
+const PREMARKET_REFRESH_MIN = 2;
 const SPEC_REFRESH_MIN = 10;
 const REC_REFRESH_MIN = 10;
 const NEWS_REFRESH_MIN = 15;
@@ -2884,6 +2895,19 @@ async function fetchAftermarketData(candidates) {
           change: +d.changesPercentage || 0,
           volume: +d.volume || 0,
         };
+      } else if (d && (d.bidPrice || d.askPrice)) {
+        const bid = +d.bidPrice || 0;
+        const ask = +d.askPrice || 0;
+        const mid = bid && ask ? (bid + ask) / 2 : (bid || ask || 0);
+        state.aftermarket = state.aftermarket || {};
+        state.aftermarket[stock.id] = {
+          price: mid || null,
+          bidPrice: bid || null,
+          askPrice: ask || null,
+          spreadPct: bid && ask && mid ? (ask - bid) / mid * 100 : null,
+          change: 0,
+          volume: +d.volume || 0,
+        };
       }
     } catch(e) {}
   }));
@@ -3138,6 +3162,171 @@ async function fetchBiggestGainers() {
   }
 }
 
+function isPremarketRadarActive() {
+  if (window.DEBUG_MARKET) return true;
+  const session = getMarketSession();
+  if (session === 'pre' || session === 'after') return true;
+  if (session === 'open') {
+    const t = getMarketTimes();
+    const m = getNowMins();
+    return m >= t.open && m <= t.open + 30;
+  }
+  return false;
+}
+
+function getPremarketRadarLabel() {
+  const session = getMarketSession();
+  if (session === 'pre') return 'قبل الافتتاح';
+  if (session === 'after') return 'تداول ليلي';
+  if (session === 'open') return 'أول الافتتاح';
+  return 'خارج وقت الرادار';
+}
+
+function buildPremarketCard(g) {
+  const basePrice = +(g.price || 0);
+  if (!basePrice) return null;
+  const ah = state.aftermarket?.[g.id] || null;
+  const extPrice = +(ah?.price || basePrice || 0);
+  if (!extPrice) return null;
+
+  const extVolume = +(ah?.volume || g.volume || 0);
+  const movePct = basePrice > 0 ? (extPrice - basePrice) / basePrice * 100 : +(g.change || 0);
+  const spreadPct = ah?.spreadPct != null ? +ah.spreadPct : null;
+  const outsideUniverse = !ALL_STOCKS.some(s => s.id === g.id);
+
+  const bid = +(ah?.bidPrice || 0);
+  const ask = +(ah?.askPrice || 0);
+  const pullbackPct =
+    movePct >= 150 ? 14 :
+    movePct >= 80  ? 10 :
+    movePct >= 35  ? 7 :
+    movePct >= 15  ? 5 : 3;
+  const pullbackSupport = extPrice * (1 - pullbackPct / 100);
+  const quoteSupport = bid > 0 ? bid : 0;
+  const earlySupport = quoteSupport > 0
+    ? Math.min(quoteSupport, extPrice * 0.995)
+    : pullbackSupport;
+  const support = Math.max(basePrice, Math.min(earlySupport || pullbackSupport, extPrice * 0.995));
+  const stopLoss = support * (movePct >= 80 ? 0.94 : 0.96);
+  const targetPrice = Math.max(ask || 0, extPrice * (movePct >= 100 ? 1.08 : movePct >= 35 ? 1.10 : 1.14));
+  const lossPct = (extPrice - stopLoss) / extPrice * 100;
+  const profitPct = (targetPrice - extPrice) / extPrice * 100;
+  const rr = lossPct > 0 ? profitPct / lossPct : 0;
+
+  let score = 25;
+  if (movePct >= 5) score += 12;
+  if (movePct >= 15) score += 10;
+  if (movePct >= 35) score += 8;
+  if (extVolume >= 250000) score += 10;
+  if (extVolume >= 1000000) score += 8;
+  if (spreadPct != null && spreadPct <= 1.2) score += 8;
+  else if (spreadPct != null && spreadPct > 3) score -= 12;
+  if (movePct >= 100) score -= 12;
+  if (rr >= 1.2) score += 5;
+
+  const tooExtended = movePct >= 100 || (spreadPct != null && spreadPct > 4);
+  const volumeOk = extVolume >= 250000;
+  const spreadOk = spreadPct == null || spreadPct <= 2.5;
+  const canSmallEntry = movePct >= 6 && movePct <= 65 && volumeOk && spreadOk && rr >= 1.1;
+
+  let action = 'راقب الافتتاح';
+  let actionTone = 'watch';
+  let actionNote = 'الحركة مبكرة؛ انتظر ثبات السعر أو Pullback قبل أي تنفيذ.';
+  let radarClass = 'watch';
+
+  if (tooExtended) {
+    action = 'خطر مطاردة';
+    actionTone = 'danger';
+    radarClass = 'chase';
+    actionNote = 'السهم طار بقوة؛ يظهر للرادار فقط. لا تطارد إلا بعد Pullback واضح وحجم مستمر.';
+  } else if (canSmallEntry) {
+    action = 'دخول صغير مشروط';
+    actionTone = 'buy';
+    radarClass = 'ignition';
+    actionNote = 'مبلغ صغير فقط قرب الدعم المبكر؛ الوقف إلزامي ولا ترفع الدخول.';
+  } else if (movePct >= 12 && volumeOk) {
+    action = 'اشتعال مبكر';
+    actionTone = 'support';
+    radarClass = 'ignition-watch';
+    actionNote = 'السهم اشتعل مبكراً؛ انتظر رجوع قريب من الدعم أو تأكيد فوق VWAP بعد الافتتاح.';
+  }
+
+  const reason =
+    radarClass === 'chase'
+      ? `ارتفاع مبالغ ${fmt(movePct,1)}%؛ نعرضه حتى لا يفوتك، لكن الدخول الآن مطاردة.`
+      : canSmallEntry
+        ? `تحرك مبكر ${fmt(movePct,1)}% مع حجم ${abbr(extVolume)} ووقف واضح.`
+        : `تحرك مبكر ${fmt(movePct,1)}%؛ يحتاج قرب من الدعم أو حجم أو سبريد أفضل.`;
+
+  return {
+    id: g.id,
+    name: g.name || g.id,
+    sector: outsideUniverse ? 'خارج قائمة 150' : (ALL_STOCKS.find(s => s.id === g.id)?.sector || 'Premarket'),
+    type: 'premarket',
+    source: 'FMP extended/gainers',
+    outsideUniverse,
+    price: +extPrice.toFixed(2),
+    basePrice: +basePrice.toFixed(2),
+    change: +movePct.toFixed(2),
+    score: Math.max(0, Math.min(100, Math.round(score))),
+    volume: extVolume,
+    spreadPct,
+    bidPrice: bid || null,
+    askPrice: ask || null,
+    support: +support.toFixed(2),
+    entry: +extPrice.toFixed(2),
+    stopLoss: +stopLoss.toFixed(2),
+    targetPrice: +targetPrice.toFixed(2),
+    target: +targetPrice.toFixed(2),
+    profitPct: +profitPct.toFixed(1),
+    lossPct: +lossPct.toFixed(1),
+    rr: +rr.toFixed(2),
+    riskReward: +rr.toFixed(2),
+    action,
+    decision: action,
+    actionTone,
+    note: actionNote,
+    actionNote,
+    reason,
+    radarClass,
+    isPremarket: true,
+    trackInJournal: canSmallEntry,
+    gainerRank: g.gainerRank || null,
+  };
+}
+
+async function calcPremarketRadar() {
+  if (!isPremarketRadarActive()) {
+    state.premarketRecs = [];
+    state.premarketTime = new Date();
+    saveLatestTabsSoon();
+    return;
+  }
+  const gainers = await fetchBiggestGainers();
+  if (!gainers.length) {
+    state.premarketRecs = [];
+    state.premarketTime = new Date();
+    saveLatestTabsSoon();
+    return;
+  }
+
+  await fetchAftermarketData(gainers.slice(0, 25));
+  const rows = gainers
+    .map(buildPremarketCard)
+    .filter(Boolean)
+    .filter(x => Math.abs(x.change) >= 3 || x.volume >= 250000)
+    .sort((a, b) => {
+      const rank = x => x.radarClass === 'ignition' ? 0 : x.radarClass === 'ignition-watch' ? 1 : x.radarClass === 'watch' ? 2 : 3;
+      return rank(a) - rank(b) || b.score - a.score || Math.abs(b.change) - Math.abs(a.change);
+    })
+    .slice(0, 30);
+
+  state.premarketRecs = rows;
+  state.premarketTime = new Date();
+  saveLatestTabsSoon();
+  console.log('[Premarket] '+getPremarketRadarLabel()+':', rows.length, 'بطاقة');
+}
+
 // ── الدورة الكاملة: كل الأسهم (افتتاح + منتصف)
 async function calcHunterFull() {
   if (!state.indicatorsDone) return;
@@ -3229,6 +3418,16 @@ function startHunterLoop() {
   }, HUNTER_REFRESH_MIN * 60 * 1000);
 }
 
+let _premarketInterval = null;
+function startPremarketLoop() {
+  if (_premarketInterval) clearInterval(_premarketInterval);
+  _premarketInterval = setInterval(async () => {
+    if (!isPremarketRadarActive()) return;
+    await calcPremarketRadar();
+    render();
+  }, PREMARKET_REFRESH_MIN * 60 * 1000);
+}
+
 let _specInterval = null;
 function startSpecLoop() {
   if (_specInterval) clearInterval(_specInterval);
@@ -3266,6 +3465,7 @@ async function loadData(full=false) {
 
   // تحميل الأسعار + اتجاه السوق دائماً
   await Promise.all([fetchPrices(), fetchMarketTrend()]);
+  await calcPremarketRadar();
 
   // إذا السوق هابط — شغّل الصائد الليلي فوراً بدون انتظار المؤشرات
   if (state.marketTrend === 'bearish' && state.indicatorsDone && !isMarketOpen()) {
@@ -3744,9 +3944,14 @@ function saveSmartJournal(records) {
   if(window._fbReady && window._fbSaveSmartJournal) window._fbSaveSmartJournal(data).catch(()=>{});
 }
 
-function isJournalEntryCard(x) {
+function isJournalEntryCard(x, type) {
   const text = ((x?.decision||'')+' '+(x?.signal||'')+' '+(x?.actionTone||'')+' '+(x?.note||'')).toLowerCase();
   if(!x || !x.id || !x.entry || !x.target || !x.stopLoss) return false;
+  if(type === 'premarket') {
+    if(!x.trackInJournal && x.actionTone !== 'buy') return false;
+    if(/لا تطارد|خطر مطاردة|ممنوع|تجنب/.test(text)) return false;
+    return /دخول صغير|ادخل|دخول|buy/.test(text);
+  }
   if(x.isRadar || x.isNight || x.isWatch || x.gainerClass === 'chase') return false;
   if(/لا تطارد|لا تدخل|ممنوع|تجنب|راقب فقط|مراقبة فقط/.test(text)) return false;
   return /ادخل|دخول|شراء قوي|شراء مشروط|buy|conditional/.test(text);
@@ -3809,22 +4014,25 @@ function makeSmartJournalEntry(x, type, market, now) {
 
 function updateSmartJournalFromLatest(payload) {
   if(!payload) return;
-  if(!payload.market?.realOpen) {
-    evaluateSmartJournal(loadSmartJournal());
-    return; // لا تضف بطاقات جديدة خارج السوق الحقيقي أو وضع الاختبار
-  }
+  const allowNewEntries = !!payload.market?.realOpen || ['pre','after'].includes(payload.market?.session);
   const now = new Date();
   const journal = loadSmartJournal();
   const byId = new Set(journal.map(x => x.journalId));
+  if(!allowNewEntries) {
+    evaluateSmartJournal(journal);
+    return; // لا تضف بطاقات جديدة خارج السوق الحقيقي/الرادار المبكر
+  }
   const groups = [
     ['rec', payload.recs || []],
     ['spec', payload.spec || []],
     ['hunter', payload.hunter || []],
+    ['premarket', payload.premarket || []],
   ];
 
   groups.forEach(([type, list]) => {
     (list || []).forEach(card => {
-      if(!isJournalEntryCard(card)) return;
+      if(!isJournalEntryCard(card, type)) return;
+      if(type !== 'premarket' && !payload.market?.realOpen) return;
       const rec = makeSmartJournalEntry(card, type, payload.market || {}, now);
       if(byId.has(rec.journalId)) return;
       byId.add(rec.journalId);
@@ -3892,6 +4100,15 @@ function compactLatestCard(x, type) {
     resistance:+(x.resistance || 0),
     confidence:+(x.confidence || 0),
     tradeQuality:+(x.tradeQuality || 0),
+    basePrice:+(x.basePrice || 0),
+    volume:+(x.volume || 0),
+    spreadPct:x.spreadPct == null ? null : +(x.spreadPct || 0),
+    source:x.source || '',
+    outsideUniverse:!!x.outsideUniverse,
+    radarClass:x.radarClass || null,
+    reason:x.reason || '',
+    isPremarket:!!x.isPremarket,
+    trackInJournal:!!x.trackInJournal,
     isWatch:!!x.isWatch,
     isRadar:!!x.isRadar,
     isNight:!!x.isNight,
@@ -3908,6 +4125,7 @@ function saveLatestTabsSoon() {
         spyChange: state.spyChange,
         qqqChange: state.qqqChange,
         trend: state.marketTrend,
+        session: getMarketSession(),
         open: isMarketOpen(),
         realOpen: isRealMarketOpen(),
         debug: !!window.DEBUG_MARKET,
@@ -3916,10 +4134,12 @@ function saveLatestTabsSoon() {
         recs: state.recsTime ? state.recsTime.toISOString() : null,
         spec: state.specTime ? state.specTime.toISOString() : null,
         hunter: state.hunterTime ? state.hunterTime.toISOString() : null,
+        premarket: state.premarketTime ? state.premarketTime.toISOString() : null,
       },
       recs: (state.recs || []).slice(0, 10).map(x => compactLatestCard(x, 'rec')).filter(Boolean),
       spec: (state.speculativeRecs || []).slice(0, 10).map(x => compactLatestCard(x, 'spec')).filter(Boolean),
       hunter: (state.hunterRecs || []).slice(0, 20).map(x => compactLatestCard(x, 'hunter')).filter(Boolean),
+      premarket: (state.premarketRecs || []).slice(0, 30).map(x => compactLatestCard(x, 'premarket')).filter(Boolean),
       savedAt: new Date().toISOString(),
     };
     updateSmartJournalFromLatest(payload);
@@ -4900,6 +5120,7 @@ function renderToolReportTab() {
 function renderBottomNav() {
   const tabs = [
     {id:'rec',     icon:'ti-target',     label:'توصيات'},
+    {id:'premarket', icon:'ti-sunrise',  label:'قبل'},
     {id:'waiting', icon:'ti-hourglass',  label:'انتظار'},
     {id:'spec',    icon:'ti-dice',       label:'مجازفة'},
     {id:'hunter',  icon:'ti-crosshair',  label:'صائد'},
@@ -4999,6 +5220,7 @@ function renderBottomNav() {
 function renderTabs() {
   const tabs = [
     {id:'rec',     icon:'🎯', label:'توصياتي'},
+    {id:'premarket', icon:'🌅', label:'قبل الافتتاح'},
     {id:'waiting', icon:'⏳', label:'انتظار'},
     {id:'spec',    icon:'🎲', label:'مجازفة'},
     {id:'hunter',  icon:'🎯', label:'صائد'},
@@ -5203,6 +5425,7 @@ function renderWaitingCard(x, idx) {
 function renderContent() {
   const views = {
     rec:     renderRecTab,
+    premarket: renderPremarketTab,
     waiting: renderWaitingTab,
     spec:    renderSpecTab,
     hunter:  renderHunterTab,
@@ -5217,6 +5440,189 @@ function renderContent() {
 // ================================================================
 // ═══════════════════ REC TAB ════════════════════════════════════
 // ================================================================
+
+function renderPremarketTab() {
+  const rows = state.premarketRecs || [];
+  const sessionLabel = getPremarketRadarLabel();
+  const active = isPremarketRadarActive();
+  const enterRows = rows.filter(x => x.radarClass === 'ignition');
+  const watchRows = rows.filter(x => x.radarClass === 'ignition-watch' || x.radarClass === 'watch');
+  const chaseRows = rows.filter(x => x.radarClass === 'chase');
+
+  const section = (title, count, color, note) => el('div', {style:{
+    margin:'10px 0 8px', padding:'8px 10px',
+    borderRadius:'10px', background:color+'0d', border:`1px solid ${color}26`,
+  }}, [
+    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}}, [
+      el('div', {style:{fontSize:'12px', fontWeight:'900', color}}, [title]),
+      el('div', {style:{fontSize:'10px', fontWeight:'900', color}}, [count+' سهم']),
+    ]),
+    note && el('div', {style:{fontSize:'9px', color:C.text2, lineHeight:'1.55', marginTop:'3px'}}, [note]),
+  ]);
+
+  return el('div', {style:{padding:'12px 16px'}}, [
+    el('div', {style:{marginBottom:'12px'}}, [
+      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}, [
+        el('div', {style:{fontSize:'14px', fontWeight:'900', color:C.orange}}, [
+          '🌅 رادار الاشتعال المبكر — '+rows.length+' سهم'
+        ]),
+        el('div', {style:{fontSize:'10px', fontWeight:'800', color:active?C.green:C.text3}}, [
+          active ? sessionLabel : 'ينتظر وقته'
+        ]),
+      ]),
+      state.spyChange !== null && el('div', {style:{
+        display:'flex', gap:'8px', fontSize:'10px',
+        background:'#060b14', borderRadius:'8px', padding:'5px 8px', marginBottom:'6px',
+      }}, [
+        el('span', {style:{color:C.text2}}, ['السوق:']),
+        el('span', {style:{color:state.spyChange>=0?C.green:C.pink, fontWeight:'800'}}, ['SPY '+(state.spyChange>=0?'+':'')+fmt(state.spyChange)+'%']),
+        el('span', {style:{color:state.qqqChange>=0?C.green:C.pink, fontWeight:'800'}}, ['QQQ '+(state.qqqChange>=0?'+':'')+fmt(state.qqqChange)+'%']),
+      ]),
+      el('div', {style:{
+        display:'flex', justifyContent:'space-between', gap:'8px',
+        fontSize:'9px', color:C.text3,
+        background:'rgba(255,255,255,.035)', borderRadius:'6px',
+        padding:'5px 8px', marginBottom:'6px',
+      }}, [
+        el('span', {}, ['آخر تحديث: '+fmtClock(state.premarketTime)]),
+        el('span', {}, ['يتحدث كل '+PREMARKET_REFRESH_MIN+' د وقت الرادار']),
+      ]),
+      el('div', {style:{
+        fontSize:'10px', color:C.yellow,
+        background:'rgba(255,224,51,.06)', borderRadius:'8px',
+        padding:'7px 9px', border:'1px solid rgba(255,224,51,.2)',
+        lineHeight:'1.6',
+      }}, [
+        'هذا رادار اكتشاف للسوق كامل، وليس توصية آمنة. الأسهم خارج قائمة 150 تظهر هنا كبطاقات مؤقتة، والدخول إن وجد يكون بمبلغ صغير فقط.'
+      ]),
+    ]),
+
+    !active && rows.length === 0 && el('div', {style:{
+      textAlign:'center', padding:'42px 12px', color:C.text2,
+    }}, [
+      el('div', {style:{fontSize:'42px', marginBottom:'10px'}}, ['🌙']),
+      el('div', {style:{fontSize:'13px', fontWeight:'900', color:C.text, marginBottom:'6px'}}, ['الرادار يعمل في التداول الليلي وقبل الافتتاح وأول 30 دقيقة']),
+      el('div', {style:{fontSize:'10px', color:C.text3, lineHeight:'1.7'}}, [
+        'إذا ظهر سهم مثل UPC قبل الافتتاح، سيظهر هنا حتى لو لم يكن ضمن قائمتك.'
+      ]),
+    ]),
+
+    active && rows.length === 0 && el('div', {style:{
+      textAlign:'center', padding:'42px 12px', color:C.text2,
+    }}, [
+      el('div', {style:{fontSize:'42px', marginBottom:'10px'}}, ['🔎']),
+      el('div', {style:{fontSize:'13px', fontWeight:'900', color:C.text, marginBottom:'6px'}}, ['لا يوجد اشتعال مبكر واضح الآن']),
+      el('div', {style:{fontSize:'10px', color:C.text3}}, ['الرادار يبحث في أكبر الرابحين وأسعار ما قبل/بعد السوق.']),
+    ]),
+
+    enterRows.length > 0 && section('🔥 دخول صغير مشروط', enterRows.length, C.green, 'مبلغ صغير فقط قرب الدعم المكتوب. لا ترفع الدخول ولا تلغي الوقف.'),
+    ...enterRows.map((x, i) => renderPremarketCard(x, i)),
+
+    watchRows.length > 0 && section('👀 اشتعال / مراقبة افتتاح', watchRows.length, C.yellow, 'ظهر مبكراً، لكن يحتاج قرب دعم أو حجم/ثبات أفضل.'),
+    ...watchRows.map((x, i) => renderPremarketCard(x, i)),
+
+    chaseRows.length > 0 && section('⚠️ خطر مطاردة', chaseRows.length, C.pink, 'نعرضها حتى لا تفوتك الحركة، لكن لا تدخل بعد الطيران إلا Pullback واضح.'),
+    ...chaseRows.map((x, i) => renderPremarketCard(x, i)),
+  ]);
+}
+
+function renderPremarketCard(x, idx) {
+  const isSelected = state.selected === x.id + '_premarket';
+  const color = x.radarClass === 'ignition' ? C.green :
+                x.radarClass === 'chase' ? C.pink :
+                x.radarClass === 'ignition-watch' ? C.orange : C.yellow;
+  const badge = x.radarClass === 'ignition' ? '🔥 دخول صغير' :
+                x.radarClass === 'chase' ? '⚠️ لا تطارد' :
+                x.radarClass === 'ignition-watch' ? '🔥 اشتعال مبكر' : '👀 راقب';
+
+  return el('div', {
+    style:{
+      background:'#060b14', border:`1px solid ${isSelected ? color : color+'33'}`,
+      borderRadius:'12px', marginBottom:'8px', overflow:'hidden', cursor:'pointer',
+    },
+    onClick:()=>{ state.selected = isSelected ? null : x.id+'_premarket'; render(); }
+  }, [
+    el('div', {style:{padding:'10px 12px'}}, [
+      el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:'8px', marginBottom:'7px'}}, [
+        el('div', {}, [
+          el('div', {style:{display:'flex', alignItems:'center', gap:'6px', flexWrap:'wrap'}}, [
+            el('span', {style:{fontSize:'14px', fontWeight:'900', color:C.text}}, [x.name]),
+            el('span', {style:{fontSize:'10px', color:C.text2}}, [x.id]),
+            x.outsideUniverse && el('span', {style:{
+              fontSize:'9px', color:C.blue, background:'rgba(0,200,255,.1)',
+              borderRadius:'4px', padding:'1px 5px',
+            }}, ['خارج 150']),
+          ]),
+          el('div', {style:{fontSize:'10px', color:C.text3}}, [x.sector || 'Premarket']),
+        ]),
+        el('div', {style:{
+          fontSize:'10px', fontWeight:'900', color,
+          background:color+'16', border:`1px solid ${color}33`,
+          borderRadius:'8px', padding:'4px 8px', whiteSpace:'nowrap',
+        }}, [badge]),
+      ]),
+
+      el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'5px', marginBottom:'7px'}}, [
+        el('div', {style:{background:'rgba(255,255,255,.035)', borderRadius:'7px', padding:'6px', textAlign:'center'}}, [
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['السعر الآن']),
+          el('div', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, [fmtPrice(x.price)]),
+          el('div', {style:{fontSize:'9px', color:x.change>=0?C.green:C.pink}}, [(x.change>=0?'+':'')+fmt(x.change,1)+'%']),
+        ]),
+        el('div', {style:{background:'rgba(255,255,255,.035)', borderRadius:'7px', padding:'6px', textAlign:'center'}}, [
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['الحجم']),
+          el('div', {style:{fontSize:'13px', fontWeight:'900', color:x.volume>=1000000?C.green:C.yellow}}, [abbr(x.volume)]),
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['قبل/بعد السوق']),
+        ]),
+        el('div', {style:{background:'rgba(255,255,255,.035)', borderRadius:'7px', padding:'6px', textAlign:'center'}}, [
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['القوة']),
+          el('div', {style:{fontSize:'13px', fontWeight:'900', color}}, [x.score+'/100']),
+          el('div', {style:{fontSize:'9px', color:C.text3}}, [x.spreadPct!=null ? 'سبريد '+fmt(x.spreadPct,1)+'%' : 'سبريد —']),
+        ]),
+      ]),
+
+      el('div', {style:{
+        background:color+'10', border:`1px solid ${color}26`,
+        borderRadius:'8px', padding:'7px 9px', marginBottom:'7px',
+        display:'flex', justifyContent:'space-between', gap:'8px',
+      }}, [
+        el('span', {style:{fontSize:'11px', fontWeight:'900', color}}, [x.action]),
+        el('span', {style:{fontSize:'9px', color:C.text2, textAlign:'left', lineHeight:'1.45'}}, [x.actionNote]),
+      ]),
+
+      el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'5px'}}, [
+        el('div', {style:{background:'rgba(0,200,255,.07)', borderRadius:'7px', padding:'6px', textAlign:'center'}}, [
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['دعم مبكر']),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:C.blue}}, [fmtPrice(x.support)]),
+        ]),
+        el('div', {style:{background:'rgba(255,45,122,.08)', borderRadius:'7px', padding:'6px', textAlign:'center'}}, [
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['وقف']),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:C.pink}}, [fmtPrice(x.stopLoss)]),
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['-'+fmt(x.lossPct,1)+'%']),
+        ]),
+        el('div', {style:{background:'rgba(0,255,136,.08)', borderRadius:'7px', padding:'6px', textAlign:'center'}}, [
+          el('div', {style:{fontSize:'8px', color:C.text3}}, ['هدف سريع']),
+          el('div', {style:{fontSize:'11px', fontWeight:'900', color:C.green}}, [fmtPrice(x.targetPrice)]),
+          el('div', {style:{fontSize:'8px', color:C.green}}, ['+'+fmt(x.profitPct,1)+'%']),
+        ]),
+      ]),
+
+      isSelected && el('div', {style:{
+        marginTop:'8px', background:'rgba(255,255,255,.028)',
+        border:'1px solid rgba(255,255,255,.08)', borderRadius:'8px',
+        padding:'8px 9px', fontSize:'10px', color:C.text2, lineHeight:'1.65',
+      }}, [
+        el('div', {style:{fontWeight:'900', color:C.yellow, marginBottom:'4px'}}, ['سبب القرار']),
+        x.reason,
+        el('div', {style:{height:'1px', background:'rgba(255,255,255,.08)', margin:'7px 0'}}),
+        'الإغلاق/السعر الأساسي: '+fmtPrice(x.basePrice)+' | R/R '+fmt(x.riskReward,1)+'x',
+        x.bidPrice && x.askPrice ? ' | Bid '+fmtPrice(x.bidPrice)+' / Ask '+fmtPrice(x.askPrice) : '',
+        el('div', {style:{marginTop:'5px', color:x.trackInJournal?C.green:C.text3, fontWeight:'800'}}, [
+          x.trackInJournal ? '✅ يدخل السجل الذكي كتجربة رادار إذا بقيت الشروط.' : '👁 متابعة فقط؛ لا يدخل السجل إلا إذا صار دخول صغير/جاهز.'
+        ]),
+      ]),
+    ]),
+  ]);
+}
 
 function renderRecTab() {
   const session = getSessionInfo();
@@ -8299,6 +8705,7 @@ window.retryPrices = async () => {
   try {
     render();
     await loadData(false);
+    startPremarketLoop();
     _appBooting = false;
     if(state.recs?.length > 0) {
       _recsLockedToday = true;
