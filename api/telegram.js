@@ -195,6 +195,25 @@ function fmtRR(v) {
   return Number.isFinite(n) && n > 0 ? `${n.toFixed(1)}x` : '—';
 }
 
+function supportState(price, support, prevPrice = null) {
+  const p = +price || 0;
+  const s = +support || 0;
+  const prev = +prevPrice || 0;
+  if (!p || !s) return { known:false, above:false, near:false, lost:false, softLost:false, recovered:false, label:'دعم غير واضح' };
+  const softLine = s * 0.998;
+  const hardLine = s * 0.992;
+  const above = p >= softLine;
+  const near = above && p <= s * 1.03;
+  const lost = p < hardLine;
+  const softLost = !lost && p < softLine;
+  const recovered = prev > 0 && prev < softLine && p >= s;
+  const label = lost ? 'كسر دعم — لا تدخل' :
+    softLost ? 'راقب استرجاع الدعم' :
+    recovered ? 'استرجاع دعم إيجابي' :
+    near ? 'قريب فوق الدعم' : 'فوق الدعم';
+  return { known:true, above, near, lost, softLost, recovered, label };
+}
+
 function fmtSavedTime(v) {
   if (!v) return 'غير متاح';
   const d = new Date(v);
@@ -213,14 +232,15 @@ function getLatestTabItems(data, kind) {
   if (kind === 'spec') return Array.isArray(data?.spec) ? data.spec : [];
   if (kind === 'hunter') return Array.isArray(data?.hunter) ? data.hunter : [];
   if (kind === 'premarket') return Array.isArray(data?.premarket) ? data.premarket : [];
+  if (kind === 'daily') return Array.isArray(data?.daily) ? data.daily : [];
   return [];
 }
 
 function latestCardRank(x) {
-  const text = `${x?.decision || ''} ${x?.signal || ''} ${x?.actionTone || ''} ${x?.note || ''}`.toLowerCase();
-  if (/خطر مطاردة|لا تطارد|لا تدخل|ممنوع|تجنب|chase/.test(text)) return 2;
-  if (/دخول صغير|ادخل|دخول فعلي|شراء قوي|دخول مسموح|buy/.test(text) && !/لا تدخل|لا تطارد|مراقبة فقط|راقب|خطر مطاردة/.test(text)) return 0;
-  if (/شراء مشروط|عند الدعم|راقب|مراقبة|انتظار|support|watch/.test(text)) return 1;
+  const text = `${x?.decision || ''} ${x?.signal || ''} ${x?.actionTone || ''} ${x?.note || ''} ${x?.supportState || ''}`.toLowerCase();
+  if (/كسر دعم|خطر مطاردة|لا تطارد|لا تدخل|ممنوع|تجنب|chase/.test(text)) return 2;
+  if (/دخول قرب الدعم|دخول صغير|ادخل|دخول فعلي|شراء قوي|دخول مسموح|buy/.test(text) && !/لا تدخل|لا تطارد|مراقبة فقط|راقب|خطر مطاردة/.test(text)) return 0;
+  if (/شراء مشروط|عند الدعم|قريب فوق الدعم|راقب|مراقبة|انتظار|watch/.test(text)) return 1;
   return 1;
 }
 
@@ -242,6 +262,7 @@ function latestDecisionReason(x, rank) {
   const note = String(x?.note || '').trim();
   if (note) return note;
   const text = `${x?.decision || ''} ${x?.signal || ''}`.toLowerCase();
+  if (/دخول قرب الدعم|support/.test(text)) return 'دخول صغير قرب الدعم المكتوب فقط؛ لا ترفع السعر والوقف إلزامي.';
   if (/fmp|اشتراك/.test(text)) return 'ظهر من مصدر خارجي فقط؛ انتظر تكرار الإشارة أو تأكيد VWAP وحجم.';
   if (/vwap/.test(text) && /حجم/.test(text)) return 'القرار ينتظر تأكيد VWAP والحجم قبل الدخول.';
   if (/pullback|تراجع/.test(text)) return 'السهم مرتفع الآن؛ الأفضل انتظار تراجع أو ثبات جديد.';
@@ -263,13 +284,15 @@ function formatLatestTabsMessage(kind, data) {
     recs: '🎯 توصيات الأداة',
     spec: '🎲 المجازفة',
     hunter: '🎯 الصائد',
-    premarket: '🌅 رادار قبل الافتتاح',
+    premarket: '🌅 رادار الافتتاح',
+    daily: '⚡ المضاربة اليومية',
   };
   const empty = {
     recs: 'لا توجد توصيات محفوظة الآن.',
     spec: 'لا توجد فرص مجازفة محفوظة الآن.',
     hunter: 'لا توجد فرص صائد محفوظة الآن.',
     premarket: 'لا توجد أسهم اشتعال مبكر محفوظة الآن.',
+    daily: 'لا توجد فرص مضاربة يومية محفوظة الآن.',
   };
   const rawItems = getLatestTabItems(data, kind);
   const decorated = rawItems
@@ -278,7 +301,7 @@ function formatLatestTabsMessage(kind, data) {
   const actionableCount = decorated.filter(v => v.rank === 0).length;
   const watchCount = decorated.filter(v => v.rank === 1).length;
   const avoidCount = decorated.filter(v => v.rank === 2).length;
-  const shown = decorated.slice(0, (kind === 'hunter' || kind === 'premarket') ? 20 : 10);
+  const shown = decorated.slice(0, (kind === 'hunter' || kind === 'premarket' || kind === 'daily') ? 20 : 10);
   const market = data?.market || {};
   const savedAt = data?.times?.[kind === 'recs' ? 'recs' : kind] || data?.savedAt;
   const marketLine = `SPY ${fmtPct(market.spyChange)} | QQQ ${fmtPct(market.qqqChange)} | ${market.open ? 'السوق مفتوح' : 'السوق مغلق'}`;
@@ -325,6 +348,7 @@ function waitingReasonFromCard(x, kind, rank) {
   const reason = latestDecisionReason(x, rank);
   const text = `${x?.decision || ''} ${x?.signal || ''} ${x?.actionTone || ''} ${x?.note || ''}`.toLowerCase();
   if (kind === 'hunter') {
+    if (/دخول قرب الدعم|support/.test(text)) return 'جاهز قرب الدعم: لا ترفع السعر والتزم بالوقف';
     if (/vwap/.test(text)) return 'الشرط الناقص: رجوع/ثبات فوق VWAP';
     if (/اختراق|قمة|15/.test(text)) return 'الشرط الناقص: اختراق قمة 15 دقيقة';
     if (/حجم|rvol/.test(text)) return 'الشرط الناقص: حجم أعلى مع ثبات السعر';
@@ -345,7 +369,8 @@ function buildWaitingItems(data) {
     ['recs', 'توصيات'],
     ['spec', 'مجازفة'],
     ['hunter', 'صائد'],
-    ['premarket', 'قبل الافتتاح'],
+    ['premarket', 'رادار الافتتاح'],
+    ['daily', 'مضاربة يومية'],
   ];
   const items = [];
   groups.forEach(([kind, source]) => {
@@ -395,13 +420,41 @@ function formatWaitingMessage(data) {
   return m;
 }
 
+function formatLearnMessage() {
+  return `🎓 <b>تعلم قراءة Rami Falcon X</b>
+──────────────
+🎯 <b>التوصيات</b>
+صفقات منظمة بجودة وثقة وR/R ودعم/مقاومة. لا تدخل إلا إذا القرار صريح: ادخل الآن أو دخول واضح.
+
+⚡ <b>المضاربة اليومية</b>
+جلسة سريعة داخل السوق. تعتمد على VWAP وRVOL واختراق 15 دقيقة وHigher Low والشموع. لا تطارد سهم طار.
+
+🎯 <b>الصائد</b>
+يلتقط الارتداد والاشتعال الأخف من التوصيات. راقب تعني انتظار محفز، وليست شراء.
+
+🎲 <b>المجازفة</b>
+أسهم متقلبة بمبلغ صغير ووقف إلزامي. إذا لا يوجد وقف واضح فلا توجد صفقة.
+
+🌅 <b>رادار الافتتاح</b>
+يراقب قبل الافتتاح وأول السوق، حتى الأسهم خارج قائمتك. هدفه الاكتشاف المبكر لا التوصية العمياء.
+
+📌 <b>المتابعة</b>
+ذاكرة اليوم: تحفظ البطاقات المهمة حتى لو اختفت بعد تحديث السوق.
+
+📈 <b>السجل والتقرير</b>
+يقيسان الأداة تلقائياً: هدف، وقف، انتهاء مدة، ونسبة نجاح كل تبويب.
+──────────────
+افتح تبويب <b>تعلم</b> داخل الأداة للشرح الكامل.`;
+}
+
 function findLatestCardBySymbol(data, sym) {
   const target = String(sym || '').toUpperCase();
   const groups = [
     ['recs', '🎯 توصيات'],
     ['spec', '🎲 مجازفة'],
     ['hunter', '🎯 صائد'],
-    ['premarket', '🌅 قبل الافتتاح'],
+    ['premarket', '🌅 رادار الافتتاح'],
+    ['daily', '⚡ مضاربة يومية'],
   ];
   for (const [kind, label] of groups) {
     const item = getLatestTabItems(data, kind)
@@ -442,6 +495,10 @@ function formatLatestCardDetail(found, data) {
   m += `──────────────\n`;
   if (Number(x.support) > 0 || Number(x.resistance) > 0) {
     m += `دعم: ${fmtMoney(x.support)} | مقاومة: ${fmtMoney(x.resistance)}\n`;
+    m += `──────────────\n`;
+  }
+  if (String(x.actionTone || '').toLowerCase() === 'support' || /دخول قرب الدعم/.test(String(x.decision || ''))) {
+    m += `تنبيه تنفيذ: دخول صغير قرب الدعم فقط، ولا ترفع سعر الدخول.\n`;
     m += `──────────────\n`;
   }
   m += `سبب القرار:\n${reason}\n`;
@@ -741,12 +798,13 @@ function formatDecisionLabel(decision) {
 
 function buildAnalysisMsg(sym, name, a, levels) {
   const atr      = a.atrPct;
+  const supportStatus = supportState(a.price, a.support, a.prevPrice);
   const recMetrics = RamiAnalysis.calcRecTradeMetrics({
     price: a.price,
     support: a.support,
     resistance: a.resistance,
     atrPct: atr,
-    nearSupport: !!(a.support && a.price <= a.support * 1.03),
+    nearSupport: supportStatus.near,
     nearResistance: !!(a.resistance && a.price >= a.resistance * 0.98),
   });
   const stopLoss = recMetrics.stopLoss || null;
@@ -786,7 +844,7 @@ function buildAnalysisMsg(sym, name, a, levels) {
     macdHist: a.macdHist,
     volR: 1,
     change: a.change,
-    nearSupport: !!(a.support && a.price <= a.support * 1.03),
+    nearSupport: supportStatus.near,
     distToSupport,
     nearResistance: !!isNearRes,
     priceText: '$' + a.price,
@@ -997,6 +1055,7 @@ async function generateSmartReport() {
   const rec = calcSmartJournalStats(records.filter(r => r.type === 'rec'));
   const spec = calcSmartJournalStats(records.filter(r => r.type === 'spec'));
   const hunter = calcSmartJournalStats(records.filter(r => r.type === 'hunter'));
+  const daily = calcSmartJournalStats(records.filter(r => r.type === 'daily'));
   const open = records.filter(r => r.status === 'open').slice(-8).reverse();
 
   const line = (name, st) =>
@@ -1008,6 +1067,7 @@ async function generateSmartReport() {
   m += `${line('التوصيات', rec)}\n`;
   m += `${line('المجازفة', spec)}\n`;
   m += `${line('الصائد', hunter)}\n`;
+  m += `${line('المضاربة اليومية', daily)}\n`;
   if (open.length) {
     m += `──────────────\n`;
     m += `<b>مفتوحة حالياً:</b>\n`;
@@ -1298,7 +1358,7 @@ async function handleCallback(callbackId, data, cid) {
   // ── القائمة الرئيسية
   if (action === 'menu') {
     // آخر نتائج محفوظة من الأداة
-    if (sym === 'LATEST_RECS' || sym === 'LATEST_SPEC' || sym === 'LATEST_HUNTER' || sym === 'LATEST_PREMARKET' || sym === 'LATEST_WAITING') {
+    if (sym === 'LATEST_RECS' || sym === 'LATEST_SPEC' || sym === 'LATEST_HUNTER' || sym === 'LATEST_PREMARKET' || sym === 'LATEST_DAILY' || sym === 'LATEST_WAITING') {
       const latest = await fbGetLatestTabs();
       if (sym === 'LATEST_WAITING') {
         await tgSend(formatWaitingMessage(latest));
@@ -1307,6 +1367,7 @@ async function handleCallback(callbackId, data, cid) {
       const kind =
         sym === 'LATEST_RECS' ? 'recs' :
         sym === 'LATEST_SPEC' ? 'spec' :
+        sym === 'LATEST_DAILY' ? 'daily' :
         sym === 'LATEST_PREMARKET' ? 'premarket' :
         'hunter';
       await tgSend(formatLatestTabsMessage(kind, latest));
@@ -1350,6 +1411,12 @@ async function handleCallback(callbackId, data, cid) {
     }
 
     // مساعدة
+    if (sym === 'LEARN') {
+      await tgSend(formatLearnMessage());
+      return;
+    }
+
+    // مساعدة
     if (sym === 'HELP') {
       await tgSend(
         `❓ <b>المساعدة</b>
@@ -1361,15 +1428,17 @@ async function handleCallback(callbackId, data, cid) {
 ` +
         `🎯 صائد: آخر بطاقات الصائد
 ` +
-        `🌅 قبل الافتتاح: رادار الاشتعال المبكر
+        `⚡ المضاربة اليومية: فرص جلسة سريعة داخل السوق
 ` +
-        `⏳ انتظار: أسهم قريبة من الدخول وينقصها شرط
+        `🌅 رادار الافتتاح: رادار الاشتعال المبكر
 ` +
         `📊 تحليل سهم: اكتب رمزه مثل <code>NVDA</code>
 ` +
         `👁 مراقبتي: اكتب <code>مراقبتي</code>
 ` +
         `📈 السجل الذكي: اكتب <code>تقرير</code>
+` +
+        `🎓 تعلم: شرح التبويبات ومنطق القرارات
 ` +
         `🗑 حذف من المراقبة: <code>حذف AAPL</code>
 ` +
@@ -1399,12 +1468,13 @@ async function handleMessage(text, cid) {
         ],
         [
           { text: '🎯 الصائد', callback_data: 'menu_latest_hunter' },
-          { text: '🌅 قبل الافتتاح', callback_data: 'menu_latest_premarket' },
+          { text: '⚡ المضاربة اليومية', callback_data: 'menu_latest_daily' },
         ],
-        [{ text: '⏳ انتظار', callback_data: 'menu_latest_waiting' }],
+        [{ text: '🌅 رادار الافتتاح', callback_data: 'menu_latest_premarket' }],
         [{ text: '📊 تحليل سهم',     callback_data: 'menu_analyze'   }],
         [{ text: '👁 مراقبتي',        callback_data: 'menu_watchlist' }],
         [{ text: '📈 السجل الذكي',    callback_data: 'menu_report'    }],
+        [{ text: '🎓 تعلم',            callback_data: 'menu_learn'     }],
         [{ text: '❓ مساعدة',          callback_data: 'menu_help'      }],
       ]
     );
@@ -1430,9 +1500,20 @@ async function handleMessage(text, cid) {
     return;
   }
 
-  if (['قبل', 'قبل الافتتاح', 'premarket', 'pre'].includes(low)) {
+  if (['مضاربة', 'المضاربة', 'المضاربة اليومية', 'يومي', 'daily', 'daytrade', 'day'].includes(low)) {
+    const latest = await fbGetLatestTabs();
+    await tgSend(formatLatestTabsMessage('daily', latest));
+    return;
+  }
+
+  if (['قبل', 'قبل الافتتاح', 'رادار الافتتاح', 'افتتاح', 'premarket', 'pre'].includes(low)) {
     const latest = await fbGetLatestTabs();
     await tgSend(formatLatestTabsMessage('premarket', latest));
+    return;
+  }
+
+  if (['تعلم', 'شرح', 'learn', 'education'].includes(low)) {
+    await tgSend(formatLearnMessage());
     return;
   }
 
