@@ -5501,8 +5501,9 @@ window.onunhandledrejection = function(e) {
 };
 
 function render() {
+  let root = null;
   try {
-    const root = app();
+    root = app();
     if(!root) { console.error('[render] لا يوجد div#app'); return; }
     root.innerHTML = '';
     root.appendChild(renderApp());
@@ -5510,7 +5511,75 @@ function render() {
     if(state.recs) state.recs.forEach(r => state.animatedRecs.add(r.id));
   } catch(e) {
     console.error('[render] خطأ:', e.message, e.stack);
+    const appEl = root || app();
+    if(appEl) {
+      appEl.innerHTML = '';
+      appEl.appendChild(renderFatalAppError(e));
+    }
   }
+}
+
+function renderFatalAppError(err) {
+  return el('div', {style:{
+    minHeight:'100vh',
+    display:'flex',
+    alignItems:'center',
+    justifyContent:'center',
+    padding:'22px',
+    direction:'rtl',
+    color:'#f7efe3',
+  }}, [
+    el('div', {style:{
+      width:'min(520px, 100%)',
+      background:'#060b14',
+      border:'1px solid rgba(255,122,0,.28)',
+      borderRadius:'16px',
+      padding:'18px',
+      boxShadow:'0 18px 44px rgba(0,0,0,.45)',
+      textAlign:'center',
+    }}, [
+      el('div', {style:{fontSize:'42px', marginBottom:'10px'}}, ['🛠️']),
+      el('div', {style:{fontSize:'16px', fontWeight:'950', color:'#ff7a00', marginBottom:'8px'}}, [
+        'تعذر رسم الواجهة'
+      ]),
+      el('div', {style:{fontSize:'11px', color:'#b9ac8c', lineHeight:'1.8', marginBottom:'12px'}}, [
+        'تم منع الشاشة السوداء. هذا غالباً من بيانات محفوظة قديمة أو خطأ في تبويب محدد.'
+      ]),
+      el('div', {style:{
+        direction:'ltr',
+        textAlign:'left',
+        color:'#8d99b8',
+        background:'#050810',
+        border:'1px solid rgba(255,255,255,.08)',
+        borderRadius:'10px',
+        padding:'9px',
+        fontSize:'10px',
+        lineHeight:'1.6',
+        wordBreak:'break-word',
+        marginBottom:'12px',
+      }}, [String(err && (err.message || err) || 'Unknown error')]),
+      el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px'}}, [
+        el('button', {style:{
+          background:'rgba(0,255,136,.12)',
+          color:'#00ff88',
+          border:'1px solid rgba(0,255,136,.28)',
+          borderRadius:'10px',
+          padding:'10px 8px',
+          fontWeight:'900',
+          cursor:'pointer',
+        }, onClick:()=>{ state.tab='rec'; render(); }}, ['التوصيات']),
+        el('button', {style:{
+          background:'rgba(255,122,0,.12)',
+          color:'#ff7a00',
+          border:'1px solid rgba(255,122,0,.28)',
+          borderRadius:'10px',
+          padding:'10px 8px',
+          fontWeight:'900',
+          cursor:'pointer',
+        }, onClick:()=>location.reload()}, ['تحديث']),
+      ]),
+    ]),
+  ]);
 }
 
 function renderApp() {
@@ -6433,7 +6502,41 @@ function renderContent() {
     history: renderHistoryTab,
     calc:    renderCalcTab,
   };
-  return (views[state.tab]||renderRecTab)();
+  try {
+    return (views[state.tab]||renderRecTab)();
+  } catch(err) {
+    console.error('[renderContent]', state.tab, err);
+    return renderTabError(state.tab, err);
+  }
+}
+
+function renderTabError(tab, err) {
+  const label = {
+    rec:'التوصيات', followup:'المتابعة', premarket:'رادار الافتتاح',
+    daily:'المضاربة اليومية', waiting:'الانتظار', spec:'المجازفة',
+    hunter:'الصائد', market:'السوق', learn:'تعلم', report:'التقرير',
+    history:'السجل', calc:'الحاسبة',
+  }[tab] || tab || 'التبويب';
+  return el('div', {style:{padding:'34px 16px 90px', textAlign:'center'}}, [
+    el('div', {style:{fontSize:'42px', marginBottom:'10px'}}, ['🛠️']),
+    el('div', {style:{fontSize:'15px', fontWeight:'950', color:C.orange, marginBottom:'8px'}}, [
+      'تعذر عرض تبويب '+label
+    ]),
+    el('div', {style:{fontSize:'11px', color:C.text2, lineHeight:'1.7', maxWidth:'460px', margin:'0 auto 12px'}}, [
+      'الواجهة لم تتوقف بالكامل؛ تم عزل الخطأ عشان ما تتحول الشاشة لسواد. جرّب تحديث الصفحة، وإذا تكرر أرسل صورة الكونسل.'
+    ]),
+    el('div', {style:{
+      background:'#060b14', border:'1px solid rgba(255,122,0,.25)',
+      borderRadius:'10px', padding:'9px 10px', color:C.text3,
+      fontSize:'10px', lineHeight:'1.6', maxWidth:'520px', margin:'0 auto 12px',
+      direction:'ltr', textAlign:'left', wordBreak:'break-word',
+    }}, [String(err && (err.message || err) || 'Unknown render error')]),
+    el('button', {style:{
+      background:'rgba(0,255,136,.12)', color:C.green,
+      border:'1px solid rgba(0,255,136,.28)', borderRadius:'10px',
+      padding:'9px 14px', fontWeight:'900', cursor:'pointer',
+    }, onClick:()=>{ state.tab='rec'; render(); }}, ['العودة للتوصيات']),
+  ]);
 }
 
 function renderLearnTab() {
@@ -6521,7 +6624,7 @@ function renderLearnTab() {
       {k:'السجل', v:'يسجل فقط إذا تحول إلى دخول فعلي قابل للقياس، وليس مجرد اشتعال خطير.'},
     ], 'الرادار هدفه الاكتشاف المبكر، وليس إعطاء توصية آمنة لكل سهم مشتعل.'),
 
-    card('📌', 'المتابعة', C.cyan || C.blue, [
+    card('📌', 'المتابعة', C.blue, [
       {k:'الفكرة', v:'يجمع البطاقات المهمة التي ظهرت اليوم حتى لا تختفي من عينك مع التحديثات.'},
       {k:'الاستخدام', v:'إذا توصية ظهرت ثم اختفت بسبب تغير السوق، تقدر تراجعها هنا وتعرف هل فقدت شرطها.'},
       {k:'الحالة', v:'يعرض: صالحة، مراقبة، فقدت الشرط، وصلت الهدف، أو ضربت الوقف.'},
@@ -6539,12 +6642,24 @@ function renderLearnTab() {
 
 function renderFollowupTab() {
   const day = followupDayKey();
+  const safeTime = v => {
+    const t = new Date(v || 0).getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
   const rows = loadDailyFollowup()
-    .filter(r => r.day === day)
+    .filter(r => r && typeof r === 'object' && r.day === day)
+    .map(r => ({
+      ...r,
+      id: r.id || r.symbol || '—',
+      type: r.type || 'followup',
+      status: r.status || 'watch',
+      statusLabel: r.statusLabel || 'متابعة',
+      seenCount: Number.isFinite(+r.seenCount) ? +r.seenCount : 1,
+    }))
     .sort((a, b) => {
       const order = {valid:0, watch:1, lost:2, target:3, stop:4, ended:5};
       return (order[a.status] ?? 9) - (order[b.status] ?? 9) ||
-        new Date(b.lastSeenAt || 0) - new Date(a.lastSeenAt || 0);
+        safeTime(b.lastSeenAt) - safeTime(a.lastSeenAt);
     });
   const counts = rows.reduce((m, r) => {
     m[r.status] = (m[r.status] || 0) + 1;
@@ -6553,14 +6668,18 @@ function renderFollowupTab() {
   const clock = iso => {
     try { return new Date(iso).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}); } catch(e) { return '—'; }
   };
-  const statusColor = r => r.statusColor || (
-    r.status === 'valid' || r.status === 'target' ? C.green :
+  const statusColor = r => {
+    const custom = typeof r.statusColor === 'string' && r.statusColor.trim() ? r.statusColor : null;
+    return custom || (r.status === 'valid' || r.status === 'target' ? C.green :
     r.status === 'stop' || r.status === 'ended' ? C.pink :
-    r.status === 'lost' ? C.orange : C.yellow
-  );
+    r.status === 'lost' ? C.orange : C.yellow);
+  };
   const card = r => {
     const color = statusColor(r);
-    const pnl = r.entry && r.currentPrice ? ((r.currentPrice - r.entry) / r.entry * 100) : null;
+    const entry = +r.entry || 0;
+    const current = +r.currentPrice || 0;
+    const pnl = entry && current ? ((current - entry) / entry * 100) : null;
+    const source = followupSourceLabel(r.type);
     return el('div', {style:{
       background:'#060b14',
       border:`1px solid ${color}33`,
@@ -6571,10 +6690,10 @@ function renderFollowupTab() {
       el('div', {style:{display:'flex', justifyContent:'space-between', gap:'8px', alignItems:'flex-start'}}, [
         el('div', {}, [
           el('div', {style:{fontSize:'14px', fontWeight:'900', color:C.text}}, [
-            r.id+' — '+(r.name || followupSourceLabel(r.type))
+            r.id+' — '+(r.name || source)
           ]),
           el('div', {style:{fontSize:'10px', color:C.text3, marginTop:'2px'}}, [
-            followupSourceLabel(r.type)+' • ظهر '+clock(r.firstSeenAt)+' • آخر مشاهدة '+clock(r.lastSeenAt)+' • '+(r.seenCount||1)+' مرة'
+            source+' • ظهر '+clock(r.firstSeenAt)+' • آخر مشاهدة '+clock(r.lastSeenAt)+' • '+(r.seenCount||1)+' مرة'
           ]),
         ]),
         el('div', {style:{
@@ -6584,10 +6703,10 @@ function renderFollowupTab() {
         }}, [r.statusLabel || 'متابعة']),
       ]),
       el('div', {style:{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'5px', marginTop:'8px'}}, [
-        miniFollowBox('السعر', fmtPrice(r.currentPrice), C.text),
-        miniFollowBox('دخول', fmtPrice(r.entry), C.orange),
-        miniFollowBox('هدف', fmtPrice(r.target), C.green),
-        miniFollowBox('وقف', fmtPrice(r.stopLoss), C.pink),
+        miniFollowBox('السعر', fmtPrice(current), C.text),
+        miniFollowBox('دخول', fmtPrice(entry), C.orange),
+        miniFollowBox('هدف', fmtPrice(+r.target || 0), C.green),
+        miniFollowBox('وقف', fmtPrice(+r.stopLoss || 0), C.pink),
       ]),
       el('div', {style:{
         marginTop:'8px', fontSize:'10px', color:C.text2,
