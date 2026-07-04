@@ -6740,11 +6740,11 @@ function renderFollowupTab() {
       background:'rgba(0,200,255,.05)', border:'1px solid rgba(0,200,255,.18)',
       borderRadius:'10px', padding:'9px 10px', marginBottom:'10px',
     }}, ['هذا التبويب يحفظ بطاقات اليوم تلقائياً. إذا ظهرت توصية ثم اختفت، لن تضيع: ستظهر هنا كـ “فقدت شرط” مع السبب.']),
-    rows.length ? rows.map(card) : el('div', {style:{textAlign:'center', padding:'38px 10px', color:C.text2}}, [
+    ...(rows.length ? rows.map(card) : [el('div', {style:{textAlign:'center', padding:'38px 10px', color:C.text2}}, [
       el('div', {style:{fontSize:'38px', marginBottom:'8px'}}, ['📌']),
       el('div', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, ['لا توجد بطاقات متابعة اليوم بعد']),
       el('div', {style:{fontSize:'10px', color:C.text3, marginTop:'5px'}}, ['ستمتلئ تلقائياً عند ظهور توصيات أو صائد أو مجازفة أو رادار افتتاح.']),
-    ]),
+    ])]),
   ]);
 }
 
