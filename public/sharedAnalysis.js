@@ -432,37 +432,41 @@
     price=0,
     checks={},
   } = {}) {
-    const enterVerdict = isNight
-      ? {label:'مراقبة بعد الافتتاح', tone:'watch', note:'تحليل ليلي؛ لا تنفيذ قبل تأكيد VWAP والحجم بعد الفتح.'}
-      : actionTone === 'buy'
-      ? {label:'دخول مسموح', tone:'buy', note:'نفذ فقط إذا بقي فوق VWAP والحجم داعم.'}
-      : actionTone === 'support'
-        ? {label:'دخول قرب الدعم', tone:'support', note:'لا تدخل إلا قريبًا من الدعم وبوقف صغير.'}
-        : gainerClass === 'chase' || action === 'لا تطارد'
-          ? {label:'لا تدخل الآن', tone:'danger', note:'السهم مرتفع لكن الدخول متأخر؛ انتظر Pullback.'}
-          : {label:'لا تدخل الآن', tone:'watch', note:'الدخول بعد اختراق/ثبات وليس بسعر عشوائي.'};
+    {
+      const isChase = gainerClass === 'chase' || action === 'لا تطارد';
+      const enterVerdict = isNight
+        ? {label:'مراقبة بعد الافتتاح', tone:'watch', note:'تحليل ليلي؛ لا تنفيذ قبل تأكيد VWAP والحجم بعد الفتح.'}
+        : actionTone === 'buy'
+          ? {label:'دخول مسموح', tone:'buy', note:'نفذ فقط إذا بقي فوق VWAP والحجم داعم.'}
+          : actionTone === 'support'
+            ? {label:'دخول قرب الدعم', tone:'support', note:'دخول صغير فقط قرب الدعم المكتوب وبوقف صغير.'}
+            : isChase
+              ? {label:'لا تدخل الآن', tone:'danger', note:'السهم مرتفع لكن الدخول متأخر؛ انتظر Pullback.'}
+              : {label:'لا تدخل الآن', tone:'watch', note:'الدخول بعد اختراق/ثبات وليس بسعر عشوائي.'};
 
-    const directOrder = isNight
-      ? {label:'لا تدخل الآن', tone:'watch', note:'ليلي فقط؛ انتظر الافتتاح وتأكيد السعر والحجم.'}
-      : actionTone === 'buy'
-      ? (action === 'ادخل بشرط'
-          ? {label:'ادخل بشرط', tone:'conditional', note:actionNote}
-          : {label:'ادخل الآن', tone:'buy', note:'السعر مناسب. نفذ مع الوقف المكتوب فقط.'})
-      : actionTone === 'support'
-        ? {label:'لا تدخل الآن', tone:'watch', note:'انتظر السعر عند الدعم أو رجوع واضح؛ ليست إشارة تنفيذ فورية.'}
-        : gainerClass === 'chase' || action === 'لا تطارد'
-          ? {label:'ممنوع الدخول', tone:'danger', note:'انتظر Pullback أو تجاهل السهم.'}
-          : {label:'لا تدخل الآن', tone:'watch', note:'انتظر محفز الدخول. لا شراء الآن.'};
+      const directOrder = isNight
+        ? {label:'لا تدخل الآن', tone:'watch', note:'ليلي فقط؛ انتظر الافتتاح وتأكيد السعر والحجم.'}
+        : actionTone === 'buy'
+          ? (action === 'ادخل بشرط'
+              ? {label:'ادخل بشرط', tone:'conditional', note:actionNote}
+              : {label:'ادخل الآن', tone:'buy', note:'السعر مناسب. نفذ مع الوقف المكتوب فقط.'})
+          : actionTone === 'support'
+            ? {label:'دخول قرب الدعم', tone:'support', note:actionNote || 'دخول صغير قرب الدعم فقط؛ لا ترفع السعر والوقف إلزامي.'}
+            : isChase
+              ? {label:'ممنوع الدخول', tone:'danger', note:'انتظر Pullback أو تجاهل السهم.'}
+              : {label:'لا تدخل الآن', tone:'watch', note:'انتظر محفز الدخول. لا شراء الآن.'};
 
-    const isFinalEntry = !isNight && !!marketOpen && actionTone === 'buy';
-    const triggerText = actionTone === 'buy'
-      ? 'الثبات فوق $' + Number(vwap || price || 0).toFixed(2) + ' مع RVOL أعلى من 1.5'
-      : checks?.breakout15
-        ? 'إغلاق 5 دقائق فوق قمة الاختراق'
-        : 'رجوع فوق VWAP أو Higher Low جديد';
-    const invalidationText = 'كسر $' + Number(stopLoss || 0).toFixed(2) + ' أو فقدان VWAP مع حجم بيع';
-
-    return {enterVerdict, directOrder, isFinalEntry, triggerText, invalidationText};
+      const isFinalEntry = !isNight && !!marketOpen && (actionTone === 'buy' || actionTone === 'support');
+      const triggerText = actionTone === 'buy'
+        ? 'الثبات فوق $' + Number(vwap || price || 0).toFixed(2) + ' مع RVOL أعلى من 1.5'
+        : actionTone === 'support'
+          ? 'الدخول قريب من الدعم المكتوب فقط'
+          : checks?.breakout15
+            ? 'إغلاق 5 دقائق فوق قمة الاختراق'
+            : 'رجوع فوق VWAP أو Higher Low جديد';
+      const invalidationText = 'كسر $' + Number(stopLoss || 0).toFixed(2) + ' أو فقدان VWAP مع حجم بيع';
+      return {enterVerdict, directOrder, isFinalEntry, triggerText, invalidationText};
+    }
   }
 
   function selectRecommendations(candidates=[], {
