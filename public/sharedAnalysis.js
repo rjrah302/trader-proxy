@@ -84,6 +84,106 @@
     return {broker, capital, riskPct, entry:e, stop:s, target:t, riskPerShare, maxRisk, qty, positionValue, potentialLoss, potentialProfit, rr:realRR, verdict, tone, note, symbol, watchOnly, noTrade, kind};
   }
 
+  function finalEntryGate({
+    wantsEntry=false,
+    price=0,
+    currentPrice=null,
+    entry=null,
+    support=null,
+    supportState=null,
+    supportSource='real',
+    supTouches=1,
+    nearSupport=false,
+    candleGate=null,
+    rvol=0,
+    higherLow=false,
+    greenClose=false,
+    recoveredSupport=false,
+    riskReward=0,
+    atrPct=0,
+    isMarketOpen=true,
+    allowWhenClosed=false,
+    gainerClass=null,
+  } = {}) {
+    const checks = {};
+    const marginal = [];
+    const p = +(currentPrice || price || 0);
+    const e = +(entry || price || 0);
+    const s = support == null ? null : +support;
+    const atr = Math.max(0, +(atrPct || 0));
+    const rr = +(riskReward || 0);
+    const touches = Math.max(0, +(supTouches || 0));
+    const st = supportState || {};
+    const distToSupport = s > 0 && p > 0 ? ((p - s) / p) * 100 : 999;
+    const chaseLimit = Math.max(1.5, atr * 0.5 || 1.5);
+    const entryDrift = e > 0 && p > e ? ((p - e) / e) * 100 : 0;
+    const hasSupport = s > 0;
+    const supportRelevant = !!(nearSupport || (distToSupport >= -1.5 && distToSupport <= 5));
+
+    const fail = (stage) => ({allow:false, stage, marginal, checks});
+    const pass = () => ({allow:true, stage:'pass', marginal, checks});
+
+    checks.marketOpen = !!isMarketOpen || !!allowWhenClosed;
+    if (wantsEntry && !checks.marketOpen) return fail('market_closed');
+
+    checks.notChase = !(gainerClass === 'chase') && entryDrift <= chaseLimit;
+    checks.entryDrift = +entryDrift.toFixed(2);
+    checks.chaseLimit = +chaseLimit.toFixed(2);
+    if (wantsEntry && !checks.notChase) return fail('entry_chase');
+    if (entryDrift > chaseLimit * 0.85) marginal.push('entry_drift');
+
+    checks.rrOk = rr >= 1.2;
+    if (wantsEntry && !checks.rrOk) return fail('rr_low');
+    if (rr >= 1.2 && rr < 1.35) marginal.push('rr');
+
+    checks.candleOk = !candleGate || candleGate.allowsEntry !== false;
+    checks.candleBearishBlock = !!candleGate?.bearishBlock;
+    if (wantsEntry && (!checks.candleOk || checks.candleBearishBlock)) return fail('candle_block');
+
+    if (!supportRelevant) return pass();
+
+    checks.hasSupport = hasSupport;
+    if (wantsEntry && !checks.hasSupport) return fail('no_support');
+
+    checks.supportReal = supportSource !== 'synthetic';
+    if (wantsEntry && !checks.supportReal) return fail('synthetic_support');
+
+    checks.supportTouches = touches;
+    checks.supportStrong = touches >= 2;
+    if (wantsEntry && !checks.supportStrong) return fail('weak_support');
+    if (touches === 2) marginal.push('support_touches');
+
+    checks.supportAbove = st.above !== false && !st.lost && !st.softLost && p >= s;
+    checks.supportLost = !!st.lost;
+    checks.supportSoftLost = !!st.softLost;
+    if (wantsEntry && st.lost) return fail('support_lost');
+    if (wantsEntry && st.softLost) return fail('support_soft_lost');
+    if (wantsEntry && p < s) return fail('below_support');
+
+    checks.supportDistance = +distToSupport.toFixed(2);
+    checks.supportDistanceOk = distToSupport <= 3;
+    checks.supportWatchDistance = distToSupport > 3 && distToSupport <= 5;
+    if (wantsEntry && !checks.supportDistanceOk) {
+      return fail(checks.supportWatchDistance ? 'support_watch_distance' : 'support_too_far');
+    }
+    if (distToSupport > 2.7 && distToSupport <= 3) marginal.push('support_distance');
+
+    const bounceCandleOk = !!(candleGate?.bullishOk || greenClose);
+    const bounceConfirmOk = !!(higherLow || (+rvol || 0) >= 1);
+    const bounceOk = !!(bounceCandleOk && bounceConfirmOk);
+    checks.bounceCandleOk = bounceCandleOk;
+    checks.bounceConfirmOk = bounceConfirmOk;
+    checks.bounceOk = bounceOk;
+    if (wantsEntry && !bounceOk) return fail('support_needs_bounce');
+
+    const recovered = !!(st.recovered || recoveredSupport);
+    checks.recoveredSupport = recovered;
+    checks.recoveredConfirm = !recovered || ((+rvol || 0) >= 1.5 && (candleGate?.bullishOk || greenClose || higherLow));
+    if (wantsEntry && !checks.recoveredConfirm) return fail('recovered_needs_confirm');
+
+    return pass();
+  }
+
   function buildRecCardDecision({
     confidence=0,
     tradeQuality=0,
@@ -163,7 +263,7 @@
     };
   }
 
-  function calcRecTradeMetrics({price=0, support=null, resistance=null, atrPct=null, nearSupport=false, nearResistance=false} = {}) {
+  function calcRecTradeMetrics({price=0, support=null, resistance=null, atrPct=null, nearSupport=false, nearResistance=false, supTouches=1, bounceOk=false, supportSource='real'} = {}) {
     price = +price || 0;
     support = support != null ? +support : null;
     resistance = resistance != null ? +resistance : null;
@@ -207,7 +307,10 @@
     else if (riskReward >= 2.0) tradeQuality += 30;
     else if (riskReward >= 1.5) tradeQuality += 20;
     else if (riskReward >= 1.0) tradeQuality += 10;
-    if (nearSupport) tradeQuality += 25;
+    const supportQualityBonus = nearSupport && supportSource !== 'synthetic' && (+supTouches || 0) >= 2
+      ? (bounceOk ? 25 : 10)
+      : 0;
+    tradeQuality += supportQualityBonus;
     if (profitPct >= 5) tradeQuality += 20;
     else if (profitPct >= 3) tradeQuality += 15;
     else if (profitPct >= 2) tradeQuality += 8;
@@ -246,6 +349,7 @@
       minRoomToResistance:+minRoomToResistance.toFixed(2),
       tooCloseToResistance:!!tooCloseToResistance,
       tradeQuality,
+      supportQualityBonus,
       distToSupport:+distToSupport.toFixed(2),
       entryTiming,
       entryNote,
@@ -551,5 +655,5 @@
     return recs;
   }
 
-  return { estimateTradeDuration, calcTradeDecision, buildRecCardDecision, calcRecTradeMetrics, calcSpecTradeMetrics, buildSpecEntryPlan, buildSpecVerdict, selectSpeculative, buildHunterVerdict, selectRecommendations };
+  return { estimateTradeDuration, calcTradeDecision, finalEntryGate, buildRecCardDecision, calcRecTradeMetrics, calcSpecTradeMetrics, buildSpecEntryPlan, buildSpecVerdict, selectSpeculative, buildHunterVerdict, selectRecommendations };
 });
