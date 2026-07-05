@@ -2037,6 +2037,17 @@ function calcSignal(stock) {
     else         { sell++; }
   }
 
+  // 8. الشموع المبكرة — نحتاجها قبل جودة الصفقة حتى لا يأخذ الدعم مكافأة كاملة بلا ارتداد
+  const candlePatterns = detectCandlePatterns(ind.closes, ind.highs, ind.lows, ind.opens);
+  const recPreCandleGate = candleEntryGate(candlePatterns, {
+    nearSupport: effectiveNearSupport,
+    recoveredSupport: supState.recovered,
+    nearResistance,
+    tooCloseToResistance: false,
+    volR,
+  });
+  const recBounceOkForSupport = !!(recPreCandleGate.bullishOk && (volR || 0) >= 1);
+
   // 8. ATR R/R — يُحسب الآن قبل netScore حتى تعكسه الإشارة
   // ══ هدف الربح ووقف الخسارة — ATR ديناميكي
   const recMetrics = window.RamiAnalysis.calcRecTradeMetrics({
@@ -2046,6 +2057,9 @@ function calcSignal(stock) {
     atrPct,
     nearSupport: effectiveNearSupport,
     nearResistance,
+    supTouches: ind.supTouches ?? 1,
+    bounceOk: recBounceOkForSupport,
+    supportSource: 'real',
   });
   const stopLoss = recMetrics.stopLoss;
   const target = recMetrics.target;
@@ -2107,7 +2121,6 @@ function calcSignal(stock) {
   }
 
   // 10. الشموع اليابانية — إشارات إضافية
-  const candlePatterns = detectCandlePatterns(ind.closes, ind.highs, ind.lows, ind.opens);
   candlePatterns.forEach(p2 => {
     const cw = candleDecisionWeight(p2, {
       volR, nearSupport: effectiveNearSupport, nearResistance, tooCloseToResistance:false,
@@ -2323,6 +2336,42 @@ function calcSignal(stock) {
     };
     recDecisionCore.finalEntryNote = recDecisionCore.recDecision.note;
   }
+  const recEntryGate = finalEntryGate({
+    wantsEntry: activeBuy || conditionalBuy,
+    kind: 'rec',
+    price,
+    currentPrice: price,
+    entry: idealEntry || price,
+    support,
+    supportState: supState,
+    supportSource: 'real',
+    supTouches: ind.supTouches ?? 1,
+    nearSupport: effectiveNearSupport,
+    candleGate: recCandleGate,
+    rvol: volR,
+    higherLow: false,
+    greenClose: recCandleGate.bullishOk,
+    recoveredSupport: supState.recovered,
+    riskReward,
+    atrPct,
+    isMarketOpen: isMarketOpen(),
+  });
+  if((activeBuy || conditionalBuy) && !recEntryGate.allow) {
+    const gateNote = entryGateReason(recEntryGate);
+    const gateChase = recEntryGate.stage === 'entry_chase';
+    activeBuy = false;
+    conditionalBuy = false;
+    earlyRadar = true;
+    watchOnly = true;
+    recStage = 'early';
+    entryBlockReasons = [...(entryBlockReasons || []), gateNote];
+    recDecisionCore.recDecision = {
+      label: gateChase ? 'لا تطارد' : 'راقب فقط',
+      tone: gateChase ? 'reject' : 'early',
+      note: gateNote,
+    };
+    recDecisionCore.finalEntryNote = gateNote;
+  }
   const recDecision = {
     ...recDecisionCore.recDecision,
     color: recDecisionCore.recDecision.tone === 'buy' ? C.green :
@@ -2340,6 +2389,7 @@ function calcSignal(stock) {
     weeklyTrend:ind.weeklyTrend, weeklyMacdHist:ind.weeklyMacdHist,
     bb_upper, bb_lower,
     support, resistance, nearSupport: effectiveNearSupport, supportState:supState, nearResistance,
+    supportSource:'real', entryGate:recEntryGate,
     roomToResistance, minRoomToResistance, tooCloseToResistance,
     resTouches: ind.resTouches??1, supTouches: ind.supTouches??1,
     atrPct, stochRsi, riskReward,
@@ -2379,6 +2429,73 @@ function estimateTradeDuration({kind='rec', profitPct=0, atrPct=0, macdHist=0, m
   return window.RamiAnalysis.estimateTradeDuration({
     kind, profitPct, atrPct, macdHist, macdHistDir, weeklyTrend, actionTone, rvol, isNight
   });
+}
+
+const ENGINE_VERSION = '2026-07-05-loss-gate-v2';
+
+function finalEntryGate(args={}) {
+  if(!window.RamiAnalysis?.finalEntryGate) return {allow:true, stage:'pass', marginal:[], checks:{}};
+  return window.RamiAnalysis.finalEntryGate(args);
+}
+
+function entryGateReason(gate) {
+  const stage = gate?.stage || 'pass';
+  const map = {
+    market_closed: 'السوق مغلق؛ لا تنفيذ حتى يفتح السوق وتتأكد الأسعار.',
+    entry_chase: 'السعر ابتعد عن نقطة الدخول؛ لا تطارد وانتظر رجوع مناسب.',
+    rr_low: 'العائد مقابل المخاطرة غير كافٍ للدخول.',
+    candle_block: 'الشموع ضد الدخول؛ انتظر شمعة تأكيد جديدة.',
+    no_support: 'لا يوجد دعم واضح يعتمد عليه للوقف.',
+    synthetic_support: 'الدعم افتراضي وليس تاريخي؛ مراقبة فقط حتى يتأكد المستوى.',
+    weak_support: 'الدعم ضعيف ولم يثبت بلمسات كافية.',
+    support_lost: 'السعر كسر الدعم؛ لا دخول حتى يسترجعه.',
+    support_soft_lost: 'السعر تحت الدعم قليلًا؛ انتظر رجوع واضح فوقه.',
+    below_support: 'السعر تحت الدعم؛ لا يعتبر دخول دعم الآن.',
+    support_watch_distance: 'السعر ابتعد عن الدعم أكثر من 3%؛ مراقبة لا دخول.',
+    support_too_far: 'السعر بعيد عن الدعم؛ الدخول الحالي مطاردة.',
+    support_needs_bounce: 'الدعم يحتاج تأكيد ارتداد قبل الدخول.',
+    recovered_needs_confirm: 'الدعم مستعاد حديثًا ويحتاج تأكيد أقوى بالحجم أو الشموع.',
+  };
+  return map[stage] || 'بوابة الحماية منعت الدخول؛ راقب حتى تكتمل الشروط.';
+}
+
+function buildEntryContext(x, type, market={}) {
+  const gate = x.entryGate || {};
+  const candle = x.candleGate || {};
+  return {
+    engineVersion: ENGINE_VERSION,
+    type,
+    price:+(x.price || 0),
+    entry:+(x.entry || x.idealEntry || x.price || 0),
+    support:+(x.support || 0),
+    supportSource:x.supportSource || 'real',
+    supTouches:+(x.supTouches || 0),
+    supportState:x.supportState?.label || x.supportState || '',
+    distToSupport:+(x.distToSupport || 0),
+    rvol:+(x.rvol || x.volR || 0),
+    riskReward:+(x.riskReward || x.rr || 0),
+    confidence:+(x.confidence || 0),
+    tradeQuality:+(x.tradeQuality || 0),
+    recStage:x.recStage || '',
+    signal:x.signal || x.action || x.decision || '',
+    candleGate:{
+      allowsEntry:candle.allowsEntry,
+      bullishOk:candle.bullishOk,
+      bearishBlock:candle.bearishBlock,
+      reason:candle.reason || '',
+    },
+    gate:{
+      allow:gate.allow,
+      stage:gate.stage,
+      marginal:Array.isArray(gate.marginal) ? gate.marginal : [],
+      checks:gate.checks || {},
+    },
+    market:{
+      spyChange:market?.spyChange ?? null,
+      qqqChange:market?.qqqChange ?? null,
+      trend:market?.trend || null,
+    },
+  };
 }
 
 // ================================================================
@@ -2702,6 +2819,33 @@ function calcSpeculative() {
         label = 'انتظار دعم';
         allocPct = 0;
       }
+      const specEntryGate = finalEntryGate({
+        wantsEntry: !isWatch && (entryTiming === 'ادخل الآن' || entryTiming === 'مقبول'),
+        kind: 'spec',
+        price,
+        currentPrice: price,
+        entry: price,
+        support: ind.support,
+        supportState: specSupportState,
+        supportSource: 'real',
+        supTouches: ind.supTouches ?? 1,
+        nearSupport: specNearSupport,
+        candleGate: specCandleGate,
+        rvol: volR,
+        higherLow: false,
+        greenClose: specCandleGate.bullishOk,
+        recoveredSupport: specSupportState.recovered,
+        riskReward,
+        atrPct,
+        isMarketOpen: isMarketOpen(),
+      });
+      if(!isWatch && !specEntryGate.allow) {
+        entryTiming = specEntryGate.stage === 'entry_chase' ? 'لا تطارد' : 'انتظار فقط';
+        entryNote = entryGateReason(specEntryGate);
+        isWatch = true;
+        label = specEntryGate.stage === 'entry_chase' ? 'لا تطارد' : 'مراقبة مجازفة';
+        allocPct = 0;
+      }
       if(isWatch) specDebug.watch++;
 
       return {
@@ -2716,7 +2860,9 @@ function calcSpeculative() {
         roomToResistance, minRoomToResistance, tooCloseToResistance,
         nearSupport:specNearSupport,
         supportState:specSupportState,
+        supportSource:'real',
         candleGate:specCandleGate,
+        entryGate:specEntryGate,
         stopLoss, target, profitPct, lossPct, riskReward,
         allocPct, entryTiming, entryNote,
         earnDays, topCandle,
@@ -3104,6 +3250,32 @@ async function calcHunterScore(stock) {
       gainerNote = '👀 من أقوى 20 اليوم؛ يحتاج تأكيد اختراق/ثبات قبل الدخول.';
     }
   }
+  const hunterEntryGate = finalEntryGate({
+    wantsEntry: actionTone === 'buy' || actionTone === 'support',
+    kind: 'hunter',
+    price,
+    currentPrice: price,
+    entry: price,
+    support,
+    supportState: hunterSupportState,
+    supportSource: 'real',
+    supTouches: ind?.supTouches ?? 1,
+    nearSupport: nearSup,
+    candleGate: hunterCandleGate,
+    rvol: intra?.rvol || 0,
+    higherLow: checks.higherLow,
+    greenClose: hunterCandleGate.bullishOk || checks.cleanMomentum,
+    recoveredSupport: hunterSupportState.recovered,
+    riskReward: rr,
+    atrPct: atrVal,
+    isMarketOpen: isMarketOpen(),
+    gainerClass,
+  });
+  if((actionTone === 'buy' || actionTone === 'support') && !hunterEntryGate.allow) {
+    action = hunterEntryGate.stage === 'entry_chase' ? 'لا تطارد' : 'راقب فقط';
+    actionTone = 'watch';
+    actionNote = entryGateReason(hunterEntryGate);
+  }
 
   return {
     id: stock.id, name: stock.name, sector: stock.sector,
@@ -3123,6 +3295,9 @@ async function calcHunterScore(stock) {
     candleGate: hunterCandleGate,
     action, actionTone, actionNote,
     supportState:hunterSupportState,
+    supportSource:'real',
+    supTouches:ind?.supTouches ?? 1,
+    entryGate:hunterEntryGate,
     isGainer: !!stock.isGainer,
     gainerRank: stock.gainerRank || null,
     gainerClass, gainerNote,
@@ -3744,6 +3919,7 @@ async function calcDailyTradeScore(stock) {
 
   const intra = await fetchHunterData(stock.id);
   const atrPct = +(ind?.atrPct || (stock.isGainer ? 5 : 3));
+  const supportSource = ind?.support ? 'real' : 'synthetic';
   const support = +(ind?.support || intra?.vwap || price * 0.985);
   const resistance = +(ind?.resistance || price * (1 + Math.max(0.018, atrPct * 0.75 / 100)));
   const prevPrice = ind?.closes?.[ind.closes.length-2] || null;
@@ -3837,6 +4013,32 @@ async function calcDailyTradeScore(stock) {
     dayClass = 'pullback';
     actionNote = 'الحركة موجودة لكن الدخول الحالي ليس مريحاً؛ انتظر رجوع قريب من الدعم.';
   }
+  const dailyEntryGate = finalEntryGate({
+    wantsEntry: dayClass === 'entry',
+    kind: 'daily',
+    price,
+    currentPrice: price,
+    entry: price,
+    support,
+    supportState: st,
+    supportSource,
+    supTouches: ind?.supTouches ?? (supportSource === 'real' ? 1 : 0),
+    nearSupport: st.near,
+    candleGate: gate,
+    rvol,
+    higherLow,
+    greenClose: gate.bullishOk || (aboveVwap && (breakout15 || higherLow)),
+    recoveredSupport: st.recovered,
+    riskReward: rr,
+    atrPct,
+    isMarketOpen: isMarketOpen(),
+  });
+  if(dayClass === 'entry' && !dailyEntryGate.allow) {
+    action = dailyEntryGate.stage === 'entry_chase' ? 'لا تطارد' : 'راقب الاختراق';
+    actionTone = 'watch';
+    dayClass = dailyEntryGate.stage === 'entry_chase' ? 'chase' : 'watch';
+    actionNote = entryGateReason(dailyEntryGate);
+  }
 
   return {
     id: stock.id, name: stock.name, sector: stock.sector,
@@ -3846,9 +4048,9 @@ async function calcDailyTradeScore(stock) {
     action, decision: action, actionTone, actionNote, note: actionNote,
     dayClass, entry: price, stopLoss:+stopLoss.toFixed(2), targetPrice:+targetPrice.toFixed(2), target:+targetPrice.toFixed(2),
     profitPct:+profitPct.toFixed(1), lossPct:+lossPct.toFixed(1), rr:+rr.toFixed(2), riskReward:+rr.toFixed(2),
-    support, resistance, vwap: intra?.vwap || null, rvol, rs30,
+    support, supportSource, resistance, vwap: intra?.vwap || null, rvol, rs30,
     checks:{aboveVwap, breakout15, higherLow, macd5Ok, rvolOk:rvol>=1.25, supportLost, tooExtended, candleOk:gate.allowsEntry},
-    candlePatterns:candles, candleGate:gate, supportState:st,
+    candlePatterns:candles, candleGate:gate, supportState:st, entryGate:dailyEntryGate,
     trackInJournal: action === 'ادخل مضاربة سريعة',
     isGainer:!!stock.isGainer, gainerRank:stock.gainerRank || null,
     source: stock.isGainer ? 'FMP Gainers + intraday' : 'قائمة الأداة + intraday',
@@ -4601,6 +4803,7 @@ function isJournalEntryCard(x, type) {
   if(x.supportState?.lost || x.supportState?.softLost) return false;
   if(x.candleGate && !x.candleGate.allowsEntry) return false;
   if(x.candleGate?.bearishBlock) return false;
+  if(x.entryGate && x.entryGate.allow === false) return false;
   if(type === 'rec') return !!x.activeBuy && x.recDecision?.label === 'ادخل الآن';
   if(type === 'spec') return !x.isWatch && x.entryTiming === 'ادخل الآن';
   if(type === 'daily') return x.action === 'ادخل مضاربة سريعة' && x.actionTone === 'dailyBuy';
@@ -4656,6 +4859,8 @@ function makeSmartJournalEntry(x, type, market, now) {
     spyChange: market?.spyChange ?? null,
     qqqChange: market?.qqqChange ?? null,
     marketTrend: market?.trend || null,
+    engineVersion: ENGINE_VERSION,
+    entryContext: buildEntryContext(x, type, market),
     status: 'open',
     result: 'pending',
     closeReason: null,
@@ -4721,6 +4926,71 @@ function followupSourceLabel(type) {
     : type || 'بطاقة';
 }
 
+function savedCardHasEntryIntent(card) {
+  const decisionText = [card?.decision, card?.actionTone, card?.entryTiming]
+    .filter(Boolean).join(' ').toLowerCase();
+  if(!decisionText) return !!card?.entryGate?.allow;
+  if(/لا تدخل|لا تطارد|مراقبة فقط|راقب|انتظار|تجنب|ممنوع|watch|reject/.test(decisionText)) return false;
+  if(card?.entryGate?.allow) return true;
+  return /ادخل|دخول|buy|conditional|support/.test(decisionText);
+}
+
+function supportStateObjectFromSavedCard(card, currentPrice) {
+  const support = +(card?.support || 0);
+  const label = String(card?.supportState?.label || card?.supportState || '');
+  return {
+    above: support > 0 ? currentPrice >= support : true,
+    lost: /كسر/.test(label),
+    softLost: /تحت الدعم/.test(label),
+    recovered: /استرجاع|استعاد|مستعاد/.test(label),
+    label,
+  };
+}
+
+function refreshSavedCardEntryGate(card, type) {
+  if(!card || !savedCardHasEntryIntent(card)) return card;
+  const id = card.id || card.symbol;
+  const livePrice = +(state.prices?.[id]?.price || card.currentPrice || card.price || 0);
+  const entry = +(card.entry || card.price || 0);
+  if(!livePrice || !entry) return card;
+  const gate = finalEntryGate({
+    wantsEntry: true,
+    kind: type || card.type || 'rec',
+    price: +(card.price || entry),
+    currentPrice: livePrice,
+    entry,
+    support: +(card.support || 0),
+    supportState: supportStateObjectFromSavedCard(card, livePrice),
+    supportSource: card.supportSource || card.entryContext?.supportSource || 'real',
+    supTouches: +(card.supTouches || card.entryContext?.supTouches || 0),
+    nearSupport: !!(card.nearSupport || Math.abs(+card.entryContext?.distToSupport || 999) <= 3),
+    candleGate: card.entryContext?.candleGate || null,
+    rvol: +(card.rvol || card.entryContext?.rvol || 0),
+    higherLow: false,
+    greenClose: !!card.entryContext?.candleGate?.bullishOk,
+    recoveredSupport: /استرجاع|استعاد|مستعاد/.test(String(card.supportState || '')),
+    riskReward: +(card.riskReward || card.entryContext?.riskReward || 0),
+    atrPct: +(card.atrPct || 0),
+    isMarketOpen: isMarketOpen(),
+    allowWhenClosed: !!card.isPremarket,
+    gainerClass: card.gainerClass || null,
+  });
+  if(gate.stage !== 'entry_chase') return {...card, currentPrice: livePrice, entryGate: gate};
+  const note = entryGateReason(gate);
+  return {
+    ...card,
+    currentPrice: livePrice,
+    decision: 'لا تطارد',
+    signal: 'لا تطارد',
+    actionTone: 'reject',
+    note,
+    reason: note,
+    isWatch: true,
+    gainerClass: 'chase',
+    entryGate: gate,
+  };
+}
+
 function followupDecision(card) {
   const text = [
     card?.decision, card?.signal, card?.actionTone, card?.note, card?.reason,
@@ -4741,6 +5011,7 @@ function followupDecision(card) {
 }
 
 function makeFollowupRecord(card, type, now) {
+  card = refreshSavedCardEntryGate(card, type);
   const entry = +(card.entry || card.price || 0);
   const target = +(card.target || 0);
   const stopLoss = +(card.stopLoss || 0);
@@ -4758,6 +5029,12 @@ function makeFollowupRecord(card, type, now) {
     riskReward: +(card.riskReward || 0),
     score: +(card.score || card.confidence || card.tradeQuality || 0),
     decision: card.decision || card.signal || '',
+    support:+(card.support || 0),
+    supportSource:card.supportSource || 'real',
+    supTouches:+(card.supTouches || 0),
+    entryGate:card.entryGate || null,
+    entryContext:card.entryContext || null,
+    engineVersion:card.engineVersion || ENGINE_VERSION,
     status: d.status,
     statusLabel: d.label,
     statusColor: d.color,
@@ -4821,6 +5098,30 @@ function updateDailyFollowupFromLatest(payload) {
       r.statusColor = C.pink;
       r.reason = 'وصل السعر إلى الوقف المحفوظ لهذه البطاقة.';
       return;
+    }
+    if(!['target','stop','ended'].includes(r.status)) {
+      const gateCard = refreshSavedCardEntryGate({
+        ...r,
+        price: r.currentPrice,
+        entry: r.entry,
+        target: r.target,
+        stopLoss: r.stopLoss,
+        riskReward: r.riskReward,
+        support: r.support,
+        supportSource: r.supportSource,
+        supTouches: r.supTouches,
+        entryGate: r.entryGate,
+        entryContext: r.entryContext,
+        decision: r.decision,
+      }, r.type);
+      if(gateCard.entryGate?.stage === 'entry_chase') {
+        r.status = 'ended';
+        r.statusLabel = 'لا تطارد';
+        r.statusColor = C.pink;
+        r.reason = gateCard.reason || entryGateReason(gateCard.entryGate);
+        r.entryGate = gateCard.entryGate;
+        return;
+      }
     }
     if(!seen.has(r.key) && !['target','stop','ended'].includes(r.status)) {
       r.status = 'lost';
@@ -4887,6 +5188,22 @@ function compactLatestCard(x, type) {
     riskReward:+(x.riskReward || x.rr || 0),
     support:+(x.support || 0),
     resistance:+(x.resistance || 0),
+    supportSource:x.supportSource || 'real',
+    supTouches:+(x.supTouches || 0),
+    atrPct:+(x.atrPct || 0),
+    rvol:+(x.rvol || x.volR || 0),
+    entryGate:x.entryGate ? {
+      allow:x.entryGate.allow,
+      stage:x.entryGate.stage,
+      marginal:Array.isArray(x.entryGate.marginal) ? x.entryGate.marginal : [],
+      checks:x.entryGate.checks || {},
+    } : null,
+    entryContext: buildEntryContext(x, type, {
+      spyChange:state.spyChange,
+      qqqChange:state.qqqChange,
+      trend:state.marketTrend,
+    }),
+    engineVersion:ENGINE_VERSION,
     confidence:+(x.confidence || 0),
     tradeQuality:+(x.tradeQuality || 0),
     basePrice:+(x.basePrice || 0),
@@ -4930,11 +5247,11 @@ function saveLatestTabsSoon() {
         hunter: state.hunterTime ? state.hunterTime.toISOString() : null,
         premarket: state.premarketTime ? state.premarketTime.toISOString() : null,
       },
-      recs: (state.recs || []).slice(0, 10).map(x => compactLatestCard(x, 'rec')).filter(Boolean),
-      spec: (state.speculativeRecs || []).slice(0, 10).map(x => compactLatestCard(x, 'spec')).filter(Boolean),
-      daily: (state.dailyRecs || []).slice(0, 25).map(x => compactLatestCard(x, 'daily')).filter(Boolean),
-      hunter: (state.hunterRecs || []).slice(0, 20).map(x => compactLatestCard(x, 'hunter')).filter(Boolean),
-      premarket: (state.premarketRecs || []).slice(0, 30).map(x => compactLatestCard(x, 'premarket')).filter(Boolean),
+      recs: (state.recs || []).slice(0, 10).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'rec'), 'rec')).filter(Boolean),
+      spec: (state.speculativeRecs || []).slice(0, 10).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'spec'), 'spec')).filter(Boolean),
+      daily: (state.dailyRecs || []).slice(0, 25).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'daily'), 'daily')).filter(Boolean),
+      hunter: (state.hunterRecs || []).slice(0, 20).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'hunter'), 'hunter')).filter(Boolean),
+      premarket: (state.premarketRecs || []).slice(0, 30).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'premarket'), 'premarket')).filter(Boolean),
       savedAt: new Date().toISOString(),
     };
     updateDailyFollowupFromLatest(payload);
