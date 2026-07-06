@@ -7044,6 +7044,8 @@ function renderFollowupTab() {
     m[r.status] = (m[r.status] || 0) + 1;
     return m;
   }, {});
+  const showLost = !!state.followupShowLost;
+  const visibleRows = rows.filter(r => showLost || r.status !== 'lost');
   const clock = iso => {
     try { return new Date(iso).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}); } catch(e) { return '—'; }
   };
@@ -7102,11 +7104,17 @@ function renderFollowupTab() {
 
   return el('div', {style:{padding:'12px 16px'}}, [
     el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px'}}, [
-      el('div', {style:{fontSize:'15px', fontWeight:'900', color:C.blue}}, ['📌 المتابعة — '+rows.length+' بطاقة اليوم']),
-      el('button', {style:{
-        fontSize:'10px', color:C.text2, background:'#0a1020',
-        border:'1px solid var(--border)', borderRadius:'8px', padding:'6px 8px',
-      }, onClick:()=>{ saveDailyFollowup(loadDailyFollowup().filter(r => r.day !== day)); render(); }}, ['مسح اليوم']),
+      el('div', {style:{fontSize:'15px', fontWeight:'900', color:C.blue}}, ['📌 المتابعة — '+visibleRows.length+' / '+rows.length+' بطاقة اليوم']),
+      el('div', {style:{display:'flex', gap:'6px'}}, [
+        el('button', {style:{
+          fontSize:'10px', color:showLost?C.orange:C.text2, background:showLost?'rgba(255,123,37,.10)':'#0a1020',
+          border:`1px solid ${showLost?C.orange+'66':'var(--border)'}`, borderRadius:'8px', padding:'6px 8px',
+        }, onClick:()=>{ state.followupShowLost = !showLost; render(); }}, [showLost ? 'إخفاء فقدت شرط' : 'عرض فقدت شرط']),
+        el('button', {style:{
+          fontSize:'10px', color:C.text2, background:'#0a1020',
+          border:'1px solid var(--border)', borderRadius:'8px', padding:'6px 8px',
+        }, onClick:()=>{ saveDailyFollowup(loadDailyFollowup().filter(r => r.day !== day)); render(); }}, ['مسح اليوم']),
+      ]),
     ]),
     el('div', {style:{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'6px', marginBottom:'10px'}}, [
       miniFollowBox('صالحة', String(counts.valid || 0), C.green),
@@ -7119,10 +7127,10 @@ function renderFollowupTab() {
       background:'rgba(0,200,255,.05)', border:'1px solid rgba(0,200,255,.18)',
       borderRadius:'10px', padding:'9px 10px', marginBottom:'10px',
     }}, ['هذا التبويب يحفظ بطاقات اليوم تلقائياً. إذا ظهرت توصية ثم اختفت، لن تضيع: ستظهر هنا كـ “فقدت شرط” مع السبب.']),
-    ...(rows.length ? rows.map(card) : [el('div', {style:{textAlign:'center', padding:'38px 10px', color:C.text2}}, [
+    ...(visibleRows.length ? visibleRows.map(card) : [el('div', {style:{textAlign:'center', padding:'38px 10px', color:C.text2}}, [
       el('div', {style:{fontSize:'38px', marginBottom:'8px'}}, ['📌']),
-      el('div', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, ['لا توجد بطاقات متابعة اليوم بعد']),
-      el('div', {style:{fontSize:'10px', color:C.text3, marginTop:'5px'}}, ['ستمتلئ تلقائياً عند ظهور توصيات أو صائد أو مجازفة أو رادار افتتاح.']),
+      el('div', {style:{fontSize:'13px', fontWeight:'900', color:C.text}}, [rows.length ? 'كل البطاقات الحالية فقدت شرطها' : 'لا توجد بطاقات متابعة اليوم بعد']),
+      el('div', {style:{fontSize:'10px', color:C.text3, marginTop:'5px'}}, [rows.length ? 'اضغط عرض فقدت شرط إذا تريد مراجعتها.' : 'ستمتلئ تلقائياً عند ظهور توصيات أو صائد أو مجازفة أو رادار افتتاح.']),
     ])]),
   ]);
 }
