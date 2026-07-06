@@ -4815,6 +4815,19 @@ function isJournalEntryCard(x, type) {
   return /ادخل الآن/.test(text);
 }
 
+function isJournalWatchSignalCard(x, type) {
+  const text = ((x?.decision||'')+' '+(x?.signal||'')+' '+(x?.actionTone||'')+' '+(x?.note||'')+' '+(x?.entryTiming||'')).toLowerCase();
+  if(!x || !x.id || !x.entry || !x.target || !x.stopLoss) return false;
+  if(type === 'premarket') return false;
+  if(isJournalEntryCard(x, type)) return false;
+  if(x.gainerClass === 'chase' || /لا تطارد|لا تدخل|ممنوع|تجنب|كسر دعم/.test(text)) return false;
+  if(type === 'rec') return !!(x.conditionalBuy || x.earlyRadar) || /استعد|انتظر|ادخل بشرط|شراء مشروط|راقب/.test(text);
+  if(type === 'spec') return x.entryTiming === 'مقبول' || x.entryTiming === 'انتظر' || /مقبول|انتظر|راقب/.test(text);
+  if(type === 'daily') return /انتظر|راقب|استعد/.test(text);
+  if(type === 'hunter') return /راقب|انتظر|دخول قرب الدعم|شراء مشروط/.test(text) && !/ادخل الآن/.test(text);
+  return /استعد|انتظر|راقب|شرط/.test(text);
+}
+
 function estimateJournalDays(x, type) {
   try {
     const dur = estimateTradeDuration({
@@ -4872,6 +4885,24 @@ function makeSmartJournalEntry(x, type, market, now) {
   };
 }
 
+function makeSmartWatchSignalEntry(x, type, market, now) {
+  const expectedDays = Math.min(3, Math.max(1, estimateJournalDays(x, type)));
+  const entry = +(x.entry || x.price || 0);
+  const target = +(x.target || 0);
+  const stopLoss = +(x.stopLoss || 0);
+  const keyDate = now.toISOString().slice(0,10);
+  return {
+    ...makeSmartJournalEntry(x, type, market, now),
+    journalId: ['watch', type, x.id, keyDate, entry.toFixed(2), target.toFixed(2), stopLoss.toFixed(2)].join(':'),
+    journalKind: 'watch_signal',
+    decision: 'إنذار مبكر — '+(x.decision || x.signal || 'استعد/انتظر'),
+    reason: x.note || 'إشارة مراقبة مبكرة؛ ليست دخول فعلي.',
+    expectedDays,
+    expiresAt: new Date(now.getTime() + expectedDays*864e5).toISOString(),
+    result: 'watching',
+  };
+}
+
 function updateSmartJournalFromLatest(payload) {
   if(!payload) return;
   const allowNewEntries = !!payload.market?.realOpen || ['pre','after'].includes(payload.market?.session);
@@ -4892,9 +4923,13 @@ function updateSmartJournalFromLatest(payload) {
 
   groups.forEach(([type, list]) => {
     (list || []).forEach(card => {
-      if(!isJournalEntryCard(card, type)) return;
       if(type !== 'premarket' && !payload.market?.realOpen) return;
-      const rec = makeSmartJournalEntry(card, type, payload.market || {}, now);
+      const rec = isJournalEntryCard(card, type)
+        ? makeSmartJournalEntry(card, type, payload.market || {}, now)
+        : isJournalWatchSignalCard(card, type)
+          ? makeSmartWatchSignalEntry(card, type, payload.market || {}, now)
+          : null;
+      if(!rec) return;
       if(byId.has(rec.journalId)) return;
       byId.add(rec.journalId);
       journal.push(rec);
@@ -5160,8 +5195,13 @@ function evaluateSmartJournal(records, persist=true) {
       r.closeAt = now.toISOString();
       r.closedAt = r.closeAt;
       r.closePrice = cur;
-      r.result = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
-      r.closeReason = hitTarget ? 'وصل الهدف' : hitStop ? 'ضرب الوقف' : 'انتهت المدة';
+      if(r.journalKind === 'watch_signal') {
+        r.result = hitTarget ? 'watch_hit' : hitStop ? 'watch_failed' : 'watch_expired';
+        r.closeReason = hitTarget ? 'إنذار مبكر وصل الهدف' : hitStop ? 'إنذار مبكر ضرب الوقف' : 'انتهت مدة الإنذار المبكر';
+      } else {
+        r.result = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
+        r.closeReason = hitTarget ? 'وصل الهدف' : hitStop ? 'ضرب الوقف' : 'انتهت المدة';
+      }
       changed = true;
     }
   });
@@ -5176,6 +5216,14 @@ function compactLatestCard(x, type) {
     price:+(x.price || x.recPrice || 0),
     change:+(x.change || 0),
     score:+(x.score || x.strength || 0),
+    action:x.action || '',
+    entryTiming:x.entryTiming || '',
+    activeBuy:!!x.activeBuy,
+    conditionalBuy:!!x.conditionalBuy,
+    recDecision:x.recDecision ? {
+      label:x.recDecision.label || '',
+      tone:x.recDecision.tone || '',
+    } : null,
     signal:x.signal || x.action || x.label || '',
     decision:x.recDecision?.label || x.action || x.entryTiming || x.label || '',
     actionTone:x.actionTone || x.recDecision?.tone || '',
@@ -5397,25 +5445,30 @@ function calcHistoryStats(history) {
 }
 
 function calcSmartJournalStats(records) {
-  const closed = records.filter(r => r.status === 'closed');
-  const open = records.filter(r => r.status === 'open');
+  const watchSignals = records.filter(r => r.journalKind === 'watch_signal');
+  const tradeRecords = records.filter(r => r.journalKind !== 'watch_signal');
+  const closed = tradeRecords.filter(r => r.status === 'closed');
+  const open = tradeRecords.filter(r => r.status === 'open');
   const wins = closed.filter(r => r.result === 'target' || (r.result === 'expired' && (r.pnlPct||0) > 0));
   const losses = closed.filter(r => r.result === 'stop' || (r.result === 'expired' && (r.pnlPct||0) < 0));
   const expired = closed.filter(r => r.result === 'expired');
   const winRate = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
   const avgPnl = closed.length ? +(closed.reduce((s,r)=>s+(r.pnlPct||0),0)/closed.length).toFixed(2) : 0;
-  return {total:records.length, open:open.length, closed:closed.length, wins:wins.length, losses:losses.length, expired:expired.length, winRate, avgPnl};
+  const watchClosed = watchSignals.filter(r => r.status === 'closed');
+  const watchHits = watchClosed.filter(r => r.result === 'watch_hit').length;
+  const watchRate = watchClosed.length ? Math.round(watchHits / watchClosed.length * 100) : 0;
+  return {total:records.length, open:open.length, closed:closed.length, wins:wins.length, losses:losses.length, expired:expired.length, winRate, avgPnl, watch:watchSignals.length, watchClosed:watchClosed.length, watchHits, watchRate};
 }
 
 function renderSmartJournalTab() {
   const records = evaluateSmartJournal(loadSmartJournal());
   const filter = state.journalType || 'all';
-  const list = filter === 'all' ? records : records.filter(r => r.type === filter);
+  const list = filter === 'all' ? records : filter === 'watch_signal' ? records.filter(r => r.journalKind === 'watch_signal') : records.filter(r => r.type === filter && r.journalKind !== 'watch_signal');
   const stats = calcSmartJournalStats(list);
   const recent = [...list].reverse();
-  const typeLabel = t => t === 'rec' ? 'توصية' : t === 'spec' ? 'مجازفة' : t === 'daily' ? 'مضاربة يومية' : t === 'hunter' ? 'صائد' : 'الكل';
+  const typeLabel = (t, kind) => kind === 'watch_signal' ? 'إنذار مبكر' : t === 'rec' ? 'توصية' : t === 'spec' ? 'مجازفة' : t === 'daily' ? 'مضاربة يومية' : t === 'hunter' ? 'صائد' : 'الكل';
   const statusLabel = r => r.status === 'open' ? 'مفتوحة' : (r.closeReason || 'مغلقة');
-  const statusColor = r => r.status === 'open' ? C.blue : r.result === 'target' ? C.green : r.result === 'stop' ? C.pink : C.yellow;
+  const statusColor = r => r.journalKind === 'watch_signal' ? (r.result === 'watch_hit' ? C.green : r.status === 'open' ? C.yellow : C.pink) : r.status === 'open' ? C.blue : r.result === 'target' ? C.green : r.result === 'stop' ? C.pink : C.yellow;
   const pctText = v => v==null ? '—' : ((+v>=0?'+':'')+(+v).toFixed(2)+'%');
   const moneyText = v => {
     const n = +v;
@@ -5438,7 +5491,7 @@ function renderSmartJournalTab() {
     const rows = [
       ['النوع','السهم','الاسم','القرار','سبب القرار','تاريخ الظهور','دخول','هدف','وقف','R/R','مدة متوقعة','الحالة','الإغلاق','سعر الإغلاق','P/L%'].join(','),
       ...records.map(r => [
-        typeLabel(r.type), r.id, (r.name||'').replace(/,/g,' '), (r.decision||'').replace(/,/g,' '), (r.reason||'').replace(/,/g,' '),
+        typeLabel(r.type, r.journalKind), r.id, (r.name||'').replace(/,/g,' '), (r.decision||'').replace(/,/g,' '), (r.reason||'').replace(/,/g,' '),
         r.signalAt||'', r.entry||'', r.target||'', r.stopLoss||'', r.riskReward||'', r.expectedDays||'',
         statusLabel(r), r.closeAt||'', r.closePrice||'', r.pnlPct ?? '',
       ].join(','))
@@ -5458,13 +5511,17 @@ function renderSmartJournalTab() {
       statCard('المغلقة', String(stats.closed), stats.wins+' هدف / '+stats.losses+' وقف', C.green),
       statCard('نسبة النجاح', stats.winRate+'%', stats.expired+' انتهت مدة', stats.winRate>=60?C.green:stats.winRate>=40?C.yellow:C.pink),
       statCard('متوسط النتيجة', pctText(stats.avgPnl), 'للصفقات المغلقة', stats.avgPnl>=0?C.green:C.pink),
+      statCard('الإنذارات المبكرة', String(stats.watch), stats.watchHits+' نجح / '+stats.watchClosed+' انتهى', C.yellow),
+      statCard('دقة الإنذار', stats.watchRate+'%', 'استعد/انتظر التي وصلت هدفها', stats.watchRate>=60?C.green:stats.watchRate>=40?C.yellow:C.pink),
     ]),
     el('div', {style:{display:'flex', gap:'6px', overflowX:'auto', marginBottom:'12px'}}, [
       ...[
         ['all','الكل'],
         ['rec','توصيات'],
+        ['daily','مضاربة يومية'],
         ['spec','مجازفة'],
         ['hunter','صائد'],
+        ['watch_signal','إنذار مبكر'],
       ].map(([id,label]) => el('button', {
         style:{padding:'8px 12px', borderRadius:'9px', border:`1px solid ${filter===id?C.purple+'88':'var(--border)'}`, background:filter===id?'rgba(201,133,255,.12)':'#0a1020', color:filter===id?C.purple:C.text2, fontSize:'11px', fontWeight:'900', whiteSpace:'nowrap'},
         onClick:()=>{ state.journalType=id; render(); }
@@ -5484,7 +5541,7 @@ function renderSmartJournalTab() {
         el('div', {style:{display:'flex', justifyContent:'space-between', gap:'8px', alignItems:'flex-start', marginBottom:'6px'}}, [
           el('div', {}, [
             el('div', {style:{fontSize:'14px', fontWeight:'900', color:C.text}}, [r.id+' — '+(r.name||'')]),
-            el('div', {style:{fontSize:'10px', color:C.text3}}, [typeLabel(r.type)+' • '+fmtDateShort(r.signalAt)+' • '+(r.expectedDays||'—')+' أيام']),
+            el('div', {style:{fontSize:'10px', color:C.text3}}, [typeLabel(r.type, r.journalKind)+' • '+fmtDateShort(r.signalAt)+' • '+(r.expectedDays||'—')+' أيام']),
           ]),
           el('div', {style:{fontSize:'11px', fontWeight:'900', color:statusColor(r), whiteSpace:'nowrap'}}, [statusLabel(r)]),
         ]),
@@ -5509,6 +5566,7 @@ function renderSmartReportTab() {
   const spec = calcSmartJournalStats(records.filter(r=>r.type==='spec'));
   const daily = calcSmartJournalStats(records.filter(r=>r.type==='daily'));
   const hunter = calcSmartJournalStats(records.filter(r=>r.type==='hunter'));
+  const watch = calcSmartJournalStats(records.filter(r=>r.journalKind==='watch_signal'));
   const row = (label, st, color) => el('div', {style:{background:'#0a1020', border:`1px solid ${color}33`, borderRadius:'12px', padding:'12px', marginBottom:'8px'}}, [
     el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}, [
       el('div', {style:{fontSize:'13px', fontWeight:'900', color}}, [label]),
@@ -5519,6 +5577,9 @@ function renderSmartReportTab() {
       el('div', {style:{fontSize:'10px', color:C.green}}, ['هدف: '+st.wins]),
       el('div', {style:{fontSize:'10px', color:C.pink}}, ['وقف: '+st.losses]),
       el('div', {style:{fontSize:'10px', color:C.yellow}}, ['نجاح: '+st.winRate+'%']),
+    ]),
+    st.watch > 0 && el('div', {style:{fontSize:'10px', color:C.yellow, marginTop:'6px'}}, [
+      'إنذار مبكر: '+st.watch+' | نجح: '+st.watchHits+' | دقة: '+st.watchRate+'%'
     ]),
   ]);
   return el('div', {style:{padding:'12px 16px'}}, [
@@ -5531,6 +5592,7 @@ function renderSmartReportTab() {
     row('المضاربة اليومية', daily, C.orange),
     row('المجازفة', spec, C.purple),
     row('الصائد', hunter, C.orange),
+    row('الإنذارات المبكرة', watch, C.yellow),
     !records.length && el('div', {style:{fontSize:'12px', color:C.text2, textAlign:'center', padding:'24px'}}, ['لا توجد بيانات بعد. سيبدأ التقرير بعد ظهور أول بطاقة دخول.']),
   ]);
 }
