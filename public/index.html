@@ -27,13 +27,47 @@ function _initFirebase() {
     });
     const _DB      = firebase.firestore();
     const _USER_ID = 'default';
+    const _fbClean = (value) => {
+      if(value === undefined) return null;
+      if(value === null || typeof value !== 'object') return value;
+      if(Array.isArray(value)) return value.map(_fbClean);
+      const out = {};
+      Object.keys(value).forEach(k => { out[k] = _fbClean(value[k]); });
+      return out;
+    };
+    const _fbCompactJournal = (records) => (records || []).slice(-250).map(r => _fbClean({
+      journalId:r.journalId,
+      journalKind:r.journalKind || 'trade',
+      id:r.id,
+      name:r.name,
+      type:r.type,
+      decision:r.decision,
+      reason:r.reason,
+      signalAt:r.signalAt,
+      entry:r.entry,
+      target:r.target,
+      stopLoss:r.stopLoss,
+      riskReward:r.riskReward,
+      expectedDays:r.expectedDays,
+      expiresAt:r.expiresAt,
+      status:r.status,
+      result:r.result,
+      closeReason:r.closeReason,
+      closeAt:r.closeAt,
+      closePrice:r.closePrice,
+      pnlPct:r.pnlPct,
+      maxPrice:r.maxPrice,
+      minPrice:r.minPrice,
+      engineVersion:r.engineVersion,
+    }));
 
     window._fbSaveSmartJournal = async function(records) {
       try {
+        const cloudRecords = _fbCompactJournal(records);
         await _DB.collection('users').doc(_USER_ID)
                  .collection('data').doc('smart_journal')
-                 .set({ records: records.slice(-800), updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-        console.log('[FB] smart journal saved ✅', records.length);
+                 .set({ records: cloudRecords, localCount: records.length, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        console.log('[FB] smart journal saved ✅', cloudRecords.length, '/', records.length);
       } catch(e) { console.warn('[FB] saveSmartJournal:', e.message); }
     };
 
@@ -58,7 +92,7 @@ function _initFirebase() {
       try {
         await _DB.collection('users').doc(_USER_ID)
                  .collection('data').doc('latest_tabs')
-                 .set({...payload, updatedAt: firebase.firestore.FieldValue.serverTimestamp()});
+                 .set({..._fbClean(payload), updatedAt: firebase.firestore.FieldValue.serverTimestamp()});
         console.log('[FB] latest tabs saved ✅');
       } catch(e) { console.warn('[FB] saveLatestTabs:', e.message); }
     };
