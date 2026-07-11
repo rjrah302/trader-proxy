@@ -124,7 +124,17 @@ function evaluateOnly(record, currentPrice, nowMs) {
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const result = { ok: true, checked: 0, changed: 0, skipped: 0, errors: [] };
+
+  const RUNNER_SECRET = process.env.RUNNER_SECRET;
+  if (!RUNNER_SECRET) {
+    return res.status(500).json({ ok: false, error: 'RUNNER_SECRET is not configured' });
+  }
+  const providedSecret = req.headers['x-runner-secret'] || req.query?.token;
+  if (providedSecret !== RUNNER_SECRET) {
+    return res.status(401).json({ ok: false, error: 'unauthorized' });
+  }
+
+  const result = { ok: true, checked: 0, changed: 0, skipped: 0, skippedNoQuote: 0, skippedNoChange: 0, errors: [] };
 
   try {
     const records = await getSmartJournal();
@@ -154,13 +164,19 @@ module.exports = async function handler(req, res) {
     const writes = [];
 
     open.forEach(r => {
-      const cur = quotes[getRecordSymbol(r)];
-      if (!cur) { result.skipped++; return; }
+      const sym = getRecordSymbol(r);
+      const cur = quotes[sym];
+      if (!cur) { result.skipped++; result.skippedNoQuote++; return; }
       const evalResult = evaluateOnly(r, cur, now);
-      if (!evalResult.changed) { result.skipped++; return; }
+      if (!evalResult.changed) { result.skipped++; result.skippedNoChange++; return; }
       const docId = r._docId || journalDocId(r);
       writes.push({ docId, patch: cleanUndefined(evalResult.patch) });
     });
+
+    if (result.skippedNoQuote > 0) {
+      const missing = open.map(getRecordSymbol).filter(sym => !quotes[sym]);
+      result.missingQuoteSymbols = [...new Set(missing)].slice(0, 20);
+    }
 
     if (writes.length) {
       // تقسيم الكتابات إلى دفعات لا تتجاوز 400 عملية لكل batch (حد Firestore 500)
