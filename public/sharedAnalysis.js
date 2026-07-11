@@ -615,8 +615,7 @@
       .filter(s => !s.newsImpact?.block && s.newsImpact?.level !== 'neg')
       .filter(s => (s.dataQuality || 0) >= 100)
       .filter(s => {
-        const avg = s.avgVolume || 0;
-        return avg === 0 || avg >= 500000;
+        return (s.avgVolume || 0) >= 500000;
       });
 
     list.sort((a,b) => {
