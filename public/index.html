@@ -8,6 +8,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="./sharedAnalysis.js"></script>
+<script src="./dayTradeEngine.js"></script>
 <script>
 // ── تهيئة Firebase مع انتظار جاهزية الـ SDK
 function _initFirebase() {
@@ -58,8 +59,25 @@ function _initFirebase() {
       pnlPct:r.pnlPct,
       maxPrice:r.maxPrice,
       minPrice:r.minPrice,
+      maxGainPct:r.maxGainPct,
+      maxDrawdownPct:r.maxDrawdownPct,
+      after30:r.after30,
+      after60:r.after60,
+      endSession:r.endSession,
+      decisionCorrect:r.decisionCorrect,
+      firstSeenAt:r.firstSeenAt,
+      lastSeenAt:r.lastSeenAt,
+      seenCount:r.seenCount,
+      priceAtSignal:r.priceAtSignal,
+      dataStatus:r.dataStatus,
+      vwapAvailable:r.vwapAvailable,
+      lateEntryFlag:r.lateEntryFlag,
+      exhaustionFlag:r.exhaustionFlag,
       engineVersion:r.engineVersion,
     }));
+    const _fbDocId = (r, i=0) => String(r?.journalId || `${r?.type || 'card'}:${r?.id || 'unknown'}:${r?.signalAt || r?.createdAt || i}`)
+      .replace(/[\/\\#?\[\]]/g, '_')
+      .slice(0, 180);
 
     window._fbSaveSmartJournal = async function(records) {
       try {
@@ -67,7 +85,14 @@ function _initFirebase() {
         await _DB.collection('users').doc(_USER_ID)
                  .collection('data').doc('smart_journal')
                  .set({ records: cloudRecords, localCount: records.length, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-        console.log('[FB] smart journal saved ✅', cloudRecords.length, '/', records.length);
+        const entries = (records || []).slice(-160).map(_fbClean);
+        if(entries.length) {
+          const batch = _DB.batch();
+          const col = _DB.collection('users').doc(_USER_ID).collection('smart_journal_entries');
+          entries.forEach((r, i) => batch.set(col.doc(_fbDocId(r, i)), r, { merge:true }));
+          await batch.commit();
+        }
+        console.log('[FB] smart journal saved ✅', cloudRecords.length, '/', records.length, 'entries', entries.length);
       } catch(e) { console.warn('[FB] saveSmartJournal:', e.message); }
     };
 
@@ -76,12 +101,27 @@ function _initFirebase() {
         await _DB.collection('users').doc(_USER_ID)
                  .collection('data').doc('smart_journal')
                  .set({ records: [], updatedAt: firebase.firestore.FieldValue.serverTimestamp(), resetAt: new Date().toISOString() });
+        const old = await _DB.collection('users').doc(_USER_ID).collection('smart_journal_entries').limit(300).get();
+        if(!old.empty) {
+          const batch = _DB.batch();
+          old.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
         console.log('[FB] smart journal cleared ✅');
       } catch(e) { console.warn('[FB] clearSmartJournal:', e.message); throw e; }
     };
 
     window._fbLoadSmartJournal = async function() {
       try {
+        const entries = await _DB.collection('users').doc(_USER_ID)
+          .collection('smart_journal_entries')
+          .limit(1000)
+          .get();
+        if(!entries.empty) {
+          return entries.docs
+            .map(d => d.data())
+            .sort((a,b) => String(a.signalAt || a.createdAt || '').localeCompare(String(b.signalAt || b.createdAt || '')));
+        }
         const snap = await _DB.collection('users').doc(_USER_ID)
                               .collection('data').doc('smart_journal').get();
         return snap.exists ? (snap.data().records || []) : [];
@@ -2056,8 +2096,8 @@ function calcSignal(stock) {
 
   // 6. Stochastic RSI (حقيقي الآن)
   if(stochRsi!=null) {
-    if(stochRsi<20)      { buy+=2; reasons.push('Stoch RSI '+fmt(stochRsi)+'% — تشبع بيع شديد'); }
-    else if(stochRsi<30) { buy++;  reasons.push('Stoch RSI '+fmt(stochRsi)+'% — تشبع بيع'); }
+    if(stochRsi<20)      { buy+=2; reasons.push('مؤشر التشبع السريع '+fmt(stochRsi)+'% — تشبع بيع شديد'); }
+    else if(stochRsi<30) { buy++;  reasons.push('مؤشر التشبع السريع '+fmt(stochRsi)+'% — تشبع بيع'); }
     else if(stochRsi>80) { sell+=2; }
     else if(stochRsi>70) { sell++; }
   }
@@ -3004,6 +3044,197 @@ async function fetchHunterData(sym) {
 }
 
 // ── حساب HunterScore لسهم واحد
+function calcHunterDropReason({p, supportState, newsImpact, rs30=0, stockReturn30=0}) {
+  if (newsImpact?.block || newsImpact?.level === 'criticalNeg') {
+    return {type:'bad_news', dangerous:true, score:0, reason:'خبر سلبي جوهري، الصيد عالي المخاطرة.'};
+  }
+  if (supportState?.lost) {
+    return {type:'support_breakdown', dangerous:true, score:0, reason:'كسر الدعم، الصيد فشل.'};
+  }
+  if (supportState?.softLost) {
+    return {type:'support_breakdown', dangerous:true, score:20, reason:'السعر تحت الدعم قليلًا؛ ننتظر استرجاع واضح.'};
+  }
+  const change = +(p?.change || 0);
+  if (state.marketTrend === 'bearish' && change < -3 && rs30 < -1.5) {
+    return {type:'sector_crisis', dangerous:true, score:15, reason:'السهم أضعف من السوق أثناء ضغط عام؛ ننتظر استقرار الحركة.'};
+  }
+  if (change <= -4 && stockReturn30 <= -1) {
+    return {type:'panic_selling', dangerous:false, score:45, reason:'هبوط سريع؛ نحتاج دليل واضح أن البائع ضعف.'};
+  }
+  if (change < 0) {
+    return {type:'normal_pullback', dangerous:false, score:65, reason:'تراجع طبيعي قابل للصيد إذا ظهر مشتري.'};
+  }
+  return {type:'profit_taking', dangerous:false, score:60, reason:'الحركة أقرب لجني أرباح؛ نراقب دفاع الدعم.'};
+}
+
+function calcHunterSellerWeakness({checks, rsi, stochRsi, macdHist, macdHistDir, candles=[]}) {
+  let score = 0;
+  const reasons = [];
+  if (checks.higherLow) { score += 24; reasons.push('Higher Low'); }
+  if (checks.macdDayOk || (macdHist != null && macdHist < 0 && macdHistDir === 'contracting')) {
+    score += 16; reasons.push('MACD يتحسن');
+  }
+  if (rsi != null && rsi >= 30 && rsi <= 55) { score += 14; reasons.push('RSI يتحسن من منطقة الضغط'); }
+  else if (rsi != null && rsi < 30) { score += 10; reasons.push('RSI تشبع بيع يحتاج تأكيد'); }
+  if (stochRsi != null && stochRsi < 35) { score += 8; reasons.push('StochRSI منخفض وقابل للارتداد'); }
+  if (checks.bbReversal) { score += 10; reasons.push('عودة داخل Bollinger'); }
+
+  const last = Array.isArray(candles) ? candles.slice(-4) : [];
+  if (last.length >= 3) {
+    const lows = last.map(c => +c.l || +c.c || 0);
+    const noNewLow = lows[lows.length - 1] >= Math.min(...lows.slice(0, -1));
+    const redBodies = last
+      .filter(c => (+c.c || 0) < (+c.o || 0))
+      .map(c => Math.abs((+c.o || 0) - (+c.c || 0)));
+    const redShrinking = redBodies.length >= 2 && redBodies[redBodies.length - 1] <= redBodies[0];
+    if (noNewLow) { score += 12; reasons.push('لا يوجد Low جديد'); }
+    if (redShrinking) { score += 8; reasons.push('الشموع الحمراء بدأت تصغر'); }
+  }
+
+  if (checks.rvolOk && (checks.higherLow || checks.macdDayOk)) {
+    score += 8; reasons.push('حجم داعم مع تحسن');
+  }
+
+  return {
+    score: Math.min(100, score),
+    ok: score >= 60,
+    reasons,
+  };
+}
+
+function calcHunterSupportDefense({support, supportState, nearSup, supTouches=1, rr=0}) {
+  let score = 0;
+  const reasons = [];
+  if (!support) return {score:0, ok:false, reason:'لا يوجد دعم واضح؛ الصائد يراقب فقط.'};
+  if (supportState?.lost) return {score:0, ok:false, reason:'كسر الدعم، الصيد فشل.'};
+  if (supportState?.softLost) return {score:25, ok:false, reason:'الدعم لم يثبت بعد؛ ننتظر استرجاعه.'};
+  if (supportState?.above) { score += 25; reasons.push('السعر فوق الدعم'); }
+  if (nearSup) { score += 20; reasons.push('قريب من الدعم'); }
+  if ((+supTouches || 0) >= 2) { score += 20; reasons.push('الدعم تكرر احترامه'); }
+  else score += 8;
+  if (rr >= 1.5) { score += 15; reasons.push('العائد مقابل المخاطرة مناسب'); }
+  if (supportState?.recovered) { score += 15; reasons.push('استرجاع دعم'); }
+  return {
+    score: Math.min(100, score),
+    ok: score >= 60,
+    reason: reasons.join('، ') || 'الدعم موجود لكنه يحتاج تأكيد.',
+  };
+}
+
+function calcHunterBuyerConfirmation({checks, candleGate, rvol=0, nearSup=false, supportState=null}) {
+  let score = 0;
+  const reasons = [];
+  if (checks.aboveVwap) { score += 22; reasons.push('استعادة VWAP'); }
+  if (candleGate?.bullishOk) { score += 18; reasons.push('شمعة انعكاس'); }
+  if (checks.breakout15) { score += 18; reasons.push('اختراق قمة صغيرة'); }
+  if (checks.higherLow) { score += 14; reasons.push('Higher Low'); }
+  if ((+rvol || 0) >= 1.5) { score += 14; reasons.push('فوليوم شراء داعم'); }
+  if (supportState?.recovered && nearSup) { score += 14; reasons.push('ارتداد من دعم'); }
+  const bounceConfirmed = !!(
+    (candleGate?.bullishOk || checks.cleanMomentum || supportState?.recovered) &&
+    (checks.aboveVwap || checks.breakout15 || checks.higherLow || (+rvol || 0) >= 1.5)
+  );
+  return {
+    score: Math.min(100, score),
+    ok: score >= 60 && bounceConfirmed,
+    bounceConfirmed,
+    reasons,
+  };
+}
+
+function calcHunterLateBounceRisk({price, support, vwap, resistance, atrPct=3, change=0, checks}) {
+  const p = +price || 0;
+  const s = +support || 0;
+  const v = +vwap || 0;
+  const r = +resistance || 0;
+  const atr = Math.max(1, +atrPct || 3);
+  const distSupport = s > 0 && p > 0 ? ((p - s) / p) * 100 : 0;
+  const distVwap = v > 0 && p > 0 ? ((p - v) / v) * 100 : 0;
+  const roomRes = r > p ? ((r - p) / p) * 100 : 999;
+  let risk = 0;
+  const reasons = [];
+  if (distSupport > Math.max(4, atr * 0.9)) { risk += 35; reasons.push('بعيد عن الدعم'); }
+  if (distVwap > Math.max(2.2, atr * 0.45)) { risk += 25; reasons.push('بعيد عن VWAP'); }
+  if ((+change || 0) > 6 && !checks.higherLow) { risk += 20; reasons.push('ارتداد قوي بلا Pullback واضح'); }
+  if (roomRes < Math.max(2, atr * 0.55)) { risk += 20; reasons.push('قريب من مقاومة'); }
+  return {
+    score: Math.min(100, risk),
+    ok: risk < 45,
+    reasons,
+  };
+}
+
+function evaluateHunterLayers(ctx) {
+  const drop = calcHunterDropReason(ctx);
+  const seller = calcHunterSellerWeakness(ctx);
+  const supportDefense = calcHunterSupportDefense(ctx);
+  const buyer = calcHunterBuyerConfirmation(ctx);
+  const late = calcHunterLateBounceRisk(ctx);
+  const hunterScore = Math.round(
+    drop.score * 0.12 +
+    seller.score * 0.26 +
+    supportDefense.score * 0.24 +
+    buyer.score * 0.28 +
+    (100 - late.score) * 0.10
+  );
+
+  let hunterStage = 'PRESSURED';
+  let hunterDecision = 'EARLY_WATCH';
+  let reason = 'السهم مضغوط لكن البيع لا يزال قويًا.';
+
+  if (drop.type === 'bad_news') {
+    hunterStage = 'FAILED';
+    hunterDecision = 'NEWS_RISK';
+    reason = drop.reason;
+  } else if (drop.type === 'sector_crisis') {
+    hunterStage = 'FAILED';
+    hunterDecision = 'SECTOR_CRISIS';
+    reason = drop.reason;
+  } else if (drop.type === 'support_breakdown') {
+    hunterStage = 'FAILED';
+    hunterDecision = 'FAILED_SUPPORT';
+    reason = drop.reason;
+  } else if (!seller.ok) {
+    hunterStage = 'PRESSURED';
+    hunterDecision = 'EARLY_WATCH';
+    reason = 'السهم مضغوط لكن البيع لا يزال قويًا.';
+  } else if (!supportDefense.ok) {
+    hunterStage = 'SELLING_WEAKENING';
+    hunterDecision = 'EARLY_WATCH';
+    reason = supportDefense.reason || 'البيع بدأ يضعف لكن الدعم غير كافٍ.';
+  } else if (!buyer.ok) {
+    hunterStage = 'BOUNCE_FORMING';
+    hunterDecision = 'BOUNCE_READY';
+    reason = 'البيع بدأ يضعف لكن ننتظر ظهور مشتري.';
+  } else if (!late.ok) {
+    hunterStage = 'BOUNCE_FORMING';
+    hunterDecision = 'WAIT_PULLBACK';
+    reason = 'السهم ارتد لكن الدخول الحالي متأخر.';
+  } else {
+    hunterStage = 'CONFIRMED_REVERSAL';
+    hunterDecision = 'BUY_CONFIRMED';
+    reason = 'ارتداد مؤكد من دعم مع دخول سيولة.';
+  }
+
+  return {
+    hunterStage,
+    hunterDecision,
+    reason,
+    pressureScore: drop.score,
+    sellerWeaknessScore: seller.score,
+    supportDefenseScore: supportDefense.score,
+    buyerConfirmationScore: buyer.score,
+    lateBounceRisk: late.score,
+    hunterScore,
+    dropReason: drop.type,
+    dropReasonText: drop.reason,
+    sellerWeaknessReasons: seller.reasons,
+    buyerConfirmationReasons: buyer.reasons,
+    lateBounceReasons: late.reasons,
+    allowConfirmedBuy: hunterDecision === 'BUY_CONFIRMED',
+  };
+}
+
 async function calcHunterScore(stock) {
   const p   = state.prices[stock.id];
   const ind = state.indicators[stock.id];
@@ -3189,6 +3420,44 @@ async function calcHunterScore(stock) {
   checks.candleBlock = hunterCandleGate.bearishBlock;
   if(hunterCandleGate.bullishOk) score += nearSup ? 6 : 3;
   if(hunterCandleGate.bearishBlock) score -= 10;
+  const hunterLayerCandles = (ind?.closes || []).slice(-4).map((c, i, arr) => {
+    const offset = (ind?.closes || []).length - arr.length + i;
+    const o = ind?.opens?.[offset] ?? (i === 0 ? c : arr[i - 1]);
+    const h = ind?.highs?.[offset] ?? Math.max(c, o);
+    const l = ind?.lows?.[offset] ?? Math.min(c, o);
+    return {o:+o || +c || 0, c:+c || 0, h:+h || +c || 0, l:+l || +c || 0};
+  });
+  const hunterLayer = evaluateHunterLayers({
+    p,
+    price,
+    support,
+    resistance,
+    supportState: hunterSupportState,
+    nearSup,
+    supTouches: ind?.supTouches ?? 1,
+    newsImpact,
+    checks,
+    rsi,
+    stochRsi,
+    macdHist,
+    macdHistDir,
+    candles: hunterLayerCandles,
+    candleGate: hunterCandleGate,
+    rvol: intra?.rvol || 0,
+    vwap: intra?.vwap || null,
+    rs30,
+    stockReturn30: intra?.stockReturn30 || 0,
+    atrPct: atrVal,
+    rr,
+  });
+  checks.hunterStage = hunterLayer.hunterStage;
+  checks.hunterDecision = hunterLayer.hunterDecision;
+  checks.dropReason = hunterLayer.dropReason;
+  checks.sellerWeaknessScore = hunterLayer.sellerWeaknessScore;
+  checks.supportDefenseScore = hunterLayer.supportDefenseScore;
+  checks.buyerConfirmationScore = hunterLayer.buyerConfirmationScore;
+  checks.lateBounceRisk = hunterLayer.lateBounceRisk;
+  checks.bounceConfirmed = hunterLayer.buyerConfirmationScore >= 60 && hunterLayer.hunterDecision !== 'WAIT_PULLBACK';
   checks.safePullback = !!(nearSup && (rsiExhaust || bbReversal) && !checks.breakout15);
   checks.supportEntry = !!(
     nearSup &&
@@ -3215,30 +3484,48 @@ async function calcHunterScore(stock) {
   let gainerClass = null;
   let gainerNote = null;
 
-  if(score >= 70 && checks.ignition && checks.candleOk && rr >= 1.45) {
+  if(hunterLayer.hunterDecision === 'BUY_CONFIRMED' && score >= 70 && checks.ignition && checks.candleOk && rr >= 1.45) {
     action = 'ادخل الآن';
     actionTone = 'buy';
-    actionNote = 'اشتعال لحظي: فوق VWAP + كسر 15 دقيقة + حجم داعم.';
-  } else if(score >= 58 && (checks.ignition || checks.readySoon) && rr >= 1.3) {
+    actionNote = hunterLayer.reason;
+  } else if(hunterLayer.hunterDecision === 'BUY_CONFIRMED' && score >= 58 && (checks.ignition || checks.readySoon) && rr >= 1.3) {
     action = 'ادخل بشرط';
     actionTone = 'buy';
     actionNote = checks.ignition
-      ? 'ادخل إذا ثبت 5 دقائق فوق الاختراق ولم يفقد VWAP.'
-      : 'استعد: يحتاج ثبات فوق VWAP أو كسر آخر قمة.';
-  } else if(score >= 56 && checks.supportEntry) {
+      ? 'ارتداد مؤكد؛ نفذ فقط إذا ثبت 5 دقائق فوق الاختراق ولم يفقد VWAP.'
+      : 'ارتداد مؤكد؛ يحتاج ثبات فوق VWAP أو كسر آخر قمة.';
+  } else if(hunterLayer.hunterDecision === 'BUY_CONFIRMED' && score >= 56 && checks.supportEntry) {
     action = 'دخول قرب الدعم';
     actionTone = 'support';
-    actionNote = 'دخول صغير فقط قرب الدعم المكتوب؛ لا ترفع السعر والوقف إلزامي.';
+    actionNote = 'ارتداد مؤكد من دعم؛ دخول صغير فقط قرب الدعم المكتوب والوقف إلزامي.';
+  } else if(hunterLayer.hunterDecision === 'WAIT_PULLBACK') {
+    action = 'لا تطارد';
+    actionTone = 'watch';
+    actionNote = hunterLayer.reason;
+  } else if(hunterLayer.hunterDecision === 'BOUNCE_READY') {
+    action = 'ارتداد يتكوّن';
+    actionTone = 'watch';
+    actionNote = hunterLayer.reason;
+  } else if(hunterLayer.hunterDecision === 'FAILED_SUPPORT') {
+    action = 'كسر دعم — لا تدخل';
+    actionTone = 'watch';
+    actionNote = hunterLayer.reason;
+  } else if(hunterLayer.hunterDecision === 'NEWS_RISK' || hunterLayer.hunterDecision === 'SECTOR_CRISIS') {
+    action = 'لا تدخل الآن';
+    actionTone = 'watch';
+    actionNote = hunterLayer.reason;
   } else if(score >= 65 && (checks.breakout15 || checks.higherLow) && rr >= 1.5) {
     action = 'لا تدخل الآن';
     actionTone = 'watch';
-    actionNote = checks.breakout15
+    actionNote = hunterLayer.reason || (checks.breakout15
       ? 'انتظر ثبات السعر فوق الاختراق؛ لا تطارد شمعة طويلة.'
-      : 'راقب اختراق آخر قمة 15 دقيقة أو رجوع فوق VWAP.';
+      : 'راقب اختراق آخر قمة 15 دقيقة أو رجوع فوق VWAP.');
   } else if(checks.safePullback && rr >= 1.5) {
     action = 'لا تدخل الآن';
     actionTone = 'watch';
-    actionNote = 'قريب من الدعم، لكن لا يعتبر دخولًا حتى يعطي إشارة تنفيذ واضحة.';
+    actionNote = hunterLayer.reason || 'قريب من الدعم، لكن لا يعتبر دخولًا حتى يعطي إشارة تنفيذ واضحة.';
+  } else {
+    actionNote = hunterLayer.reason || actionNote;
   }
 
   if(hunterSupportState.lost || hunterSupportState.softLost) {
@@ -3325,6 +3612,16 @@ async function calcHunterScore(stock) {
     atrPct: atrVal,
     marketTrend: state.marketTrend,
     newsImpact,
+    hunterStage: hunterLayer.hunterStage,
+    hunterDecision: hunterLayer.hunterDecision,
+    hunterReason: hunterLayer.reason,
+    pressureScore: hunterLayer.pressureScore,
+    sellerWeaknessScore: hunterLayer.sellerWeaknessScore,
+    supportDefenseScore: hunterLayer.supportDefenseScore,
+    buyerConfirmationScore: hunterLayer.buyerConfirmationScore,
+    lateBounceRisk: hunterLayer.lateBounceRisk,
+    hunterLayerScore: hunterLayer.hunterScore,
+    dropReason: hunterLayer.dropReason,
     candlePatterns: hunterCandles,
     candleGate: hunterCandleGate,
     action, actionTone, actionNote,
@@ -3967,7 +4264,26 @@ async function calcDailyTradeScore(stock) {
   const higherLow = !!intra?.higherLow;
   const macd5Ok = intra?.macd5Hist != null && intra.macd5Hist > 0;
   const spreadRisk = price < 0.5;
-  const tooExtended = move >= 14 && !st.near && !higherLow;
+  const bars = Array.isArray(intra?.bars) ? intra.bars : [];
+  const intradayHigh = bars.length ? Math.max(...bars.map(b => +b.high || +b.close || 0).filter(Boolean)) : 0;
+  const intradayLow = bars.length ? Math.min(...bars.map(b => +b.low || +b.close || 0).filter(Boolean)) : 0;
+  const dayHigh = +(p.dayHigh || p.high || intradayHigh || 0);
+  const dayLow = +(p.dayLow || p.low || intradayLow || 0);
+  const vwapDistancePct = intra?.vwap ? ((price - intra.vwap) / price * 100) : null;
+  const supportDistancePct = support > 0 ? ((price - support) / price * 100) : 999;
+  const nearDayHigh = dayHigh > 0 && ((dayHigh - price) / price * 100) <= 0.45;
+  const dayRangePct = dayLow > 0 && dayHigh > dayLow ? ((dayHigh - dayLow) / dayLow * 100) : 0;
+  const vwapEntryZone = aboveVwap && vwapDistancePct != null &&
+    vwapDistancePct >= -0.2 && vwapDistancePct <= Math.max(0.75, Math.min(1.35, atrPct * 0.24));
+  const supportEntryZone = st.near && supportDistancePct >= -0.2 && supportDistancePct <= 2.2;
+  const pullbackReclaim = aboveVwap && higherLow && vwapDistancePct != null && vwapDistancePct <= Math.max(1.1, Math.min(1.8, atrPct * 0.32));
+  const entryZoneOk = !!(supportEntryZone || vwapEntryZone || pullbackReclaim);
+  const topChase = !!(
+    (move >= 4.5 && nearDayHigh && !pullbackReclaim) ||
+    (move >= 7 && !entryZoneOk) ||
+    (vwapDistancePct != null && vwapDistancePct > Math.max(1.6, atrPct * 0.38) && move >= 3 && !supportEntryZone)
+  );
+  const tooExtended = topChase || (move >= 14 && !entryZoneOk);
   const supportLost = st.lost || st.softLost;
   const candles = detectCandlePatterns(ind?.closes, ind?.highs, ind?.lows, ind?.opens);
   const gate = candleEntryGate(candles, {
@@ -3996,10 +4312,11 @@ async function calcDailyTradeScore(stock) {
   if(gate.bullishOk) score += 7;
   if(stock.isGainer) score += 6;
   if(state.marketTrend === 'bullish') score += 4;
+  if(entryZoneOk) score += 8;
 
   if(supportLost) score -= st.lost ? 18 : 10;
   if(gate.bearishBlock) score -= 14;
-  if(tooExtended) score -= 14;
+  if(tooExtended) score -= topChase ? 24 : 14;
   if(spreadRisk) score -= 8;
   if(rvol > 0 && rvol < 0.8) score -= 6;
 
@@ -4016,6 +4333,34 @@ async function calcDailyTradeScore(stock) {
   if(rr >= 1.7) score += 5;
   if(rr < 1.05) score -= 10;
 
+  const dayEngine = window.DayTradeEngine?.analyze ? window.DayTradeEngine.analyze({
+    symbol: stock.id,
+    price,
+    movePct: move,
+    rvol,
+    volumeRatio,
+    rs30,
+    atrPct,
+    rr,
+    lossPct,
+    baseScore: score,
+    aboveVwap,
+    breakout15,
+    higherLow,
+    macd5Ok,
+    macd5Hist: intra?.macd5Hist ?? null,
+    entryZoneOk,
+    supportLost,
+    spreadRisk,
+    candleAllows: gate.allowsEntry && !gate.bearishBlock,
+    vwap: intra?.vwap || null,
+    support,
+    resistance,
+    dayHigh,
+    dayLow,
+    bars,
+  }) : null;
+
   let action = 'راقب الاختراق';
   let actionTone = 'watch';
   let actionNote = 'ينتظر اختراق واضح أو رجوع فوق VWAP مع حجم.';
@@ -4026,16 +4371,30 @@ async function calcDailyTradeScore(stock) {
     actionTone = 'danger';
     dayClass = 'danger';
     actionNote = st.lost ? 'السعر تحت الدعم؛ لا تدخل حتى يسترجعه.' : 'السعر تحت الدعم قليلًا؛ انتظر رجوع واضح فوقه.';
-  } else if(tooExtended) {
-    action = 'لا تطارد';
-    actionTone = 'danger';
-    dayClass = 'chase';
-    actionNote = 'السهم ابتعد عن منطقة الدخول؛ انتظر Pullback أو إعادة بناء قاع.';
-  } else if(score >= 78 && aboveVwap && (breakout15 || higherLow) && rvol >= 1.25 && gate.allowsEntry && rr >= 1.2) {
+  } else if(dayEngine?.tradeDecision === 'ENTER_NOW') {
     action = 'ادخل مضاربة سريعة';
     actionTone = 'dailyBuy';
     dayClass = 'entry';
-    actionNote = 'دخول يومي فقط: فوق VWAP مع حجم ومحفز لحظي. الوقف إلزامي.';
+    actionNote = supportEntryZone
+      ? 'دخول يومي من منطقة دعم قريبة مع حجم. الوقف إلزامي.'
+      : pullbackReclaim
+        ? 'دخول بعد رجوع/قاع أعلى فوق VWAP، وليس مطاردة قمة.'
+        : (dayEngine.reason || 'دخول يومي قريب من VWAP مع حجم ومحفز لحظي. الوقف إلزامي.');
+  } else if(dayEngine?.tradeDecision === 'LATE_DO_NOT_ENTER') {
+    action = 'لا تطارد';
+    actionTone = 'danger';
+    dayClass = 'chase';
+    actionNote = dayEngine.reason || 'السهم ابتعد عن منطقة الدخول؛ انتظر Pullback أو إعادة بناء قاع.';
+  } else if(dayEngine?.tradeDecision === 'WAIT_PULLBACK') {
+    action = 'انتظر تراجع';
+    actionTone = 'watch';
+    dayClass = 'pullback';
+    actionNote = dayEngine.reason || 'السهم قوي لكن نقطة الدخول الحالية متأخرة.';
+  } else if(dayEngine?.tradeDecision === 'REJECT') {
+    action = 'مرفوض';
+    actionTone = 'danger';
+    dayClass = 'danger';
+    actionNote = dayEngine.reason || 'لا توجد مضاربة يومية نظيفة الآن.';
   } else if(score >= 62 && (aboveVwap || breakout15 || higherLow) && rvol >= 1.0) {
     action = 'راقب الاختراق';
     actionTone = 'watch';
@@ -4045,7 +4404,9 @@ async function calcDailyTradeScore(stock) {
     action = 'انتظر تراجع';
     actionTone = 'watch';
     dayClass = 'pullback';
-    actionNote = 'الحركة موجودة لكن الدخول الحالي ليس مريحاً؛ انتظر رجوع قريب من الدعم.';
+    actionNote = topChase
+      ? 'الحركة قوية لكن السعر قريب من قمة اليوم أو بعيد عن VWAP؛ لا تشتري القمة.'
+      : 'الحركة موجودة لكن الدخول الحالي ليس مريحاً؛ انتظر رجوع قريب من الدعم أو VWAP.';
   }
   const dailyEntryGate = finalEntryGate({
     wantsEntry: dayClass === 'entry',
@@ -4061,7 +4422,7 @@ async function calcDailyTradeScore(stock) {
     candleGate: gate,
     rvol,
     higherLow,
-    greenClose: gate.bullishOk || (aboveVwap && (breakout15 || higherLow)),
+    greenClose: gate.bullishOk || (entryZoneOk && aboveVwap && (breakout15 || higherLow || pullbackReclaim)),
     recoveredSupport: st.recovered,
     riskReward: rr,
     atrPct,
@@ -4078,12 +4439,26 @@ async function calcDailyTradeScore(stock) {
     id: stock.id, name: stock.name, sector: stock.sector,
     indexTags: stock.indexTags || [], marketLabel: stock.marketLabel || '',
     tradeStyle:'daily', type:'daily',
-    price, change: move, score: Math.round(Math.max(0, Math.min(score, 100))),
+    price, change: move, score: Math.round(Math.max(0, Math.min(dayEngine?.dayTradeScore ?? score, 100))),
     action, decision: action, actionTone, actionNote, note: actionNote,
+    dayEngine,
+    engineDecision: dayEngine?.tradeDecision || dayClass,
+    timingScore: dayEngine?.timingScore ?? null,
+    momentumScore: dayEngine?.momentumScore ?? null,
+    volumeScore: dayEngine?.volumeScore ?? null,
+    riskScore: dayEngine?.riskScore ?? null,
+    dataStatus: dayEngine?.dataStatus || (intra?.vwap && bars.length >= 3 ? 'لحظية' : 'متأخرة/ناقصة'),
+    vwapAvailable: !!dayEngine?.hasVwap,
+    intradayBarsReady: !!dayEngine?.hasIntradayBars,
+    lateEntryFlag: !!dayEngine?.lateEntryFlag,
+    exhaustionFlag: !!dayEngine?.exhaustionFlag,
     dayClass, entry: price, stopLoss:+stopLoss.toFixed(2), targetPrice:+targetPrice.toFixed(2), target:+targetPrice.toFixed(2),
     profitPct:+profitPct.toFixed(1), lossPct:+lossPct.toFixed(1), rr:+rr.toFixed(2), riskReward:+rr.toFixed(2),
     support, supportSource, resistance, vwap: intra?.vwap || null, rvol, rs30,
-    checks:{aboveVwap, breakout15, higherLow, macd5Ok, rvolOk:rvol>=1.25, supportLost, tooExtended, candleOk:gate.allowsEntry},
+    dayHigh, dayLow, dayRangePct:+dayRangePct.toFixed(2),
+    vwapDistancePct:vwapDistancePct == null ? null : +vwapDistancePct.toFixed(2),
+    supportDistancePct:+supportDistancePct.toFixed(2),
+    checks:{aboveVwap, breakout15, higherLow, macd5Ok, rvolOk:rvol>=1.25, supportLost, tooExtended, topChase, nearDayHigh, entryZoneOk, vwapEntryZone, supportEntryZone, pullbackReclaim, candleOk:gate.allowsEntry},
     candlePatterns:candles, candleGate:gate, supportState:st, entryGate:dailyEntryGate,
     trackInJournal: action === 'ادخل مضاربة سريعة',
     isGainer:!!stock.isGainer, gainerRank:stock.gainerRank || null,
@@ -4126,6 +4501,14 @@ async function calcDailyTrade() {
   });
   state.dailyRecs = results.slice(0, 25);
   state.dailyTime = new Date();
+  try {
+    window.DayTradeLogger?.recordBatch(state.dailyRecs, {
+      prices: state.prices,
+      market: {spyChange: state.spyChange, qqqChange: state.qqqChange, trend: state.marketTrend},
+    });
+  } catch(e) {
+    console.warn('[DayTradeLogger]', e.message);
+  }
   saveLatestTabsSoon();
   console.log('[Daily] المضاربة اليومية:', state.dailyRecs.length, 'بطاقة');
   return state.dailyRecs;
@@ -4823,9 +5206,42 @@ function loadSmartJournal() {
 }
 
 function saveSmartJournal(records) {
-  const data = records.slice(-800);
+  const data = cleanJournalForStorage(records).slice(-1200);
   try { localStorage.setItem('smart_journal', JSON.stringify(data)); } catch(e) {}
   if(window._fbReady && window._fbSaveSmartJournal) window._fbSaveSmartJournal(data).catch(()=>{});
+}
+
+function cleanJournalForStorage(value) {
+  if(value === undefined) return null;
+  if(value === null || typeof value !== 'object') return value;
+  if(Array.isArray(value)) return value.map(cleanJournalForStorage);
+  const out = {};
+  Object.keys(value).forEach(k => { out[k] = cleanJournalForStorage(value[k]); });
+  return out;
+}
+
+function cardDecisionText(x) {
+  return x?.recDecision?.label || x?.action || x?.decision || x?.signal || x?.entryTiming || x?.label || '';
+}
+
+function cardReasonText(x) {
+  return x?.dayEngine?.reason || x?.finalEntryNote || x?.entryNote || x?.actionNote || x?.note || x?.reason || '';
+}
+
+function cardDataStatus(x) {
+  return x?.dataStatus || x?.dayEngine?.dataStatus || (x?.vwapAvailable || x?.vwap ? 'لحظية' : 'غير محددة');
+}
+
+function cardVwapAvailable(x) {
+  return !!(x?.vwapAvailable || x?.dayEngine?.hasVwap || x?.vwap);
+}
+
+function cardLateEntryFlag(x) {
+  return !!(x?.lateEntryFlag || x?.dayEngine?.lateEntryFlag || x?.entryGate?.stage === 'entry_chase');
+}
+
+function cardExhaustionFlag(x) {
+  return !!(x?.exhaustionFlag || x?.dayEngine?.exhaustionFlag);
 }
 
 function isJournalEntryCard(x, type) {
@@ -4838,6 +5254,8 @@ function isJournalEntryCard(x, type) {
   if(x.candleGate && !x.candleGate.allowsEntry) return false;
   if(x.candleGate?.bearishBlock) return false;
   if(x.entryGate && x.entryGate.allow === false) return false;
+  if(x.trackInJournal === true) return true;
+  if(/ادخل الآن|ادخل مضاربة سريعة|دخول مجازفة|دخول فعلي/.test(text)) return true;
   if(type === 'rec') return !!x.activeBuy && x.recDecision?.label === 'ادخل الآن';
   if(type === 'spec') return !x.isWatch && x.entryTiming === 'ادخل الآن';
   if(type === 'daily') return x.action === 'ادخل مضاربة سريعة' && x.actionTone === 'dailyBuy';
@@ -4850,16 +5268,12 @@ function isJournalEntryCard(x, type) {
 }
 
 function isJournalWatchSignalCard(x, type) {
-  const text = ((x?.decision||'')+' '+(x?.signal||'')+' '+(x?.actionTone||'')+' '+(x?.note||'')+' '+(x?.entryTiming||'')).toLowerCase();
-  if(!x || !x.id || !x.entry || !x.target || !x.stopLoss) return false;
-  if(type === 'premarket') return false;
+  if(!x || !x.id) return false;
   if(isJournalEntryCard(x, type)) return false;
-  if(x.gainerClass === 'chase' || /لا تطارد|لا تدخل|ممنوع|تجنب|كسر دعم/.test(text)) return false;
-  if(type === 'rec') return !!(x.conditionalBuy || x.earlyRadar) || /استعد|انتظر|ادخل بشرط|شراء مشروط|راقب/.test(text);
-  if(type === 'spec') return x.entryTiming === 'مقبول' || x.entryTiming === 'انتظر' || /مقبول|انتظر|راقب/.test(text);
-  if(type === 'daily') return /انتظر|راقب|استعد/.test(text);
-  if(type === 'hunter') return /راقب|انتظر|دخول قرب الدعم|شراء مشروط/.test(text) && !/ادخل الآن/.test(text);
-  return /استعد|انتظر|راقب|شرط/.test(text);
+  const entry = +(x.entry || x.price || 0);
+  const target = +(x.target || x.targetPrice || entry || 0);
+  const stopLoss = +(x.stopLoss || (entry ? entry * 0.97 : 0));
+  return !!(entry || target || stopLoss);
 }
 
 function estimateJournalDays(x, type) {
@@ -4885,14 +5299,22 @@ function makeSmartJournalEntry(x, type, market, now) {
   const keyDate = now.toISOString().slice(0,10);
   return {
     journalId: [type, x.id, keyDate, entry.toFixed(2), target.toFixed(2), stopLoss.toFixed(2)].join(':'),
+    journalKind: 'trade',
     id: x.id,
     name: x.name || '',
     sector: x.sector || '',
     type,
-    decision: x.decision || x.signal || '',
-    reason: x.note || '',
+    decision: cardDecisionText(x),
+    reason: cardReasonText(x),
     signalAt: now.toISOString(),
+    createdAt: now.toISOString(),
+    firstSeenAt: now.toISOString(),
+    lastSeenAt: now.toISOString(),
+    seenCount: 1,
     entry,
+    priceAtSignal: entry,
+    currentPrice: entry,
+    lastPrice: entry,
     target,
     stopLoss,
     riskReward: +(x.riskReward || 0),
@@ -4916,6 +5338,16 @@ function makeSmartJournalEntry(x, type, market, now) {
     pnlPct: 0,
     maxPrice: entry,
     minPrice: entry,
+    maxGainPct: 0,
+    maxDrawdownPct: 0,
+    after30: null,
+    after60: null,
+    endSession: null,
+    decisionCorrect: null,
+    dataStatus: cardDataStatus(x),
+    vwapAvailable: cardVwapAvailable(x),
+    lateEntryFlag: cardLateEntryFlag(x),
+    exhaustionFlag: cardExhaustionFlag(x),
   };
 }
 
@@ -4929,8 +5361,8 @@ function makeSmartWatchSignalEntry(x, type, market, now) {
     ...makeSmartJournalEntry(x, type, market, now),
     journalId: ['watch', type, x.id, keyDate, entry.toFixed(2), target.toFixed(2), stopLoss.toFixed(2)].join(':'),
     journalKind: 'watch_signal',
-    decision: 'إنذار مبكر — '+(x.decision || x.signal || 'استعد/انتظر'),
-    reason: x.note || 'إشارة مراقبة مبكرة؛ ليست دخول فعلي.',
+    decision: cardDecisionText(x) || 'مراقبة',
+    reason: cardReasonText(x) || 'بطاقة متابعة مسجلة للتقييم، وليست دخول فعلي.',
     expectedDays,
     expiresAt: new Date(now.getTime() + expectedDays*864e5).toISOString(),
     result: 'watching',
@@ -4964,7 +5396,21 @@ function updateSmartJournalFromLatest(payload) {
           ? makeSmartWatchSignalEntry(card, type, payload.market || {}, now)
           : null;
       if(!rec) return;
-      if(byId.has(rec.journalId)) return;
+      const existing = journal.find(r => r.journalId === rec.journalId);
+      if(existing) {
+        existing.lastSeenAt = now.toISOString();
+        existing.seenCount = +(existing.seenCount || 1) + 1;
+        existing.currentPrice = +(card.price || rec.entry || existing.currentPrice || 0);
+        existing.lastPrice = existing.currentPrice;
+        existing.decision = rec.decision || existing.decision;
+        existing.reason = rec.reason || existing.reason;
+        existing.score = rec.score || existing.score;
+        existing.dataStatus = rec.dataStatus || existing.dataStatus;
+        existing.vwapAvailable = rec.vwapAvailable;
+        existing.lateEntryFlag = rec.lateEntryFlag;
+        existing.exhaustionFlag = rec.exhaustionFlag;
+        return;
+      }
       byId.add(rec.journalId);
       journal.push(rec);
     });
@@ -5218,9 +5664,27 @@ function evaluateSmartJournal(records, persist=true) {
     if(r.status !== 'open') return;
     const cur = +(state.prices?.[r.id]?.price || 0);
     if(!cur || !r.entry) return;
+    r.currentPrice = cur;
+    r.lastPrice = cur;
     r.maxPrice = Math.max(+(r.maxPrice || r.entry), cur);
     r.minPrice = Math.min(+(r.minPrice || r.entry), cur);
     r.pnlPct = +(((cur - r.entry)/r.entry)*100).toFixed(2);
+    r.maxGainPct = +(((r.maxPrice - r.entry)/r.entry)*100).toFixed(2);
+    r.maxDrawdownPct = +(((r.minPrice - r.entry)/r.entry)*100).toFixed(2);
+    const startAt = new Date(r.signalAt || r.createdAt || now).getTime();
+    const ageMs = now.getTime() - startAt;
+    if(ageMs >= 30*60000 && !r.after30) {
+      r.after30 = { price: cur, pnlPct: r.pnlPct, at: now.toISOString() };
+      changed = true;
+    }
+    if(ageMs >= 60*60000 && !r.after60) {
+      r.after60 = { price: cur, pnlPct: r.pnlPct, at: now.toISOString() };
+      changed = true;
+    }
+    if(!isRealMarketOpen() && !r.endSession) {
+      r.endSession = { price: cur, pnlPct: r.pnlPct, at: now.toISOString() };
+      changed = true;
+    }
     const hitTarget = r.target && cur >= r.target;
     const hitStop = r.stopLoss && cur <= r.stopLoss;
     const expired = r.expiresAt && now >= new Date(r.expiresAt);
@@ -5232,9 +5696,11 @@ function evaluateSmartJournal(records, persist=true) {
       if(r.journalKind === 'watch_signal') {
         r.result = hitTarget ? 'watch_hit' : hitStop ? 'watch_failed' : 'watch_expired';
         r.closeReason = hitTarget ? 'إنذار مبكر وصل الهدف' : hitStop ? 'إنذار مبكر ضرب الوقف' : 'انتهت مدة الإنذار المبكر';
+        r.decisionCorrect = hitTarget || (!hitStop && (r.maxGainPct || 0) >= 1);
       } else {
         r.result = hitTarget ? 'target' : hitStop ? 'stop' : 'expired';
         r.closeReason = hitTarget ? 'وصل الهدف' : hitStop ? 'ضرب الوقف' : 'انتهت المدة';
+        r.decisionCorrect = hitTarget || (expired && r.pnlPct >= 0);
       }
       changed = true;
     }
@@ -5261,7 +5727,7 @@ function compactLatestCard(x, type) {
     signal:x.signal || x.action || x.label || '',
     decision:x.recDecision?.label || x.action || x.entryTiming || x.label || '',
     actionTone:x.actionTone || x.recDecision?.tone || '',
-    note:x.finalEntryNote || x.entryNote || x.actionNote || '',
+    note:x.finalEntryNote || x.entryNote || x.actionNote || x.note || '',
     entry:+(x.entry || x.price || 0),
     stopLoss:+(x.stopLoss || 0),
     target:+(x.target || x.targetPrice || 0),
@@ -5296,6 +5762,24 @@ function compactLatestCard(x, type) {
     marketLabel:x.marketLabel || getMarketTags(x.id, x).join(' · '),
     tradeStyle:x.tradeStyle || '',
     dayClass:x.dayClass || null,
+    dayEngine:x.dayEngine ? {
+      tradeDecision:x.dayEngine.tradeDecision || null,
+      reason:x.dayEngine.reason || '',
+      dayTradeScore:x.dayEngine.dayTradeScore ?? null,
+      timingScore:x.dayEngine.timingScore ?? null,
+      momentumScore:x.dayEngine.momentumScore ?? null,
+      volumeScore:x.dayEngine.volumeScore ?? null,
+      riskScore:x.dayEngine.riskScore ?? null,
+      lateEntryFlag:!!x.dayEngine.lateEntryFlag,
+      exhaustionFlag:!!x.dayEngine.exhaustionFlag,
+      dataStatus:x.dayEngine.dataStatus || null,
+      hasVwap:!!x.dayEngine.hasVwap,
+      hasIntradayBars:!!x.dayEngine.hasIntradayBars,
+    } : null,
+    dataStatus:x.dataStatus || x.dayEngine?.dataStatus || (x.vwapAvailable || x.vwap ? 'لحظية' : 'غير محددة'),
+    vwapAvailable:!!(x.vwapAvailable || x.dayEngine?.hasVwap || x.vwap),
+    lateEntryFlag:!!(x.lateEntryFlag || x.dayEngine?.lateEntryFlag || x.entryGate?.stage === 'entry_chase'),
+    exhaustionFlag:!!(x.exhaustionFlag || x.dayEngine?.exhaustionFlag),
     outsideUniverse:!!x.outsideUniverse,
     radarClass:x.radarClass || null,
     reason:x.reason || '',
@@ -5329,10 +5813,10 @@ function saveLatestTabsSoon() {
         hunter: state.hunterTime ? state.hunterTime.toISOString() : null,
         premarket: state.premarketTime ? state.premarketTime.toISOString() : null,
       },
-      recs: (state.recs || []).slice(0, 10).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'rec'), 'rec')).filter(Boolean),
-      spec: (state.speculativeRecs || []).slice(0, 10).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'spec'), 'spec')).filter(Boolean),
-      daily: (state.dailyRecs || []).slice(0, 25).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'daily'), 'daily')).filter(Boolean),
-      hunter: (state.hunterRecs || []).slice(0, 20).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'hunter'), 'hunter')).filter(Boolean),
+      recs: (state.recs || []).slice(0, 10).map(x => compactLatestCard(x, 'rec')).filter(Boolean),
+      spec: (state.speculativeRecs || []).slice(0, 10).map(x => compactLatestCard(x, 'spec')).filter(Boolean),
+      daily: (state.dailyRecs || []).slice(0, 25).map(x => compactLatestCard(x, 'daily')).filter(Boolean),
+      hunter: (state.hunterRecs || []).slice(0, 20).map(x => compactLatestCard(x, 'hunter')).filter(Boolean),
       premarket: (state.premarketRecs || []).slice(0, 30).map(x => refreshSavedCardEntryGate(compactLatestCard(x, 'premarket'), 'premarket')).filter(Boolean),
       savedAt: new Date().toISOString(),
     };
@@ -6805,6 +7289,23 @@ function renderDailyTradeTab() {
   ]);
 }
 
+function dailySourceText(source) {
+  const s = String(source || '').toLowerCase();
+  if (s.includes('gainer')) return 'قائمة الأداء';
+  if (s.includes('premarket')) return 'رادار الافتتاح';
+  if (s.includes('intraday')) return 'لحظي';
+  if (s.includes('watch')) return 'متابعة';
+  return source || 'لحظي';
+}
+
+function dailyConfirmText(x) {
+  if (x.checks?.breakout15) return 'اختراق 15د ✅';
+  if (x.checks?.higherLow) return 'قاع أعلى ✅';
+  if (x.lateEntryFlag) return 'دخول متأخر';
+  if (x.exhaustionFlag) return 'إرهاق صعود';
+  return 'ينتظر تأكيد';
+}
+
 function renderDailyTradeCard(x, idx) {
   const isSelected = state.selected === x.id + '_daily';
   const color = x.dayClass === 'entry' ? C.green :
@@ -6822,9 +7323,9 @@ function renderDailyTradeCard(x, idx) {
             el('span', {style:{fontSize:'14px', fontWeight:'900', color:C.text}}, [x.name || x.id]),
             el('span', {style:{fontSize:'10px', color:C.text2}}, [x.id]),
             ...renderMarketBadges(x.id, x),
-            x.isGainer && el('span', {style:{fontSize:'8px', color:C.yellow, background:'rgba(255,224,51,.10)', borderRadius:'6px', padding:'1px 5px'}}, ['Top '+(x.gainerRank || '20')]),
+            x.isGainer && el('span', {style:{fontSize:'8px', color:C.yellow, background:'rgba(255,224,51,.10)', borderRadius:'6px', padding:'1px 5px'}}, ['أداء قوي '+(x.gainerRank || '20')]),
           ]),
-          el('div', {style:{fontSize:'10px', color:C.text3}}, [x.sector+' • '+(x.source || 'intraday')]),
+          el('div', {style:{fontSize:'10px', color:C.text3}}, [x.sector+' • '+dailySourceText(x.source)]),
         ]),
         el('div', {style:{textAlign:'left'}}, [
           el('div', {style:{fontSize:'20px', fontWeight:'900', color}}, [String(x.score || 0)]),
@@ -6891,9 +7392,7 @@ function renderDailyTradeCard(x, idx) {
 
       el('div', {style:{display:'flex', justifyContent:'space-between', fontSize:'10px', color:C.text2, marginTop:'7px'}}, [
         el('span', {}, ['R/R: ', el('span', {style:{color:x.rr>=1.5?C.green:C.yellow, fontWeight:'900'}}, [fmt(x.rr,1)+'x'])]),
-        el('span', {style:{color:C.text3}}, [
-          x.checks?.breakout15 ? 'اختراق 15د ✅' : x.checks?.higherLow ? 'Higher Low ✅' : 'ينتظر تأكيد'
-        ]),
+        el('span', {style:{color:C.text3}}, [dailyConfirmText(x)]),
       ]),
     ]),
   ]);
@@ -7474,9 +7973,9 @@ function renderRecTab() {
         el('div', {style:{fontWeight:'700', color:C.text, marginBottom:'4px'}}, ['الشروط التسعة المطلوبة:']),
         '• إشارة شراء من 10 مؤشرات', el('br'),
         '• ثقة 70%+ • جودة صفقة 50%+', el('br'),
-        '• هدف ربح 2%+ • R/R 1.5x+', el('br'),
+        '• هدف ربح 2%+ • العائد مقابل المخاطرة 1.5x+', el('br'),
         '• لا أرباح خلال 5 أيام', el('br'),
-        '• لا gap-up أكثر من 8%', el('br'),
+        '• لا افتتاح بفجوة أكثر من 8%', el('br'),
         '• توقيت مقبول • فوق MA50',
       ]),
       el('div', {style:{
@@ -7513,6 +8012,153 @@ function renderRecTab() {
 
     // البطاقات
     ...state.recs.map((r,idx) => renderRecCard(r, idx)),
+  ]);
+}
+
+function cleanRecUserText(text) {
+  if(text == null) return '';
+  return String(text)
+    .replace(/R\/R/gi, 'العائد مقابل المخاطرة')
+    .replace(/\bADX\b/gi, 'قوة الاتجاه')
+    .replace(/\bVWAP\b/gi, 'متوسط السعر اللحظي')
+    .replace(/\bMACD\b/gi, 'الزخم')
+    .replace(/\bRSI\b/gi, 'مؤشر القوة')
+    .replace(/\bMA20\b/gi, 'متوسط 20')
+    .replace(/\bMA50\b/gi, 'متوسط 50')
+    .replace(/\bMA200\b/gi, 'متوسط 200')
+    .replace(/trigger/gi, 'شرط')
+    .replace(/watch/gi, 'راقب')
+    .replace(/confirmed/gi, 'مؤكد')
+    .replace(/risk/gi, 'مخاطرة')
+    .replace(/entry/gi, 'دخول')
+    .replace(/pullback/gi, 'تراجع')
+    .replace(/breakout/gi, 'اختراق')
+    .replace(/invalidated/gi, 'ملغاة')
+    .replace(/late\s*دخول/gi, 'دخول متأخر')
+    .replace(/missed opportunity/gi, 'فرصة فائتة')
+    .trim();
+}
+
+function buildRecFollowupPlan(r, recDecision, marketClosed) {
+  const label = recDecision?.label || '';
+  const tone = recDecision?.tone || '';
+  const isFollowup = marketClosed || !r.activeBuy || r.conditionalBuy || r.earlyRadar || /راقب|استعد|شرط/.test(label);
+  if(!isFollowup) return null;
+
+  const gateStage = r.entryGate?.stage || '';
+  const supportLost = !!(r.supportState?.lost || r.supportState?.softLost || gateStage === 'support_lost' || gateStage === 'below_support');
+  const candleBlock = !!(r.candleGate?.bearishBlock || r.candleGate?.allowsEntry === false || gateStage === 'candle_block');
+  const resistanceBlock = !!(r.tooCloseToResistance || r.nearResistance);
+  const rrBlock = gateStage === 'rr_low' || (r.riskReward != null && r.riskReward < 1.5);
+  const farEntry = (r.distToSupport != null && r.distToSupport > 3) || gateStage === 'support_too_far' || gateStage === 'entry_chase';
+  const volumeNeed = (r.volR != null && r.volR < 1.2) || (r.rvol != null && r.rvol < 1.2);
+  const newsBlock = !!(r.newsImpact?.block || r.newsImpact?.level === 'negative');
+  const danger = supportLost || candleBlock || resistanceBlock || rrBlock || farEntry || newsBlock || r.blockEntry;
+
+  let type = 'راقب بحذر';
+  if(r.conditionalBuy || tone === 'conditional' || /شرط/.test(label)) {
+    type = 'استعد — قريب من الدخول';
+  } else if(!danger && (r.earlyRadar || tone === 'early' || (r.confidence >= 58 && r.riskReward >= 1.3))) {
+    type = 'راقب — فرصة مؤهلة';
+  }
+
+  let waitReason = '';
+  if(marketClosed) {
+    waitReason = 'السوق مغلق؛ انتظر الافتتاح وتأكيد الحجم.';
+  } else if(supportLost) {
+    waitReason = 'الدعم لم يصمد؛ نحتاج رجوع السعر فوقه قبل أي دخول.';
+  } else if(candleBlock) {
+    waitReason = cleanRecUserText(r.candleGate?.reason) || 'الشموع غير داعمة للدخول.';
+  } else if(resistanceBlock) {
+    waitReason = 'السهم قريب من مقاومة؛ نحتاج اختراقًا واضحًا قبل الدخول.';
+  } else if(farEntry) {
+    waitReason = 'السعر بعيد عن نقطة دخول آمنة.';
+  } else if(rrBlock) {
+    waitReason = 'العائد مقابل المخاطرة غير كافٍ الآن.';
+  } else if(volumeNeed) {
+    waitReason = 'نحتاج تأكيد حجم أو زخم.';
+  } else if(newsBlock) {
+    waitReason = 'يوجد خبر سلبي مؤثر؛ ننتظر وضوح أثره.';
+  } else if(r.entryBlockReasons?.length) {
+    waitReason = cleanRecUserText(r.entryBlockReasons[0]);
+  } else {
+    waitReason = cleanRecUserText(recDecision?.note || r.entryNote || r.finalEntryNote) || 'نحتاج تأكيدًا أوضح قبل الدخول.';
+  }
+
+  let entryCondition = '';
+  if(supportLost && r.support) {
+    entryCondition = 'ادخل فقط إذا رجع فوق الدعم '+fmtPrice(r.support)+' وثبت بحجم داعم.';
+  } else if(resistanceBlock && r.resistance) {
+    entryCondition = 'ادخل إذا اخترق المقاومة '+fmtPrice(r.resistance)+' بثبات وحجم جيد.';
+  } else if(farEntry && r.idealEntry) {
+    entryCondition = 'ادخل إذا رجع قرب منطقة الدخول '+fmtPrice(r.idealEntry)+' وارتد.';
+  } else if(candleBlock) {
+    entryCondition = 'ادخل إذا ظهرت شمعة تأكيد إيجابية.';
+  } else if(rrBlock) {
+    entryCondition = 'ادخل إذا تحسن العائد مقابل المخاطرة قرب منطقة الدخول.';
+  } else if(volumeNeed) {
+    entryCondition = 'ادخل إذا تحسن الحجم والزخم مع ثبات السعر.';
+  } else if(r.support) {
+    entryCondition = 'ادخل إذا ثبت فوق الدعم '+fmtPrice(r.support)+' وظهر حجم داعم.';
+  } else if(r.idealEntry) {
+    entryCondition = 'ادخل إذا رجع قرب '+fmtPrice(r.idealEntry)+' وارتد أو أعطى شمعة تأكيد.';
+  } else {
+    entryCondition = 'ادخل فقط بعد شمعة تأكيد وحجم داعم.';
+  }
+
+  let cancelCondition = '';
+  if(newsBlock) {
+    cancelCondition = 'ألغِ الفكرة إذا ظهر خبر سلبي مؤثر.';
+  } else if(r.support) {
+    cancelCondition = 'ألغِ الفكرة إذا كسر الدعم '+fmtPrice(r.support)+'.';
+  } else if(r.resistance) {
+    cancelCondition = 'ألغِ الفكرة إذا فشل عند المقاومة '+fmtPrice(r.resistance)+' مع ضعف الشموع.';
+  } else if(candleBlock) {
+    cancelCondition = 'ألغِ الفكرة إذا استمرت الشموع السلبية.';
+  } else {
+    cancelCondition = 'ألغِ الفكرة إذا ضعفت الشموع أو زادت المخاطرة.';
+  }
+
+  return {
+    type,
+    waitReason: cleanRecUserText(waitReason),
+    entryCondition: cleanRecUserText(entryCondition),
+    cancelCondition: cleanRecUserText(cancelCondition),
+    validity: 'صالحة لمدة 3 أيام تداول. يعاد التحليل إذا تغير السعر كثيرًا قبل تحقق الشرط.',
+  };
+}
+
+function renderRecFollowupPlan(plan) {
+  if(!plan) return null;
+  const color = plan.type.includes('استعد') ? C.green : plan.type.includes('مؤهلة') ? C.blue : C.yellow;
+  const rows = [
+    ['سبب الانتظار', plan.waitReason],
+    ['شرط الدخول', plan.entryCondition],
+    ['شرط الإلغاء', plan.cancelCondition],
+    ['مدة الصلاحية', plan.validity],
+  ];
+  return el('div', {style:{
+    background:'rgba(255,255,255,.035)',
+    border:`1px solid ${color}33`,
+    borderRadius:'10px',
+    padding:'9px 10px',
+    marginBottom:'8px',
+  }}, [
+    el('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}, [
+      el('div', {style:{fontSize:'12px', fontWeight:'900', color}}, [plan.type]),
+      el('div', {style:{fontSize:'9px', color:C.text3}}, ['خطة متابعة']),
+    ]),
+    ...rows.map(([title, value]) => el('div', {style:{
+      display:'grid',
+      gridTemplateColumns:'86px 1fr',
+      gap:'8px',
+      alignItems:'start',
+      padding:'4px 0',
+      borderTop:'1px solid rgba(255,255,255,.04)',
+    }}, [
+      el('div', {style:{fontSize:'9px', color:C.text3}}, [title]),
+      el('div', {style:{fontSize:'10px', color:C.text2, lineHeight:'1.65'}}, [value]),
+    ])),
   ]);
 }
 
@@ -7558,6 +8204,7 @@ function renderRecCard(r, idx) {
   }
 
   const recStatusColor = marketClosed ? C.yellow : recDecision.color || (r.activeBuy ? C.green : r.watchOnly ? C.yellow : C.pink);
+  const recFollowupPlan = buildRecFollowupPlan(r, recDecision, marketClosed);
   const canPlaceRecOrder = !marketClosed && r.activeBuy && !r.blockEntry && !r.tooCloseToResistance;
   const recPlanTitle = canPlaceRecOrder ? '📋 أمر الشراء الجاهز' : '📋 خطة المراقبة';
   const displayOrderType = canPlaceRecOrder ? orderType : 'انتظار';
@@ -7595,7 +8242,7 @@ function renderRecCard(r, idx) {
           r.isConviction && el('span', {style:{
             fontSize:'9px', color:C.yellow, background:'rgba(255,224,51,.12)',
             borderRadius:'4px', padding:'1px 5px', border:'1px solid rgba(255,224,51,.3)',
-          }}, ['⭐ High Conviction']),
+          }}, ['⭐ ثقة عالية']),
           r.nearSupport && el('span', {style:{
             fontSize:'9px', color:C.green, background:'rgba(0,255,136,.12)',
             borderRadius:'4px', padding:'1px 6px', border:'1px solid rgba(0,255,136,.28)',
@@ -7659,7 +8306,7 @@ function renderRecCard(r, idx) {
       ]);
     })(),
 
-    // ── 2. السعر + RSI + ثقة
+    // ── 2. السعر + مؤشر القوة + ثقة
     el('div', {style:{display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:'6px', marginBottom:'8px'}}, [
       el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
         el('div', {style:{fontSize:'9px', color:C.text3}}, ['السعر']),
@@ -7669,7 +8316,7 @@ function renderRecCard(r, idx) {
         ]),
       ]),
       el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
-        el('div', {style:{fontSize:'9px', color:C.text3}}, ['RSI']),
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['مؤشر القوة']),
         el('div', {style:{
           fontSize:'13px', fontWeight:'700',
           color: r.rsi!=null?(r.rsi<30?C.green:r.rsi>70?C.pink:C.blue):C.text3,
@@ -7679,7 +8326,7 @@ function renderRecCard(r, idx) {
         ]),
       ]),
       el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
-        el('div', {style:{fontSize:'9px', color:C.text3}}, ['ADX']),
+        el('div', {style:{fontSize:'9px', color:C.text3}}, ['قوة الاتجاه']),
         el('div', {style:{
           fontSize:'13px', fontWeight:'700',
           color: r.adx!=null?(r.adx>30?C.green:r.adx>20?C.blue:C.text3):C.text3,
@@ -7695,10 +8342,10 @@ function renderRecCard(r, idx) {
           color: r.confidence>=80?C.green:r.confidence>=60?C.blue:C.yellow,
         }}, [r.confidence+'%']),
         el('div', {style:{fontSize:'9px', color:C.text3}}, [r.tradeQuality+'% جودة']),
-        // ⚠️ تحذير MACD سلبي
+        // ⚠️ تحذير زخم سلبي
         r.macd!=null && r.macd<0 && el('div', {style:{
           fontSize:'8px', color:C.orange, marginTop:'2px',
-        }}, ['⚠️ MACD↓']),
+        }}, ['⚠️ الزخم سلبي']),
       ]),
     ]),
 
@@ -7729,6 +8376,8 @@ function renderRecCard(r, idx) {
         marketClosed ? 'السوق مغلق؛ لا تنفيذ الآن. أعد التأكيد بعد الافتتاح والحجم.' : recDecision.note
       ]),
     ]),
+
+    renderRecFollowupPlan(recFollowupPlan),
 
     renderTradeDecisionBox(calcTradeDecision({
       kind:'rec',
@@ -7768,22 +8417,22 @@ function renderRecCard(r, idx) {
       el('div', {style:{background:'#060b14', borderRadius:'8px', padding:'6px 8px'}}, [
         el('div', {style:{fontSize:'9px', color:C.text3, marginBottom:'4px'}}, ['📈 المتوسطات']),
         el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
-          el('span', {style:{fontSize:'9px', color:C.text3}}, ['MA20']),
+          el('span', {style:{fontSize:'9px', color:C.text3}}, ['متوسط 20']),
           el('span', {style:{fontSize:'10px', fontWeight:'700', color:r.ma20?(r.price>r.ma20?C.green:C.pink):C.text3}},
             [r.ma20?fmtPrice(r.ma20):'—']),
         ]),
         el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
-          el('span', {style:{fontSize:'9px', color:C.text3}}, ['MA50']),
+          el('span', {style:{fontSize:'9px', color:C.text3}}, ['متوسط 50']),
           el('span', {style:{fontSize:'10px', fontWeight:'700', color:r.ma50?(r.price>r.ma50?C.green:C.pink):C.text3}},
             [r.ma50?fmtPrice(r.ma50):'—']),
         ]),
         el('div', {style:{display:'flex', justifyContent:'space-between', marginBottom:'2px'}}, [
-          el('span', {style:{fontSize:'9px', color:C.text3}}, ['MA200']),
+          el('span', {style:{fontSize:'9px', color:C.text3}}, ['متوسط 200']),
           el('span', {style:{fontSize:'10px', fontWeight:'700', color:r.ma200?(r.price>r.ma200?C.green:C.pink):C.text3}},
             [r.ma200?fmtPrice(r.ma200):'—']),
         ]),
         el('div', {style:{fontSize:'9px', marginTop:'2px', color:r.price>(r.ma200||r.ma50||0)?C.green:C.orange}}, [
-          r.ma200?(r.price>r.ma200?'💪 فوق MA200':'⚠️ تحت MA200'):(r.ma20>(r.ma50||0)?'✅ صاعد':'⚠️ هابط')
+          r.ma200?(r.price>r.ma200?'💪 فوق متوسط 200':'⚠️ تحت متوسط 200'):(r.ma20>(r.ma50||0)?'✅ صاعد':'⚠️ هابط')
         ]),
       ]),
     ]),
@@ -7980,22 +8629,22 @@ function renderRecCard(r, idx) {
       ]),
       el('div', {style:{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px', fontSize:'10px'}}, [
         r.stochRsi!=null && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{color:C.text3}}, ['Stoch RSI']),
+          el('div', {style:{color:C.text3}}, ['مؤشر التشبع السريع']),
           el('div', {style:{fontWeight:'700', color:r.stochRsi<20?C.green:r.stochRsi>80?C.pink:C.blue}},
             [fmt(r.stochRsi)+'%']),
         ]),
         r.macd!=null && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{color:C.text3}}, ['MACD']),
+          el('div', {style:{color:C.text3}}, ['الزخم']),
           el('div', {style:{fontWeight:'700', color:r.macd>0?C.green:C.pink}},
             [fmt(r.macd,3)+' '+(r.macd>0?'↑':'↓')]),
         ]),
         r.riskReward>0 && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{color:C.text3}}, ['R/R نسبة']),
+          el('div', {style:{color:C.text3}}, ['العائد مقابل المخاطرة']),
           el('div', {style:{fontWeight:'700', color:r.riskReward>=2?C.green:C.yellow}},
-            [fmt(r.riskReward,1)+'x']),
+            [fmt(r.riskReward,1)+' مرة']),
         ]),
         r.atrPct!=null && el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px 8px'}}, [
-          el('div', {style:{color:C.text3}}, ['ATR تذبذب']),
+          el('div', {style:{color:C.text3}}, ['التذبذب']),
           el('div', {style:{fontWeight:'700', color:r.atrPct<2?C.green:r.atrPct<4?C.blue:C.orange}},
             [fmt(r.atrPct,1)+'%']),
         ]),
@@ -8725,6 +9374,27 @@ function renderHunterTab() {
   ]);
 }
 
+function hunterBuyDecisionText(h) {
+  const decision = h?.hunterDecision || h?.checks?.hunterDecision || '';
+  if (decision === 'BUY_CONFIRMED') return {label:'ادخل الآن', color:C.green};
+  if (decision === 'BOUNCE_READY') return {label:'لا شراء الآن — ارتداد يتكوّن', color:C.yellow};
+  if (decision === 'WAIT_PULLBACK') return {label:'لا تطارد — انتظر رجوع السعر', color:C.orange};
+  if (decision === 'FAILED_SUPPORT') return {label:'لا تدخل — الدعم فشل', color:C.pink};
+  if (decision === 'NEWS_RISK') return {label:'لا تدخل — خبر سلبي', color:C.pink};
+  if (decision === 'SECTOR_CRISIS') return {label:'لا تدخل — ضغط سوق قوي', color:C.pink};
+  if (decision === 'REJECT') return {label:'مرفوض', color:C.pink};
+  return {label:'لا شراء الآن — راقب فقط', color:C.yellow};
+}
+
+function hunterStageText(h) {
+  const stage = h?.hunterStage || h?.checks?.hunterStage || '';
+  if (stage === 'CONFIRMED_REVERSAL') return 'ارتداد مؤكد';
+  if (stage === 'BOUNCE_FORMING') return 'ارتداد يتكوّن';
+  if (stage === 'SELLING_WEAKENING') return 'البيع بدأ يضعف';
+  if (stage === 'FAILED') return 'فشل الصيد';
+  return 'تحت الضغط';
+}
+
 function renderHunterCard(h, idx) {
   const isSelected = state.selected === h.id + '_hunter';
   const displayScore = Math.round(Math.max(0, Math.min(100, Number(h.score) || 0)));
@@ -8767,6 +9437,8 @@ function renderHunterCard(h, idx) {
   const isFinalEntry = hunterDecision.isFinalEntry;
   const triggerText = hunterDecision.triggerText;
   const invalidationText = hunterDecision.invalidationText;
+  const buyDecisionText = hunterBuyDecisionText(h);
+  const stageText = hunterStageText(h);
   const trendBadge = h.marketTrend === 'bearish'
     ? el('span', {style:{fontSize:'9px', color:C.pink, background:'rgba(255,45,122,.1)', borderRadius:'4px', padding:'1px 5px'}}, ['سوق هابط'])
     : h.marketTrend === 'bullish'
@@ -8866,6 +9538,44 @@ function renderHunterCard(h, idx) {
           ]),
           el('div', {style:{fontSize:'8px', color:C.text2, marginTop:'2px'}}, [
             analystView?.target ? 'هدفهم $'+fmt(analystView.target,2)+' ('+((analystView.upside||0)>=0?'+':'')+fmt(analystView.upside,1)+'%)' : 'ليس شرط دخول'
+          ]),
+        ]),
+      ]),
+
+      isSelected && el('div', {style:{
+        background:'rgba(255,224,51,.045)',
+        border:'1px solid rgba(255,224,51,.18)',
+        borderRadius:'8px',
+        padding:'7px 8px',
+        marginBottom:'8px',
+      }}, [
+        el('div', {style:{display:'flex', justifyContent:'space-between', gap:'8px', alignItems:'center', marginBottom:'5px'}}, [
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['قرار الشراء']),
+          el('div', {style:{fontSize:'10px', fontWeight:'900', color:buyDecisionText.color}}, [buyDecisionText.label]),
+        ]),
+        el('div', {style:{display:'flex', justifyContent:'space-between', gap:'8px', alignItems:'center', marginBottom:'5px'}}, [
+          el('div', {style:{fontSize:'9px', color:C.text3}}, ['حالة الصائد']),
+          el('div', {style:{fontSize:'10px', fontWeight:'800', color:C.yellow}}, [stageText]),
+        ]),
+        el('div', {style:{fontSize:'10px', color:C.text2, lineHeight:'1.45', marginBottom:'6px'}}, [
+          h.hunterReason || h.actionNote || 'الصائد ينتظر فشل البائعين وظهور مشتري واضح.'
+        ]),
+        el('div', {style:{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'5px'}}, [
+          el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px', textAlign:'center'}}, [
+            el('div', {style:{fontSize:'8px', color:C.text3}}, ['ضعف البيع']),
+            el('div', {style:{fontSize:'11px', fontWeight:'800', color:(h.sellerWeaknessScore||0)>=60?C.green:C.yellow}}, [Math.round(h.sellerWeaknessScore||0)+'']),
+          ]),
+          el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px', textAlign:'center'}}, [
+            el('div', {style:{fontSize:'8px', color:C.text3}}, ['دفاع الدعم']),
+            el('div', {style:{fontSize:'11px', fontWeight:'800', color:(h.supportDefenseScore||0)>=60?C.green:C.yellow}}, [Math.round(h.supportDefenseScore||0)+'']),
+          ]),
+          el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px', textAlign:'center'}}, [
+            el('div', {style:{fontSize:'8px', color:C.text3}}, ['ظهور مشتري']),
+            el('div', {style:{fontSize:'11px', fontWeight:'800', color:(h.buyerConfirmationScore||0)>=60?C.green:C.yellow}}, [Math.round(h.buyerConfirmationScore||0)+'']),
+          ]),
+          el('div', {style:{background:'#060b14', borderRadius:'6px', padding:'5px', textAlign:'center'}}, [
+            el('div', {style:{fontSize:'8px', color:C.text3}}, ['تأخر الدخول']),
+            el('div', {style:{fontSize:'11px', fontWeight:'800', color:(h.lateBounceRisk||0)>=45?C.pink:C.green}}, [Math.round(h.lateBounceRisk||0)+'']),
           ]),
         ]),
       ]),
