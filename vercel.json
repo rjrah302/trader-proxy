@@ -5,7 +5,8 @@
     "api/report.js":   { "maxDuration": 60 },
     "api/stocks.js":   { "maxDuration": 15 },
     "api/fmp.js":      { "maxDuration": 15 },
-    "api/snapshot.js": { "maxDuration": 20 }
+    "api/snapshot.js": { "maxDuration": 20 },
+    "api/journal-runner.js": { "maxDuration": 60 }
   },
   "crons": [
     { "path": "/api/report", "schedule": "0 20 * * 5" }
