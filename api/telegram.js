@@ -464,7 +464,81 @@ function findLatestCardBySymbol(data, sym) {
   return null;
 }
 
+function parseCardTimeMs(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') {
+    return value < 10000000000 ? value * 1000 : value;
+  }
+  if (value?.toDate) {
+    const d = value.toDate();
+    const t = d?.getTime?.();
+    return Number.isFinite(t) ? t : null;
+  }
+  const t = new Date(value).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+function latestCardTimeMs(found, data) {
+  const x = found?.item || {};
+  const tabTime = data?.times?.[found?.kind === 'recs' ? 'recs' : found?.kind];
+  const candidates = [
+    x.updatedAt,
+    x.lastSeenAt,
+    x.createdAt,
+    x.firstSeenAt,
+    x.signalAt,
+    x.savedAt,
+    x.time,
+    x.timestamp,
+    tabTime,
+    data?.updatedAt,
+    data?.savedAt,
+  ];
+  for (const v of candidates) {
+    const ms = parseCardTimeMs(v);
+    if (ms) return ms;
+  }
+  return null;
+}
+
+function latestCardFreshness(found, data) {
+  const market = data?.market || {};
+  const open = !!(market.realOpen ?? market.open);
+  const ms = latestCardTimeMs(found, data);
+  const ageMs = ms ? Date.now() - ms : Infinity;
+  const maxAgeMs = 10 * 60 * 1000;
+  return {
+    open,
+    ms,
+    ageMs,
+    stale: open ? (!ms || ageMs > maxAgeMs) : true,
+    savedText: fmtSavedTime(ms || data?.savedAt),
+  };
+}
+
+function formatStaleLatestCard(found, data, freshness) {
+  const x = found.item || {};
+  const symbol = htmlSafe(x.id || x.symbol || '—');
+  const name = htmlSafe(x.name || '');
+  const market = data?.market || {};
+  let m = `${found.label} — <b>${symbol}</b>${name ? `\n${name}` : ''}\n`;
+  m += `آخر بطاقة محفوظة: ${freshness.savedText}\n`;
+  m += `SPY ${fmtPct(market.spyChange)} | QQQ ${fmtPct(market.qqqChange)} | ${freshness.open ? 'السوق مفتوح' : 'السوق مغلق'}\n`;
+  m += `──────────────\n`;
+  if (freshness.open) {
+    m += `⚠️ البيانات قديمة، افتح الأداة لتحديث التحليل.\n`;
+  } else {
+    m += `⚠️ البيانات قديمة، افتح الأداة لتحديث التحليل.\n`;
+    m += `السوق مغلق؛ هذه آخر بطاقة محفوظة فقط وليست قرار تداول الآن.\n`;
+  }
+  m += `لا أعرض دخول أو مراقبة من بطاقة منتهية الصلاحية.`;
+  return m;
+}
+
 function formatLatestCardDetail(found, data) {
+  const freshness = latestCardFreshness(found, data);
+  if (freshness.stale) return formatStaleLatestCard(found, data, freshness);
+
   const x = found.item;
   const rank = latestCardRank(x);
   const symbol = htmlSafe(x.id || x.symbol || '—');
@@ -1200,9 +1274,10 @@ async function generateReport() {
 async function runMonitor() {
   try {
     // جلب البيانات
-    const [watchData, prevStateData] = await Promise.all([
+    const [watchData, prevStateData, latestTabs] = await Promise.all([
       fbGet('watchlist'),
       fbGet('monitor_state'),
+      fbGetLatestTabs(),
     ]);
 
     const watchList  = watchData.symbols  || [];
@@ -1217,7 +1292,7 @@ async function runMonitor() {
       return { watch: 0, symbols: 0, messages: 0, sent: 0, note: 'لا توجد أسهم في المراقبة' };
     }
 
-    // جلب البيانات من FMP
+    // جلب السعر فقط. قرار التلجرام يجب أن يبقى من نفس بطاقة الواجهة.
     const stocksData = await getMultipleStocks(allSymbols);
     const newState   = {};
     const messages   = [];
@@ -1225,25 +1300,41 @@ async function runMonitor() {
     // ── معالجة قائمة المراقبة
     for (const sym of watchList) {
       const d = stocksData[sym];
-      if (!d?.quote) continue;
-
       const prev = prevState[sym] || null;
-      const a    = analyzeStock(sym, d.quote, d.closes, prev, d.highs, d.lows);
-      if (!a) continue;
+      const latestCard = findLatestCardBySymbol(latestTabs, sym);
+      const price = d?.quote?.price ?? latestCard?.item?.price ?? latestCard?.item?.entry ?? null;
+
+      if (!latestCard) {
+        newState[sym] = {
+          price,
+          source: 'watchlist_price_only',
+          note: 'لا توجد بطاقة محفوظة من الواجهة؛ لم يصدر التلجرام قراراً مستقلاً.',
+          updatedAt: new Date().toISOString(),
+        };
+        continue;
+      }
+
+      const rank = latestCardRank(latestCard.item);
+      const decision = latestDecisionLabel(latestCard.item, rank);
+      const reason = latestDecisionReason(latestCard.item, rank);
 
       newState[sym] = {
-        price:    a.price,
-        rsi:      a.rsi,
-        macdHist: a.macdHist,
-        macdDir:  a.macdDir,
-        weekly:   a.weekly,
-        score:    a.score,
+        price,
+        decision,
+        reason,
+        source: latestCard.kind,
+        tab: latestCard.label,
         updatedAt: new Date().toISOString(),
       };
 
-      // أرسل فقط إذا فيه تغييرات مهمة
-      if (a.changes && a.changes.length > 0) {
-        messages.push(buildWatchUpdateMsg(sym, a, prev));
+      // أرسل فقط إذا تغير قرار البطاقة المحفوظة أو تغير مصدرها.
+      if (!prev || prev.decision !== decision || prev.source !== latestCard.kind) {
+        messages.push(
+          `👁 <b>تحديث مراقبة ${htmlSafe(sym)}</b>\n` +
+          `القرار من نفس بطاقة الواجهة، وليس تحليل تلجرام مستقل.\n` +
+          `──────────────\n` +
+          formatLatestCardDetail(latestCard, latestTabs)
+        );
       }
     }
 
@@ -1583,26 +1674,24 @@ async function handleMessage(text, cid) {
   if (s.step === 'waiting_sym') {
     const sym2 = text.toUpperCase().replace(/[^A-Z0-9.\-]/g, '');
     if (sym2.length >= 1 && sym2.length <= 10) {
-      sess[cid] = { step: 'ask_bought', sym: sym2 };
-      await tgSend(`⏳ جاري تحليل <b>${sym2}</b>...`);
-      const d = await getStock(sym2);
-      if (!d?.quote) { await tgSend(`⚠️ ${sym2} — لم أجد بيانات`); sess[cid] = {}; return; }
-      const a = analyzeStock(sym2, d.quote, d.closes, null, d.highs, d.lows);
-      if (!a) {
-        await tgSend(`💰 <b>${d.quote.name || sym2} (${sym2})</b>\nالسعر الحالي: <b>$${(+d.quote.price).toFixed(2)}</b>\n⚠️ لم تتوفر بيانات تاريخية كافية للتحليل الفني.`);
+      await tgSend(`⏳ أبحث عن بطاقة <b>${sym2}</b> في الأداة...`);
+      const latest = await fbGetLatestTabs();
+      const found = findLatestCardBySymbol(latest, sym2);
+      if (found) {
+        await tgSend(formatLatestCardDetail(found, latest));
         sess[cid] = {};
         return;
       }
-      sess[cid] = { step: 'ask_bought', sym: sym2, price: d.quote.price, analysis: a };
-      const buttons = [
-        [{ text: '👁 أضف للمراقبة',   callback_data: `watch_${sym2}` }],
-        [
-          { text: '📅 أسعار الأسبوع', callback_data: `prices7_${sym2}` },
-          { text: '📆 أسعار الشهر',   callback_data: `prices30_${sym2}` },
-        ],
-        [{ text: '🚪 خروج',            callback_data: `exit_${sym2}` }],
-      ];
-      await tgSendButtons(buildAnalysisMsg(sym2, d.quote.name || sym2, a), buttons);
+
+      const d = await getStock(sym2);
+      if (!d?.quote) { await tgSend(`⚠️ ${sym2} — لم أجد بيانات`); sess[cid] = {}; return; }
+      await tgSend(
+        `💰 <b>${d.quote.name || sym2} (${sym2})</b>\n` +
+        `السعر الحالي: <b>$${(+d.quote.price).toFixed(2)}</b>\n` +
+        `⚠️ لا توجد بطاقة محفوظة لهذا الرمز الآن.\n` +
+        `التلجرام لا يصدر قرار مستقل؛ القرار يأتي من نفس بطاقة الأداة فقط.`
+      );
+      sess[cid] = {};
     } else {
       await tgSend('⚠️ رمز غير صحيح — اكتب مثل: <code>NVDA</code>');
     }
@@ -1791,25 +1880,13 @@ async function handleMessage(text, cid) {
 
     const q    = d.quote;
     const name = q.name || sym;
-    const a    = analyzeStock(sym, q, d.closes);
-    if (!a) {
-      await tgSend(`💰 <b>${name} (${sym})</b>\nالسعر الحالي: <b>$${(+q.price).toFixed(2)}</b>\n⚠️ لم تتوفر بيانات تاريخية كافية للتحليل الفني.`);
-      return;
-    }
-
-    sess[cid] = { step: 'ask_bought', sym, price: q.price, analysis: a };
-
-    // أزرار Inline تحت التحليل
-    const buttons = [
-      [{ text: '👁 أضف للمراقبة', callback_data: `watch_${sym}` }],
-      [
-        { text: '📅 أسعار الأسبوع', callback_data: `prices7_${sym}` },
-        { text: '📆 أسعار الشهر',   callback_data: `prices30_${sym}` },
-      ],
-      [{ text: '🚪 خروج', callback_data: `exit_${sym}` }],
-    ];
-
-    await tgSendButtons(buildAnalysisMsg(sym, name, a), buttons);
+    const chg = +(q.changePercentage || 0);
+    await tgSend(
+      `💰 <b>${name} (${sym})</b>\n` +
+      `السعر الحالي: <b>$${(+q.price).toFixed(2)}</b> ${chg >= 0 ? '▲' : '▼'} ${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%\n` +
+      `⚠️ لا توجد بطاقة محفوظة لهذا الرمز الآن.\n` +
+      `التلجرام لا يعطي توصية مستقلة؛ افتح الأداة أو انتظر ظهور البطاقة في أحد التبويبات.`
+    );
     return;
   }
 
