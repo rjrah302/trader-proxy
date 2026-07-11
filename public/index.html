@@ -78,6 +78,36 @@ function _initFirebase() {
     const _fbDocId = (r, i=0) => String(r?.journalId || `${r?.type || 'card'}:${r?.id || 'unknown'}:${r?.signalAt || r?.createdAt || i}`)
       .replace(/[\/\\#?\[\]]/g, '_')
       .slice(0, 180);
+    const _fbFollowupId = (r, i=0) => String(r?.key || `${r?.id || r?.symbol || 'unknown'}:${r?.type || r?.tab || 'followup'}:${r?.firstSeenAt || r?.createdAt || i}`)
+      .replace(/[\/\\#?\[\]]/g, '_')
+      .slice(0, 180);
+    const _fbCompactFollowup = (records) => (records || []).slice(-200).map(r => _fbClean({
+      key:r.key,
+      day:r.day,
+      type:r.type,
+      id:r.id,
+      name:r.name,
+      firstSeenAt:r.firstSeenAt,
+      lastSeenAt:r.lastSeenAt,
+      currentPrice:r.currentPrice,
+      entry:r.entry,
+      target:r.target,
+      stopLoss:r.stopLoss,
+      riskReward:r.riskReward,
+      score:r.score,
+      decision:r.decision,
+      status:r.status,
+      statusLabel:r.statusLabel,
+      reason:r.reason,
+      seenCount:r.seenCount,
+    }));
+    const _fbCommitBatches = async (ops) => {
+      for(let i=0; i<ops.length; i+=400) {
+        const batch = _DB.batch();
+        ops.slice(i, i+400).forEach(fn => fn(batch));
+        await batch.commit();
+      }
+    };
 
     window._fbSaveSmartJournal = async function(records) {
       try {
@@ -128,6 +158,60 @@ function _initFirebase() {
       } catch(e) { console.warn('[FB] loadSmartJournal:', e.message); return []; }
     };
 
+    window._fbSaveDailyFollowupSummary = async function(records) {
+      try {
+        const summary = _fbCompactFollowup(records);
+        await _DB.collection('users').doc(_USER_ID)
+                 .collection('data').doc('daily_signal_followup_summary')
+                 .set({ records: summary, localCount: (records || []).length, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      } catch(e) { console.warn('[FB] saveDailyFollowupSummary:', e.message); }
+    };
+
+    window._fbSaveDailyFollowupEntry = async function(record, index=0) {
+      try {
+        await _DB.collection('users').doc(_USER_ID)
+                 .collection('daily_signal_followup_entries').doc(_fbFollowupId(record, index))
+                 .set(_fbClean(record), { merge:true });
+      } catch(e) { console.warn('[FB] saveDailyFollowupEntry:', e.message); }
+    };
+
+    window._fbSaveDailyFollowup = async function(records) {
+      try {
+        const safeRecords = (records || []).slice(-500).map(_fbClean);
+        await window._fbSaveDailyFollowupSummary(safeRecords);
+        const col = _DB.collection('users').doc(_USER_ID).collection('daily_signal_followup_entries');
+        const keepIds = new Set(safeRecords.map((r, i) => _fbFollowupId(r, i)));
+        const ops = [];
+        safeRecords.forEach((r, i) => {
+          const doc = col.doc(_fbFollowupId(r, i));
+          ops.push(batch => batch.set(doc, r, { merge:true }));
+        });
+        const existing = await col.limit(700).get();
+        existing.docs.forEach(d => {
+          if(!keepIds.has(d.id)) ops.push(batch => batch.delete(d.ref));
+        });
+        if(ops.length) await _fbCommitBatches(ops);
+        console.log('[FB] daily followup saved ✅', safeRecords.length);
+      } catch(e) { console.warn('[FB] saveDailyFollowup:', e.message); }
+    };
+
+    window._fbLoadDailyFollowup = async function() {
+      try {
+        const entries = await _DB.collection('users').doc(_USER_ID)
+          .collection('daily_signal_followup_entries')
+          .limit(1000)
+          .get();
+        if(!entries.empty) {
+          return entries.docs
+            .map(d => d.data())
+            .sort((a,b) => String(a.firstSeenAt || a.createdAt || '').localeCompare(String(b.firstSeenAt || b.createdAt || '')));
+        }
+        const snap = await _DB.collection('users').doc(_USER_ID)
+                              .collection('data').doc('daily_signal_followup_summary').get();
+        return snap.exists ? (snap.data().records || []) : [];
+      } catch(e) { console.warn('[FB] loadDailyFollowup:', e.message); return []; }
+    };
+
     window._fbSaveLatestTabs = async function(payload) {
       try {
         await _DB.collection('users').doc(_USER_ID)
@@ -139,10 +223,12 @@ function _initFirebase() {
 
     window._fbSync = async function() {
       try {
-        // ✅ السحابة للسجل الذكي فقط — لا محفظة يدوية ولا سجل قديم
+        // ✅ مزامنة السجل الذكي والمتابعة فقط — لا محفظة يدوية ولا سجل قديم
         const smart = await window._fbLoadSmartJournal();
         if(smart.length) localStorage.setItem('smart_journal', JSON.stringify(smart));
-        console.log('[FB] sync ✅ smart='+smart.length);
+        const followup = await window._fbLoadDailyFollowup();
+        if(followup.length) localStorage.setItem('daily_signal_followup', JSON.stringify(followup.slice(-500)));
+        console.log('[FB] sync ✅ smart='+smart.length+' followup='+followup.length);
       } catch(e) { console.warn('[FB] sync error:', e.message); }
     };
 
@@ -4652,26 +4738,13 @@ function startSpecLoop() {
 
 let _indicatorsLoading = false;
 let _appBooting = true;
-const SMART_JOURNAL_RESET_VERSION = '2026-07-04-clean-smart-journal-v1';
+    const SMART_JOURNAL_RESET_VERSION = '2026-07-04-clean-smart-journal-v1';
 
-async function resetEvaluationDataOnce() {
-  try {
-    if(localStorage.getItem('smart_journal_reset_version') === SMART_JOURNAL_RESET_VERSION) return;
-    localStorage.removeItem('smart_journal');
-    localStorage.removeItem('daily_signal_followup');
-    localStorage.removeItem('history_recs');
-    localStorage.removeItem('history_spec');
-    if(window._fbReady && window._fbClearSmartJournal) {
-      await window._fbClearSmartJournal();
-    } else if(window._fbReady && window._fbSaveSmartJournal) {
-      await window._fbSaveSmartJournal([]);
+    async function resetEvaluationDataOnce() {
+      // Disabled to protect journal data; old one-time cleanup is no longer safe.
+      // Keep this no-op because loadData() still calls it.
+      return;
     }
-    localStorage.setItem('smart_journal_reset_version', SMART_JOURNAL_RESET_VERSION);
-    console.log('[Journal] old evaluation data cleared ✅');
-  } catch(e) {
-    console.warn('[Journal] reset skipped:', e.message);
-  }
-}
 
 async function loadData(full=false) {
   // ── Firebase sync عند البداية (مرة واحدة)
@@ -5430,6 +5503,7 @@ function loadDailyFollowup() {
 
 function saveDailyFollowup(records) {
   try { localStorage.setItem('daily_signal_followup', JSON.stringify((records || []).slice(-500))); } catch(e) {}
+  if(window._fbReady && window._fbSaveDailyFollowup) window._fbSaveDailyFollowup(records || []).catch(()=>{});
 }
 
 function followupSourceLabel(type) {
